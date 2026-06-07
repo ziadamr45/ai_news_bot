@@ -384,7 +384,11 @@ User information (use this to personalize your response):
 
     max_tokens = 800 if fast else 2048
     response = await call_ai(user_message, system_prompt=system, temperature=0.7, max_tokens=max_tokens, fast=fast)
-    return response or ("عذراً، لم أتمكن من معالجة طلبك. حاول مرة أخرى. 🤖" if language == "ar" else "Sorry, I couldn't process your request. Please try again. 🤖")
+    if response is None:
+        if language == "ar":
+            return "⚠️ sorry, أنا مش قادر أرد دلوقتي بسبب ضغط على السيرفر. 🔄 جرب تاني بعد شوية — هشتغل إن شاء الله!"
+        else:
+            return "⚠️ I can't respond right now due to server load. 🔄 Try again shortly — I'll be back up!"
 
 
 async def ask_question(question: str, language: str = "ar") -> str:
