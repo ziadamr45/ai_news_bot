@@ -1,22 +1,24 @@
 """
 تلخيص الأخبار - News Summarizer Module
-يستخدم Gemini API لتلخيص الأخبار بالعربية
+يستخدم OpenRouter API (متوافق مع OpenAI) لتلخيص الأخبار بالعربية
 """
 
 import logging
 from typing import List, Dict, Optional
 
-from google import genai
-from google.genai import types
+import requests
 
-from config import GEMINI_API_KEY, GEMINI_MODEL, GEMINI_FALLBACK_MODELS, MAX_RETRIES, RETRY_DELAY
+from config import (
+    OPENROUTER_API_KEY, OPENROUTER_BASE_URL, OPENROUTER_MODEL,
+    OPENROUTER_FALLBACK_MODELS, MAX_RETRIES, RETRY_DELAY, REQUEST_TIMEOUT
+)
 
 logger = logging.getLogger(__name__)
 
 
 def create_summary_prompt(articles: List[Dict]) -> str:
     """
-    إنشاء الـ prompt لإرساله لـ Gemini
+    إنشاء الـ prompt لإرساله للنموذج
     """
     articles_text = ""
     for i, article in enumerate(articles, 1):
@@ -35,6 +37,7 @@ def create_summary_prompt(articles: List[Dict]) -> str:
 4. ذكر اسم الشركة أو المنتج إن وُجد
 5. عدم إضافة معلومات غير موجودة في الخبر الأصلي
 6. التلخيص يجب أن يكون مفيد للقارئ العربي المهتم بالذكاء الاصطناعي
+7. التلخيص يجب أن يكون بالعربية فقط
 
 الأخبار:{articles_text}
 
@@ -48,7 +51,7 @@ SUMMARY_END"""
 
 def parse_summaries(response_text: str, num_articles: int) -> List[str]:
     """
-    استخراج التلخيصات من رد Gemini
+    استخراج التلخيصات من رد النموذج
     """
     summaries = []
 
@@ -95,53 +98,91 @@ def parse_summaries(response_text: str, num_articles: int) -> List[str]:
     return summaries
 
 
-def _try_gemini_model(client: genai.Client, model: str, prompt: str) -> Optional[str]:
+def _call_openrouter(prompt: str, model: str) -> Optional[str]:
     """
-    محاولة استدعاء موديل Gemini معين
+    استدعاء OpenRouter API (متوافق مع OpenAI)
     """
+    url = f"{OPENROUTER_BASE_URL}/chat/completions"
+
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://github.com/ziadamr45/ai-news-bot",
+        "X-Title": "AI News Telegram Bot",
+    }
+
+    payload = {
+        "model": model,
+        "messages": [
+            {
+                "role": "system",
+                "content": "أنت مساعد عربي متخصص في أخبار الذكاء الاصطناعي. تجيب دائماً بالعربية الفصحى فقط."
+            },
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ],
+        "temperature": 0.3,
+        "max_tokens": 2048,
+    }
+
     try:
-        response = client.models.generate_content(
-            model=model,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                temperature=0.3,
-                max_output_tokens=2048,
-            )
+        response = requests.post(
+            url,
+            headers=headers,
+            json=payload,
+            timeout=REQUEST_TIMEOUT
         )
-        if response and response.text:
-            return response.text
+        response.raise_for_status()
+
+        data = response.json()
+
+        if "choices" in data and len(data["choices"]) > 0:
+            content = data["choices"][0].get("message", {}).get("content", "")
+            if content:
+                return content
+
+        # التحقق من وجود خطأ في الرد
+        if "error" in data:
+            logger.warning(f"OpenRouter API error for {model}: {data['error']}")
+
+    except requests.exceptions.Timeout:
+        logger.warning(f"Timeout calling OpenRouter with model {model}")
+    except requests.exceptions.RequestException as e:
+        logger.warning(f"Request error for model {model}: {str(e)[:150]}")
     except Exception as e:
-        logger.warning(f"Model {model} failed: {str(e)[:150]}")
+        logger.warning(f"Unexpected error for model {model}: {str(e)[:150]}")
+
     return None
 
 
 def summarize_articles(articles: List[Dict]) -> List[Dict]:
     """
-    تلخيص قائمة الأخبار باستخدام Gemini API (google-genai package)
+    تلخيص قائمة الأخبار باستخدام OpenRouter API
     يجرب الموديل الرئيسي ثم الموديلات البديلة
     """
     if not articles:
         logger.warning("No articles to summarize")
         return articles
 
-    if not GEMINI_API_KEY:
-        logger.error("GEMINI_API_KEY not set. Using descriptions as summaries.")
+    if not OPENROUTER_API_KEY:
+        logger.error("OPENROUTER_API_KEY not set. Using descriptions as summaries.")
         for article in articles:
             article["arabic_summary"] = article.get("description", "")[:200]
         return articles
 
-    logger.info(f"Summarizing {len(articles)} articles using Gemini API...")
+    logger.info(f"Summarizing {len(articles)} articles using OpenRouter API...")
 
     prompt = create_summary_prompt(articles)
-    client = genai.Client(api_key=GEMINI_API_KEY)
 
     # قائمة الموديلات للتجربة (الرئيسي + البدائل)
-    models_to_try = [GEMINI_MODEL] + GEMINI_FALLBACK_MODELS
+    models_to_try = [OPENROUTER_MODEL] + OPENROUTER_FALLBACK_MODELS
 
     for attempt in range(MAX_RETRIES):
         for model in models_to_try:
             logger.info(f"Trying model: {model} (attempt {attempt + 1})")
-            result = _try_gemini_model(client, model, prompt)
+            result = _call_openrouter(prompt, model)
 
             if result:
                 summaries = parse_summaries(result, len(articles))
@@ -162,7 +203,7 @@ def summarize_articles(articles: List[Dict]) -> List[Dict]:
             time.sleep(RETRY_DELAY)
 
     # في حالة فشل كل المحاولات، نستخدم الوصف الأصلي
-    logger.warning("All Gemini attempts failed. Using original descriptions.")
+    logger.warning("All OpenRouter attempts failed. Using original descriptions.")
     for article in articles:
         desc = article.get("description", "")
         article["arabic_summary"] = desc[:200] if desc else "تفاصيل الخبر متاحة عبر الرابط المرفق."

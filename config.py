@@ -9,10 +9,16 @@ import os
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 CHAT_ID = os.environ.get("CHAT_ID", "")
 
-# Gemini API Settings
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-GEMINI_MODEL = "gemini-2.0-flash"
-GEMINI_FALLBACK_MODELS = ["gemini-2.0-flash-lite", "gemini-2.5-flash"]
+# OpenRouter API Settings
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+OPENROUTER_MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free"
+OPENROUTER_FALLBACK_MODELS = [
+    "openrouter/owl-alpha",
+    "nvidia/nemotron-3-super-120b-a12b:free",
+    "poolside/laguna-m.1:free",
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+]
 
 # News Settings
 MAX_NEWS_COUNT = 5
@@ -97,7 +103,7 @@ RSS_FEEDS = [
 
 # Retry Settings
 MAX_RETRIES = 3
-RETRY_DELAY = 30  # seconds (longer delay for API rate limits)
+RETRY_DELAY = 10  # seconds
 
 # Request Timeout
 REQUEST_TIMEOUT = 30  # seconds
