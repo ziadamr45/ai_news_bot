@@ -65,16 +65,26 @@ def help_message(language: str = "ar") -> str:
 /unsubscribe — إلغاء الاشتراك
 /subscribers — عدد المشتركين
 
+🧠 <b>الذاكرة والمفضلات</b>
+/memory — ذاكرتي عنك
+/progress — تقدمك في التعلم
+/favorite — احفظ آخر شيء في المفضلة
+/favorites — المفضلات
+/forget &lt;كلمة&gt; — امسح ذكرى محددة
+/resetmemory — امسح كل الذكريات
+
 ⚙️ <b>الإعدادات</b>
 /language — تغيير اللغة
 /time — تغيير وقت الأخبار
 /sources — المصادر المفضلة
+/about — عن البوت والمؤسس
 
 🌐 <b>بحث الويب</b>
 ابحث عن أي شيء في الويب مباشرة!
 مثال: "ابحث عن أحدث أخبار OpenAI"
 
-💡 <b>ملاحظة:</b> ممكن تتكلم معايا بشكل عادي من غير أوامر! أنا ببحث في الويب تلقائياً لو سألت عن شيء يحتاج معلومات حالية 🔍"""
+💡 <b>ملاحظة:</b> ممكن تتكلم معايا بشكل عادي من غير أوامر! أنا ببحث في الويب تلقائياً لو سألت عن شيء يحتاج معلومات حالية 🔍
+💡 <b>أنا بفتكر:</b> اهتماماتك، مواضيع تعلمتها، وشركات تتابعها تلقائياً!"""
     else:
         return """🤖 <b>My Bro Commands</b>
 ━━━━━━━━━━━━━━━━━
@@ -99,12 +109,22 @@ def help_message(language: str = "ar") -> str:
 /unsubscribe — Unsubscribe
 /subscribers — Subscriber count
 
+🧠 <b>Memory & Favorites</b>
+/memory — My memory about you
+/progress — Your learning progress
+/favorite — Save last item to favorites
+/favorites — View favorites
+/forget &lt;keyword&gt; — Delete specific memory
+/resetmemory — Delete all memories
+
 ⚙️ <b>Settings</b>
 /language — Change language
 /time — Change news time
 /sources — Preferred sources
+/about — About the bot & creator
 
-💡 <b>Note:</b> You can chat with me naturally without commands! I automatically search the web when you ask about current information 🔍"""
+💡 <b>Note:</b> You can chat with me naturally without commands! I automatically search the web when you ask about current information 🔍
+💡 <b>I Remember:</b> Your interests, learned topics, and followed companies automatically!"""
 
 
 def format_news_item(index: int, title: str, summary: str, url: str, is_top: bool = False) -> str:
@@ -343,3 +363,81 @@ def sources_selection(language: str = "ar") -> str:
 
 Send your preferred source numbers
 Example: <code>1 3 5</code>"""
+
+
+def about_message(language: str = "ar") -> str:
+    """رسالة عن البوت والمؤسس"""
+    from config import CREATOR_INFO, BOT_NAME, BOT_VERSION
+
+    if language == "ar":
+        tech_list = " • ".join(CREATOR_INFO["tech_stack"][:6])
+        return f"""🤖 <b>عن {BOT_NAME} v{BOT_VERSION}</b>
+━━━━━━━━━━━━━━━━━
+
+<b>{BOT_NAME}</b> — مساعدك الذكي لمتابعة عالم الذكاء الاصطناعي 🧠
+
+✅ أخبار AI لحظة بلحظة
+✅ محادثة ذكية مع AI
+✅ بحث في الويب
+✅ شروحات وخرائط طريق
+✅ تقارير شركات AI
+✅ بث أخبار يومي مجدول
+✅ نظام ذاكرة ذكي بيفكرك
+
+━━━━━━━━━━━━━━━━━
+
+👨‍💻 <b>صانع البوت</b>
+
+<b>{CREATOR_INFO['name_ar']}</b>
+{CREATOR_INFO['title_ar']}
+
+{CREATOR_INFO['bio_ar']}
+
+🔗 <b>تواصل معاه:</b>
+🌐 الموقع: <a href="{CREATOR_INFO['website']}">ziadamrme.vercel.app</a>
+💻 GitHub: <a href="{CREATOR_INFO['github']}">ziadamr45</a>
+💼 LinkedIn: <a href="{CREATOR_INFO['linkedin']}">Ziad Amr</a>
+📱 Telegram: <a href="{CREATOR_INFO['telegram']}">@ziadamr</a>
+🐦 X: <a href="{CREATOR_INFO['twitter']}">@ziad90216</a>
+
+🛠️ <b>التقنيات:</b>
+{tech_list}
+
+━━━━━━━━━━━━━━━━━
+🤖 <i>اتعمل بحب في مصر 🇪🇬</i>"""
+    else:
+        tech_list = " • ".join(CREATOR_INFO["tech_stack"][:6])
+        return f"""🤖 <b>About {BOT_NAME} v{BOT_VERSION}</b>
+━━━━━━━━━━━━━━━━━
+
+<b>{BOT_NAME}</b> — Your smart AI assistant for the AI world 🧠
+
+✅ Real-time AI news
+✅ Smart AI chat
+✅ Web search
+✅ Tutorials & roadmaps
+✅ AI company reports
+✅ Scheduled daily news
+✅ Smart memory system
+
+━━━━━━━━━━━━━━━━━
+
+👨‍💻 <b>Created by</b>
+
+<b>{CREATOR_INFO['name_en']}</b>
+{CREATOR_INFO['title_en']}
+
+{CREATOR_INFO['bio_en']}
+
+🔗 <b>Get in touch:</b>
+🌐 Website: <a href="{CREATOR_INFO['website']}">ziadamrme.vercel.app</a>
+💻 GitHub: <a href="{CREATOR_INFO['github']}">ziadamr45</a>
+💼 LinkedIn: <a href="{CREATOR_INFO['linkedin']}">Ziad Amr</a>
+📱 Telegram: <a href="{CREATOR_INFO['telegram']}">@ziadamr</a>
+🐦 X: <a href="{CREATOR_INFO['twitter']}">@ziad90216</a>
+
+🛠️ <b>Tech Stack:</b>
+{tech_list}
+
+━━━━━━━━━━━━━━━━━
+🤖 <i>Made with love in Egypt 🇪🇬</i>"""

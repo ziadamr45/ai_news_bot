@@ -24,5 +24,15 @@
     "last_interaction": "2026-06-07T21:39:52.856013",
     "commands_used": 1,
     "chat_count": 2
+  },
+  "12345": {
+    "interests": [
+      "OpenAI"
+    ],
+    "last_interaction": "2026-06-07T22:22:08.703839",
+    "favorite_companies": [
+      "OpenAI",
+      "Google"
+    ]
   }
 }

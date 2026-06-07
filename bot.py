@@ -19,14 +19,23 @@ from telegram.ext import (
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import pytz
 
-from config import BOT_TOKEN, BOT_NAME, BOT_VERSION, COMPANY_DATA, DAILY_NEWS_HOUR, DAILY_NEWS_MINUTE, DAILY_NEWS_TIMEZONE, BROADCAST_DELAY_SECONDS
+from config import BOT_TOKEN, BOT_NAME, BOT_VERSION, COMPANY_DATA, DAILY_NEWS_HOUR, DAILY_NEWS_MINUTE, DAILY_NEWS_TIMEZONE, BROADCAST_DELAY_SECONDS, CREATOR_INFO
 from ai_engine import smart_chat, ask_question, explain_topic, generate_roadmap, generate_company_report
 from memory import (
     get_user, get_language, set_language, get_news_time,
     set_news_time, set_sources, get_sources,
     increment_command_count, increment_chat_count,
     subscribe_user, unsubscribe_user, is_subscribed,
-    get_all_subscribers, get_subscriber_count
+    get_all_subscribers, get_subscriber_count,
+    # نظام الذاكرة الجديد
+    save_conversation, get_recent_conversations, get_conversation_context,
+    save_learning, get_learning_progress, get_learned_topics,
+    add_favorite, get_favorites, remove_favorite,
+    save_memory, get_memories, delete_memory, reset_all_memories,
+    add_interest, get_interests, get_interests_context,
+    add_favorite_company, get_favorite_companies,
+    detect_interests, get_user_memory_summary,
+    format_memory_display, format_progress_display, format_favorites_display
 )
 from formatters import (
     welcome_message, help_message, format_news_item,
@@ -34,7 +43,7 @@ from formatters import (
     language_selection, time_selection, sources_selection,
     subscription_prompt, subscription_confirmed, unsubscription_confirmed,
     daily_news_header, daily_news_footer, subscribe_command_message,
-    unsubscribe_command_message, subscribers_info
+    unsubscribe_command_message, subscribers_info, about_message
 )
 from news_fetcher import fetch_news
 from filters import filter_news, is_ai_related
@@ -749,6 +758,14 @@ async def learn_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await progress.update_stage(1)
         explanation = await explain_topic(topic, lang)
         await progress.update_stage(2)
+
+        # حفظ تقدم التعلم
+        try:
+            save_learning(user_id, topic, "explored")
+            detect_interests(user_id, topic)
+        except Exception:
+            pass
+
         inline_keyboard = get_learn_inline_buttons(lang)
         await progress.complete(final_message=explanation, reply_markup=inline_keyboard, delete_progress=False)
     except Exception as e:
@@ -876,6 +893,149 @@ async def subscribers_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         subscribers_info(count, lang),
         parse_mode="HTML"
     )
+
+
+async def about_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """أمر /about - عن البوت والمؤسس"""
+    user_id = update.effective_user.id
+    lang = get_language(user_id)
+    increment_command_count(user_id)
+
+    await update.message.reply_text(
+        about_message(lang),
+        parse_mode="HTML",
+        disable_web_page_preview=True
+    )
+
+
+async def memory_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """أمر /memory - عرض ذاكرتي عن المستخدم"""
+    user_id = update.effective_user.id
+    lang = get_language(user_id)
+    increment_command_count(user_id)
+
+    try:
+        message = format_memory_display(user_id, lang)
+    except Exception as e:
+        logger.error(f"Error in /memory: {e}")
+        message = "❌ حصل خطأ في عرض الذاكرة" if lang == "ar" else "❌ Error displaying memory"
+
+    await update.message.reply_text(message, parse_mode="HTML")
+
+
+async def progress_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """أمر /progress - تقدم التعلم"""
+    user_id = update.effective_user.id
+    lang = get_language(user_id)
+    increment_command_count(user_id)
+
+    try:
+        message = format_progress_display(user_id, lang)
+    except Exception as e:
+        logger.error(f"Error in /progress: {e}")
+        message = "❌ حصل خطأ في عرض التقدم" if lang == "ar" else "❌ Error displaying progress"
+
+    await update.message.reply_text(message, parse_mode="HTML")
+
+
+async def favorite_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """أمر /favorite - حفظ آخر شيء في المفضلة"""
+    user_id = update.effective_user.id
+    lang = get_language(user_id)
+    increment_command_count(user_id)
+
+    # محاولة الحصول على آخر محادثة
+    try:
+        recent = get_recent_conversations(user_id, 2)
+        if recent:
+            last_msg = recent[0]
+            title = last_msg['content'][:60]
+            category = "topic"
+            # تحديد الفئة تلقائياً
+            content_lower = last_msg['content'].lower()
+            if any(kw in content_lower for kw in ["خبر", "news", "أخبار", "breaking"]):
+                category = "news"
+            elif any(kw in content_lower for kw in ["شركة", "company", "openai", "google", "anthropic"]):
+                category = "company"
+            elif any(kw in content_lower for kw in ["أداة", "tool", "api", "sdk"]):
+                category = "tool"
+
+            add_favorite(user_id, category, title, last_msg['content'][:500])
+
+            if lang == "ar":
+                msg = f"⭐ <b>تم الحفظ في المفضلة!</b>\n\n📌 {title}...\n📂 التصنيف: {category}\n\n💡 شوف كل مفضلاتك: /favorites"
+            else:
+                msg = f"⭐ <b>Saved to favorites!</b>\n\n📌 {title}...\n📂 Category: {category}\n\n💡 View all favorites: /favorites"
+        else:
+            msg = "💭 معندكش محادثات لسه أحفظها." if lang == "ar" else "💭 No conversations to save yet."
+    except Exception as e:
+        logger.error(f"Error in /favorite: {e}")
+        msg = "❌ حصل خطأ" if lang == "ar" else "❌ Error occurred"
+
+    await update.message.reply_text(msg, parse_mode="HTML")
+
+
+async def favorites_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """أمر /favorites - عرض المفضلات"""
+    user_id = update.effective_user.id
+    lang = get_language(user_id)
+    increment_command_count(user_id)
+
+    try:
+        message = format_favorites_display(user_id, lang)
+    except Exception as e:
+        logger.error(f"Error in /favorites: {e}")
+        message = "❌ حصل خطأ" if lang == "ar" else "❌ Error occurred"
+
+    await update.message.reply_text(message, parse_mode="HTML")
+
+
+async def forget_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """أمر /forget <keyword> - حذف ذكرى محددة"""
+    user_id = update.effective_user.id
+    lang = get_language(user_id)
+    increment_command_count(user_id)
+
+    keyword = " ".join(context.args) if context.args else ""
+
+    if not keyword:
+        if lang == "ar":
+            msg = "🧠 <b>حذف ذكرى</b>\n\nاكتب الكلمة اللي عايز تمسحها\nمثال: <code>/forget openai</code>"
+        else:
+            msg = "🧠 <b>Forget Memory</b>\n\nType the keyword to forget\nExample: <code>/forget openai</code>"
+        await update.message.reply_text(msg, parse_mode="HTML")
+        return
+
+    try:
+        delete_memory(user_id, key=keyword)
+        if lang == "ar":
+            msg = f"🗑️ تم مسح الذكريات المتعلقة بـ \"{keyword}\""
+        else:
+            msg = f"🗑️ Memories related to \"{keyword}\" have been deleted"
+    except Exception as e:
+        logger.error(f"Error in /forget: {e}")
+        msg = "❌ حصل خطأ" if lang == "ar" else "❌ Error occurred"
+
+    await update.message.reply_text(msg, parse_mode="HTML")
+
+
+async def resetmemory_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """أمر /resetmemory - حذف كل الذكريات"""
+    user_id = update.effective_user.id
+    lang = get_language(user_id)
+    increment_command_count(user_id)
+
+    try:
+        reset_all_memories(user_id)
+        if lang == "ar":
+            msg = "🧹 <b>تم مسح كل الذكريات!</b>\n\nنظام الذاكرة نضيف دلوقتي. هيبدأ يتعلم عنك من جديد مع كل محادثة."
+        else:
+            msg = "🧹 <b>All memories deleted!</b>\n\nMemory system is now clean. It will learn about you again from each conversation."
+    except Exception as e:
+        logger.error(f"Error in /resetmemory: {e}")
+        msg = "❌ حصل خطأ" if lang == "ar" else "❌ Error occurred"
+
+    await update.message.reply_text(msg, parse_mode="HTML")
 
 
 # ═══════════════════════════════════════
@@ -1275,8 +1435,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         await progress.update_stage(0)
         await progress.update_stage(1)
-        response = await smart_chat(user_text, lang)
+
+        # حفظ المحادثة + كشف الاهتمامات
+        try:
+            save_conversation(user_id, "user", user_text)
+            detect_interests(user_id, user_text)
+        except Exception as e:
+            logger.debug(f"Memory save error (non-critical): {e}")
+
+        response = await smart_chat(user_text, lang, user_id=user_id)
         await progress.update_stage(2)
+
+        # حفظ رد البوت
+        try:
+            save_conversation(user_id, "bot", response[:500])
+        except Exception:
+            pass
 
         # لو الرسالة طويلة، نحذف رسالة التقدم ونرسل جديدة
         if len(response) > 4000:
@@ -1445,6 +1619,13 @@ def main():
     app.add_handler(CommandHandler("subscribe", subscribe_command))
     app.add_handler(CommandHandler("unsubscribe", unsubscribe_command))
     app.add_handler(CommandHandler("subscribers", subscribers_command))
+    app.add_handler(CommandHandler("about", about_command))
+    app.add_handler(CommandHandler("memory", memory_command))
+    app.add_handler(CommandHandler("progress", progress_command))
+    app.add_handler(CommandHandler("favorite", favorite_command))
+    app.add_handler(CommandHandler("favorites", favorites_command))
+    app.add_handler(CommandHandler("forget", forget_command))
+    app.add_handler(CommandHandler("resetmemory", resetmemory_command))
 
     # أزرار Inline
     app.add_handler(CallbackQueryHandler(button_callback))

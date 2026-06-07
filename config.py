@@ -246,11 +246,33 @@ RETRY_DELAY = 5  # كان 10، دلوقتي 5
 # ═══════════════════════════════════════
 
 BOT_NAME = "My Bro"
-BOT_VERSION = "4.0"
+BOT_VERSION = "5.0"
+
+# ═══════════════════════════════════════
+# معلومات المؤسس - Creator Info
+# ═══════════════════════════════════════
+CREATOR_INFO = {
+    "name_en": "Ziad Amr",
+    "name_ar": "زياد عمرو",
+    "title_en": "Egyptian Web Developer",
+    "title_ar": "مطوّر ويب مصري",
+    "bio_en": "Full-stack web developer specializing in Next.js, React, TypeScript, and modern web technologies. Building AI-powered tools and bots.",
+    "bio_ar": "مطوّر ويب متكامل متخصص في Next.js و React و TypeScript وتقنيات الويب الحديثة. بيبني أدوات وبوتات بتقنية الذكاء الاصطناعي.",
+    "website": "https://ziadamrme.vercel.app",
+    "github": "https://github.com/ziadamr45",
+    "linkedin": "https://www.linkedin.com/in/ziad-amr-44633a411",
+    "twitter": "https://x.com/ziad90216",
+    "facebook": "https://www.facebook.com/ziad7mr",
+    "instagram": "https://www.instagram.com/ziadamr455/",
+    "telegram": "https://t.me/ziadamr",
+    "youtube": "https://youtube.com/@alhayat_ala_eltareq",
+    "tech_stack": ["Next.js", "React", "TypeScript", "Tailwind CSS", "PostgreSQL", "Prisma", "Node.js", "Python", "Docker"],
+}
 
 # Memory / Storage
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 USERS_FILE = os.path.join(DATA_DIR, "users.json")
+DATABASE_PATH = os.path.join(DATA_DIR, "memory.db")
 LOG_FILE = os.path.join(DATA_DIR, "bot.log")
 
 # ═══════════════════════════════════════

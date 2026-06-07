@@ -224,10 +224,11 @@ async def call_ai(
 # المحادثة الذكية - Smart Chat
 # ═══════════════════════════════════════
 
-async def smart_chat(user_message: str, language: str = "ar") -> str:
+async def smart_chat(user_message: str, language: str = "ar", user_id: int = None) -> str:
     """
     المحادثة الذكية - يفهم القصد تلقائياً ويرد بذكاء
     + يبحث في الويب لو محتاج معلومات حالية
+    + يستخدم ذاكرة المستخدم لو متاحة
     """
     # 1. كشف هل محتاج بحث في الويب
     if needs_web_search(user_message):
@@ -237,6 +238,48 @@ async def smart_chat(user_message: str, language: str = "ar") -> str:
 
     # 2. كشف هل سؤال بسيط
     fast = is_simple_query(user_message)
+
+    # 3. تجهيز سياق الذاكرة
+    memory_context = ""
+    if user_id:
+        try:
+            from memory import get_user_memory_summary, detect_interests
+            detect_interests(user_id, user_message)
+            memory_context = get_user_memory_summary(user_id, language)
+        except Exception as e:
+            logger.debug(f"Memory context error: {e}")
+
+    # 4. كشف أسئلة عن المؤسس
+    creator_context = ""
+    from config import CREATOR_INFO
+    user_lower = user_message.lower()
+    creator_triggers_ar = ["مين عملك", "مين صانعك", "مين أسسك", "مين صانع البوت", "مين عمل البوت", "مين مبرمجك", "مين المطور", "مين أنشأك", "مين صاحبك"]
+    creator_triggers_en = ["who made you", "who created you", "who built you", "who is your creator", "who developed you", "who is the developer", "who founded", "who programmed you"]
+    for trigger in creator_triggers_ar + creator_triggers_en:
+        if trigger in user_lower:
+            if language == "ar":
+                creator_context = f"""المستخدم سأل عن صانعك. أجب بالتالي:
+أنا اتعملت بواسطة {CREATOR_INFO['name_ar']} — {CREATOR_INFO['title_ar']}.
+{CREATOR_INFO['bio_ar']}
+ممكن تتواصل معاه:
+- الموقع: {CREATOR_INFO['website']}
+- GitHub: {CREATOR_INFO['github']}
+- LinkedIn: {CREATOR_INFO['linkedin']}
+- Telegram: {CREATOR_INFO['telegram']}
+- X: {CREATOR_INFO['twitter']}
+اتعمل بحب في مصر 🇪🇬"""
+            else:
+                creator_context = f"""The user asked about your creator. Answer with:
+I was created by {CREATOR_INFO['name_en']} — {CREATOR_INFO['title_en']}.
+{CREATOR_INFO['bio_en']}
+You can reach him at:
+- Website: {CREATOR_INFO['website']}
+- GitHub: {CREATOR_INFO['github']}
+- LinkedIn: {CREATOR_INFO['linkedin']}
+- Telegram: {CREATOR_INFO['telegram']}
+- X: {CREATOR_INFO['twitter']}
+Made with love in Egypt 🇪🇬"""
+            break
 
     if language == "ar":
         system = """أنت "My Bro" - مساعد ذكاء اصطناعي شخصي. تجيب دائماً بالعربية الفصحى.
@@ -250,6 +293,15 @@ async def smart_chat(user_message: str, language: str = "ar") -> str:
 - إذا سأل سؤال تقني، اشرح ببساطة
 - كن ودود ومفيد
 - لا تقل "لا أستطيع تصفح المواقع" - أنت تملك القدرة على البحث الآن!"""
+        if memory_context:
+            system += f"""
+
+معلومات عن المستخدم (استخدمها عشان تخصّص ردك):
+{memory_context}"""
+        if creator_context:
+            system += f"""
+
+{creator_context}"""
     else:
         system = """You are "My Bro" - a personal AI assistant. Always respond in English.
 
@@ -262,6 +314,15 @@ Rules:
 - If asked technical questions, explain simply
 - Be friendly and helpful
 - Never say "I can't browse websites" - you now have web search capability!"""
+        if memory_context:
+            system += f"""
+
+User information (use this to personalize your response):
+{memory_context}"""
+        if creator_context:
+            system += f"""
+
+{creator_context}"""
 
     max_tokens = 800 if fast else 2048
     response = await call_ai(user_message, system_prompt=system, temperature=0.7, max_tokens=max_tokens, fast=fast)
