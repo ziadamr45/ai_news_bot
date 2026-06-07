@@ -148,8 +148,10 @@ class ProgressManager:
         self.title = title or ("جاري المعالجة" if lang == "ar" else "Processing")
         self.progress_msg = None
         self.typing_task = None
+        self.timer_task = None
         self.start_time = time.time()
         self._current_stage_idx = 0
+        self._finished = False
 
     async def start(self):
         """بدء نظام التقدم"""
@@ -165,6 +167,9 @@ class ProgressManager:
         # بدء مؤشر الكتابة
         self.typing_task = asyncio.create_task(self._typing_indicator())
 
+        # بدء عداد الثواني الحي
+        self.timer_task = asyncio.create_task(self._live_timer())
+
         return self
 
     async def _typing_indicator(self):
@@ -179,6 +184,23 @@ class ProgressManager:
                 except Exception:
                     pass
                 await asyncio.sleep(4)  # إرسال كل 4 ثواني
+        except asyncio.CancelledError:
+            pass
+
+    async def _live_timer(self):
+        """عداد ثواني حي - يحدث رسالة التقدم كل ثانية"""
+        try:
+            while not self._finished:
+                await asyncio.sleep(1)
+                if self._finished or not self.progress_msg:
+                    break
+                try:
+                    text = self._build_progress_text(self._current_stage_idx)
+                    await self.progress_msg.edit_text(text, parse_mode="HTML")
+                except Exception as e:
+                    # تجاهل أخطاء التعديل المتكرر (رسالة لم تتغير)
+                    if "not modified" not in str(e).lower():
+                        logger.debug(f"Timer update error: {e}")
         except asyncio.CancelledError:
             pass
 
@@ -236,12 +258,18 @@ class ProgressManager:
         if self._current_stage_idx < len(self.stages):
             await self.update_stage(self._current_stage_idx)
 
-    async def complete(self, final_message: str = "", reply_markup=None, delete_progress: bool = True):
-        """
-        إنهاء نظام التقدم
-        - إيقاف مؤشر الكتابة
-        - حذف رسالة التقدم أو تحديثها بالنتيجة النهائية
-        """
+    async def _stop_background_tasks(self):
+        """إيقاف جميع المهام الخلفية"""
+        self._finished = True
+
+        # إيقاف عداد الثواني الحي
+        if self.timer_task and not self.timer_task.done():
+            self.timer_task.cancel()
+            try:
+                await self.timer_task
+            except asyncio.CancelledError:
+                pass
+
         # إيقاف مؤشر الكتابة
         if self.typing_task and not self.typing_task.done():
             self.typing_task.cancel()
@@ -249,6 +277,15 @@ class ProgressManager:
                 await self.typing_task
             except asyncio.CancelledError:
                 pass
+
+    async def complete(self, final_message: str = "", reply_markup=None, delete_progress: bool = True):
+        """
+        إنهاء نظام التقدم
+        - إيقاف مؤشر الكتابة والعداد الحي
+        - حذف رسالة التقدم أو تحديثها بالنتيجة النهائية
+        """
+        # إيقاف جميع المهام الخلفية
+        await self._stop_background_tasks()
 
         if not self.progress_msg:
             return
@@ -273,13 +310,8 @@ class ProgressManager:
 
     async def error(self, error_message: str):
         """عرض رسالة خطأ"""
-        # إيقاف مؤشر الكتابة
-        if self.typing_task and not self.typing_task.done():
-            self.typing_task.cancel()
-            try:
-                await self.typing_task
-            except asyncio.CancelledError:
-                pass
+        # إيقاف جميع المهام الخلفية
+        await self._stop_background_tasks()
 
         if self.progress_msg:
             try:
