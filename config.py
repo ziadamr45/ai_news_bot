@@ -17,7 +17,7 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 OPENROUTER_MODEL = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
 
 # النموذج السريع - للأسئلة البسيطة والتحيات
-FAST_MODEL = "moonshotai/kimi-vl-a3b-thinking:free"
+FAST_MODEL = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
 
 # النماذج البديلة - مرتبة حسب السرعة
 OPENROUTER_FALLBACK_MODELS = [
