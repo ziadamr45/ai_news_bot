@@ -6,6 +6,7 @@ My Bro - مساعد الذكاء الاصطناعي الشخصي
 import logging
 import sys
 import re
+import asyncio
 from datetime import datetime, timezone, timedelta
 
 from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
@@ -14,7 +15,7 @@ from telegram.ext import (
     CallbackQueryHandler, filters, ContextTypes
 )
 
-from config import BOT_TOKEN, BOT_NAME, BOT_VERSION, COMPANY_DATA
+from config import BOT_TOKEN, BOT_NAME, BOT_VERSION, COMPANY_DATA, DAILY_NEWS_HOUR, DAILY_NEWS_MINUTE, DAILY_NEWS_TIMEZONE, BROADCAST_DELAY_SECONDS
 from ai_engine import smart_chat, ask_question, explain_topic, generate_roadmap, generate_company_report
 from memory import (
     get_user, get_language, set_language, get_news_time,
@@ -27,7 +28,9 @@ from formatters import (
     welcome_message, help_message, format_news_item,
     format_trending_item, format_error, format_loading,
     language_selection, time_selection, sources_selection,
-    subscription_prompt, subscription_confirmed, unsubscription_confirmed
+    subscription_prompt, subscription_confirmed, unsubscription_confirmed,
+    daily_news_header, daily_news_footer, subscribe_command_message,
+    unsubscribe_command_message, subscribers_info
 )
 from news_fetcher import fetch_news
 from filters import filter_news, is_ai_related
@@ -810,6 +813,60 @@ async def sources_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(sources_selection(lang), parse_mode="HTML")
 
 
+async def subscribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """أمر /subscribe - الاشتراك في الأخبار اليومية"""
+    user_id = update.effective_user.id
+    lang = get_language(user_id)
+    increment_command_count(user_id)
+
+    if is_subscribed(user_id):
+        if lang == "ar":
+            msg = "✅ أنت مشترك بالفعل في الأخبار اليومية!\n\n📬 هابعتلك الأخبار كل يوم الساعة 9 الصبح\n💡 ممكن تلغي الاشتراك من ⚙️ الإعدادات أو أمر /unsubscribe"
+        else:
+            msg = "✅ You're already subscribed to daily news!\n\n📬 I'll send you news every day at 9 AM\n💡 You can unsubscribe from ⚙️ Settings or /unsubscribe"
+        await update.message.reply_text(msg, parse_mode="HTML")
+    else:
+        sub_keyboard = get_subscribe_keyboard(lang)
+        await update.message.reply_text(
+            subscribe_command_message(lang),
+            parse_mode="HTML",
+            reply_markup=sub_keyboard
+        )
+
+
+async def unsubscribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """أمر /unsubscribe - إلغاء الاشتراك"""
+    user_id = update.effective_user.id
+    lang = get_language(user_id)
+    increment_command_count(user_id)
+
+    if not is_subscribed(user_id):
+        if lang == "ar":
+            msg = "❌ أنت مش مشترك في الأخبار اليومية أصلاً!\n\n💡 ممكن تشترك من ⚙️ الإعدادات أو أمر /subscribe"
+        else:
+            msg = "❌ You're not subscribed to daily news!\n\n💡 You can subscribe from ⚙️ Settings or /subscribe"
+        await update.message.reply_text(msg, parse_mode="HTML")
+    else:
+        unsubscribe_user(user_id)
+        await update.message.reply_text(
+            unsubscription_confirmed(lang),
+            parse_mode="HTML"
+        )
+
+
+async def subscribers_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """أمر /subscribers - عدد المشتركين"""
+    user_id = update.effective_user.id
+    lang = get_language(user_id)
+    increment_command_count(user_id)
+
+    count = get_subscriber_count()
+    await update.message.reply_text(
+        subscribers_info(count, lang),
+        parse_mode="HTML"
+    )
+
+
 # ═══════════════════════════════════════
 # معالجة أزرار Inline - Callback Query
 # ═══════════════════════════════════════
@@ -1347,32 +1404,33 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ═══════════════════════════════════════
-# بث الأخبار اليومي للمشتركين - Daily Broadcast
+# بث الأخبار اليومية - Daily News Broadcast
 # ═══════════════════════════════════════
 
-async def send_daily_news_broadcast(application):
+async def broadcast_daily_news(context: ContextTypes.DEFAULT_TYPE):
     """
     بث الأخبار اليومية لكل المشتركين
-    بيشتغل تلقائياً الساعة 9 الصبح بتوقيت القاهرة
+    بيشتغل تلقائياً كل يوم الساعة 9 الصبح بتوقيت القاهرة
     """
-    subscribers = get_all_subscribers()
+    logger.info("📬 Starting daily news broadcast...")
 
+    subscribers = get_all_subscribers()
     if not subscribers:
-        logger.info("No subscribers - skipping daily broadcast")
+        logger.info("📭 No subscribers found. Skipping broadcast.")
         return
 
-    logger.info(f"Starting daily broadcast for {len(subscribers)} subscribers")
+    logger.info(f"📬 Broadcasting to {len(subscribers)} subscribers")
 
+    # جلب وتجهيز الأخبار
     try:
-        # جلب وتحضير الأخبار
         articles = fetch_news()
         if not articles:
-            logger.info("No news articles found - skipping broadcast")
+            logger.info("📭 No news found today. Skipping broadcast.")
             return
 
         filtered = filter_news(articles)
         if not filtered:
-            logger.info("No AI-related news - skipping broadcast")
+            logger.info("📭 No AI-related news today. Skipping broadcast.")
             return
 
         ranked = rank_articles(filtered)
@@ -1382,94 +1440,88 @@ async def send_daily_news_broadcast(application):
         days_ar = ["الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت", "الأحد"]
         months_ar = ["", "يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"]
 
-        # إرسال لكل مشترك بلغته
-        success = 0
-        failed = 0
+        # تجهيز الرسائل لكل لغة
+        messages = {}
+        for lang_code in ["ar", "en"]:
+            if lang_code == "ar":
+                date_str = f"{days_ar[now.weekday()]}, {now.day} {months_ar[now.month]} {now.year}"
+            else:
+                date_str = now.strftime("%A, %B %d, %Y")
 
-        for sub in subscribers:
-            user_id = sub["user_id"]
-            lang = sub.get("language", "ar")
+            header = daily_news_header(lang_code, date_str)
+
+            items = []
+            for i, article in enumerate(summarized):
+                item = format_news_item(
+                    i + 1,
+                    article.get("title", ""),
+                    article.get("arabic_summary", article.get("description", "")[:200]),
+                    article.get("link", ""),
+                    article.get("is_top", False)
+                )
+                items.append(item)
+
+            footer = daily_news_footer("", lang_code)
+            full_msg = header + "\n\n".join(items) + footer
+            messages[lang_code] = full_msg
+
+        # إرسال لكل مشترك
+        success_count = 0
+        fail_count = 0
+
+        for subscriber in subscribers:
+            chat_id = subscriber["user_id"]
+            lang = subscriber.get("language", "ar")
+            message = messages.get(lang, messages["ar"])
 
             try:
-                if lang == "ar":
-                    date_str = f"{days_ar[now.weekday()]}, {now.day} {months_ar[now.month]} {now.year}"
-                    header = f"📰 <b>أخبار الذكاء الاصطناعي اليوم</b>\n📅 {date_str}\n\n━━━━━━━━━━━━━━━━━\n\n"
-                else:
-                    date_str = now.strftime("%A, %B %d, %Y")
-                    header = f"📰 <b>Today's AI News</b>\n📅 {date_str}\n\n━━━━━━━━━━━━━━━━━\n\n"
-
-                items = []
-                for i, article in enumerate(summarized):
-                    is_top = article.get("is_top", False)
-                    item = format_news_item(
-                        i + 1,
-                        article.get("title", ""),
-                        article.get("arabic_summary", article.get("description", "")[:200]),
-                        article.get("link", ""),
-                        is_top
-                    )
-                    items.append(item)
-
-                if lang == "ar":
-                    footer = "\n\n━━━━━━━━━━━━━━━━━\n🤖 <i>My Bro — أخبار يومية</i>"
-                else:
-                    footer = "\n\n━━━━━━━━━━━━━━━━━\n🤖 <i>My Bro — Daily News</i>"
-
-                message = header + "\n\n".join(items) + footer
-
-                inline_keyboard = get_news_inline_buttons(lang)
-
-                # تقسيم لو الرسالة طويلة
+                # تقسيم الرسالة لو طويلة
                 if len(message) > 4000:
                     chunks = [message[i:i+4000] for i in range(0, len(message), 4000)]
-                    for i, chunk in enumerate(chunks):
-                        if i == len(chunks) - 1:
-                            await application.bot.send_message(
-                                chat_id=user_id, text=chunk, parse_mode="HTML",
-                                disable_web_page_preview=True, reply_markup=inline_keyboard
-                            )
-                        else:
-                            await application.bot.send_message(
-                                chat_id=user_id, text=chunk, parse_mode="HTML",
-                                disable_web_page_preview=True
-                            )
+                    for chunk in chunks:
+                        await context.bot.send_message(
+                            chat_id=chat_id,
+                            text=chunk,
+                            parse_mode="HTML",
+                            disable_web_page_preview=True
+                        )
                 else:
-                    await application.bot.send_message(
-                        chat_id=user_id, text=message, parse_mode="HTML",
-                        disable_web_page_preview=True, reply_markup=inline_keyboard
+                    await context.bot.send_message(
+                        chat_id=chat_id,
+                        text=message,
+                        parse_mode="HTML",
+                        disable_web_page_preview=True
                     )
+                success_count += 1
+                logger.info(f"✅ News sent to {chat_id}")
 
-                success += 1
+                # تأخير بسيط عشان منحصلش spam
+                await asyncio.sleep(BROADCAST_DELAY_SECONDS)
 
             except Exception as e:
-                failed += 1
-                logger.error(f"Failed to send to {user_id}: {e}")
-                # لو المستخدم قفل البوت، نلغي اشتراكه
-                if "blocked" in str(e).lower() or "deactivated" in str(e).lower():
-                    unsubscribe_user(user_id)
-                    logger.info(f"Unsubscribed blocked user: {user_id}")
+                fail_count += 1
+                logger.error(f"❌ Failed to send to {chat_id}: {e}")
 
-        logger.info(f"Daily broadcast complete: {success} sent, {failed} failed")
+                # لو المستخدم حظر البوت، ألغي اشتراكه تلقائياً
+                if "blocked" in str(e).lower() or "deactivated" in str(e).lower():
+                    unsubscribe_user(chat_id)
+                    logger.info(f"🗑️ Auto-unsubscribed blocked user {chat_id}")
+
+        logger.info(f"📬 Broadcast complete: {success_count} sent, {fail_count} failed out of {len(subscribers)} subscribers")
 
     except Exception as e:
-        logger.error(f"Error in daily broadcast: {e}")
+        logger.error(f"❌ Error in broadcast: {e}")
 
-
-# ═══════════════════════════════════════
-# تشغيل البوت
-# ═══════════════════════════════════════
 
 def main():
-    """تشغيل البوت"""
+    """التشغيل الرئيسي للبوت"""
     if not BOT_TOKEN:
         logger.error("BOT_TOKEN not set!")
         sys.exit(1)
 
-    logger.info(f"Starting {BOT_NAME} v{BOT_VERSION}...")
-
     app = Application.builder().token(BOT_TOKEN).build()
 
-    # تسجيل أوامر البوت
+    # تسجيل الأوامر
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("news", news_command))
@@ -1484,58 +1536,64 @@ def main():
     app.add_handler(CommandHandler("language", language_command))
     app.add_handler(CommandHandler("time", time_command))
     app.add_handler(CommandHandler("sources", sources_command))
+    app.add_handler(CommandHandler("subscribe", subscribe_command))
+    app.add_handler(CommandHandler("unsubscribe", unsubscribe_command))
+    app.add_handler(CommandHandler("subscribers", subscribers_command))
 
-    # معالجة أزرار Inline
+    # أزرار تفاعلية
     app.add_handler(CallbackQueryHandler(button_callback))
 
-    # معالجة الرسائل العادية (محادثة ذكية + أزرار الكيبورد)
+    # الرسائل العادية (محادثة ذكية)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # تسجيل أوامر البوت في تيليجرام
+    # ═══ إعداد المجدول - Scheduler Setup ═══
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+    from apscheduler.triggers.cron import CronTrigger
+    import pytz
+
+    scheduler = AsyncIOScheduler(timezone=pytz.timezone(DAILY_NEWS_TIMEZONE))
+    scheduler.add_job(
+        broadcast_daily_news,
+        CronTrigger(
+            hour=DAILY_NEWS_HOUR,
+            minute=DAILY_NEWS_MINUTE,
+            timezone=pytz.timezone(DAILY_NEWS_TIMEZONE)
+        ),
+        args=[app],
+        id="daily_news_broadcast",
+        name="Daily AI News Broadcast",
+        replace_existing=True
+    )
+    scheduler.start()
+    logger.info(f"⏰ Scheduler started: Daily news at {DAILY_NEWS_HOUR}:{DAILY_NEWS_MINUTE:02d} {DAILY_NEWS_TIMEZONE}")
+
     async def post_init(application):
+        """تعيين أوامر البوت بعد التهيئة"""
+        from telegram import BotCommand
         commands = [
-            ("start", "👋 Start My Bro"),
-            ("help", "📖 Show help"),
-            ("news", "📰 Latest AI news"),
-            ("breaking", "🔴 Breaking AI news"),
-            ("weekly", "📊 Weekly AI summary"),
-            ("trending", "📈 AI trends"),
-            ("search", "🔍 Search AI news"),
-            ("company", "🏢 Company report"),
-            ("ask", "💬 Ask AI"),
-            ("learn", "📚 Learn AI"),
-            ("roadmap", "🗺️ Learning roadmap"),
-            ("language", "🌐 Change language"),
-            ("time", "⏰ Change news time"),
-            ("sources", "📡 Manage sources"),
+            BotCommand("start", "🚀 ابدأ البوت"),
+            BotCommand("help", "ℹ️ المساعدة"),
+            BotCommand("news", "📰 أخبار AI اليوم"),
+            BotCommand("breaking", "🔴 أهم خبر"),
+            BotCommand("weekly", "📊 ملخص الأسبوع"),
+            BotCommand("trending", "📈 الترندات"),
+            BotCommand("search", "🔍 بحث"),
+            BotCommand("company", "🏢 تقرير شركة"),
+            BotCommand("ask", "🤖 اسأل سؤال"),
+            BotCommand("learn", "📚 تعلم"),
+            BotCommand("roadmap", "🗺️ خارطة طريق"),
+            BotCommand("language", "🌐 تغيير اللغة"),
+            BotCommand("subscribe", "📬 اشترك في الأخبار"),
+            BotCommand("unsubscribe", "❌ إلغاء الاشتراك"),
+            BotCommand("subscribers", "📊 عدد المشتركين"),
         ]
         await application.bot.set_my_commands(commands)
-        logger.info("Bot commands registered")
-
-        # ═══ إعداد الجدول اليومي لبث الأخبار ═══
-        try:
-            from apscheduler.schedulers.asyncio import AsyncIOScheduler
-            scheduler = AsyncIOScheduler(timezone="Africa/Cairo")
-
-            # بث الأخبار يومياً الساعة 9 الصبح بتوقيت القاهرة
-            scheduler.add_job(
-                send_daily_news_broadcast,
-                "cron",
-                hour=9,
-                minute=0,
-                args=[application],
-                id="daily_news_broadcast",
-                replace_existing=True,
-            )
-
-            scheduler.start()
-            logger.info("Daily news broadcast scheduled at 09:00 Cairo time")
-        except ImportError:
-            logger.warning("APScheduler not installed. Daily broadcast disabled. Install with: pip install APScheduler")
+        sub_count = get_subscriber_count()
+        logger.info(f"🤖 My Bro v{BOT_VERSION} started! 📬 {sub_count} subscribers")
 
     app.post_init = post_init
 
-    logger.info(f"{BOT_NAME} v{BOT_VERSION} is running! 🚀")
+    logger.info(f"Starting My Bro v{BOT_VERSION}...")
     app.run_polling(drop_pending_updates=True)
 
 

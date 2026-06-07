@@ -60,6 +60,11 @@ def help_message(language: str = "ar") -> str:
 /learn &lt;موضوع&gt; — شرح تعليمي
 /roadmap &lt;موضوع&gt; — خارطة طريق
 
+📬 <b>الاشتراك في الأخبار</b>
+/subscribe — اشترك في الأخبار اليومية
+/unsubscribe — إلغاء الاشتراك
+/subscribers — عدد المشتركين
+
 ⚙️ <b>الإعدادات</b>
 /language — تغيير اللغة
 /time — تغيير وقت الأخبار
@@ -88,6 +93,11 @@ def help_message(language: str = "ar") -> str:
 /ask &lt;question&gt; — Direct question
 /learn &lt;topic&gt; — Educational explanation
 /roadmap &lt;topic&gt; — Learning roadmap
+
+📬 <b>News Subscription</b>
+/subscribe — Subscribe to daily news
+/unsubscribe — Unsubscribe
+/subscribers — Subscriber count
 
 ⚙️ <b>Settings</b>
 /language — Change language
@@ -179,6 +189,102 @@ def unsubscription_confirmed(language: str = "ar") -> str:
 
 You won't receive daily news anymore.
 💡 You can re-subscribe anytime from ⚙️ Settings"""
+
+
+def daily_news_header(language: str = "ar", date_str: str = "") -> str:
+    """هيدر الأخبار اليومية المرسلة للمشتركين"""
+    if language == "ar":
+        return f"""📬 <b>أخبار الذكاء الاصطناعي اليوم</b>
+📅 {date_str}
+
+━━━━━━━━━━━━━━━━━
+
+"""
+    else:
+        return f"""📬 <b>Today's AI News</b>
+📅 {date_str}
+
+━━━━━━━━━━━━━━━━━
+
+"""
+
+
+def daily_news_footer(subscriber_name: str = "", language: str = "ar") -> str:
+    """فوتر الأخبار اليومية"""
+    if language == "ar":
+        return f"""
+
+━━━━━━━━━━━━━━━━━
+🤖 <i>My Bro — أخبارك اليومية</i>
+💡 ممكن تلغي الاشتراك أي وقت من ⚙️ الإعدادات"""
+    else:
+        return f"""
+
+━━━━━━━━━━━━━━━━━
+🤖 <i>My Bro — Your Daily News</i>
+💡 You can unsubscribe anytime from ⚙️ Settings"""
+
+
+def subscribe_command_message(language: str = "ar") -> str:
+    """رسالة أمر الاشتراك"""
+    if language == "ar":
+        return """📬 <b>الاشتراك في الأخبار اليومية</b>
+━━━━━━━━━━━━━━━━━
+
+هابعتلك أهم أخبار الذكاء الاصطناعي كل يوم الساعة 9 الصبح بتوقيت القاهرة 🌅
+
+✅ آخر أخبار AI من مصادر عالمية
+✅ ملخص بالعربية مفهوم وبسيط
+✅ مجاني تماماً
+
+👇 اضغط على الزر بالأسفل عشان تشترك!"""
+    else:
+        return """📬 <b>Subscribe to Daily News</b>
+━━━━━━━━━━━━━━━━━
+
+I'll send you the most important AI news every day at 9 AM Cairo time 🌅
+
+✅ Latest AI news from global sources
+✅ Clear and simple summaries
+✅ Completely free
+
+👇 Tap the button below to subscribe!"""
+
+
+def unsubscribe_command_message(language: str = "ar") -> str:
+    """رسالة أمر إلغاء الاشتراك"""
+    if language == "ar":
+        return """❌ <b>إلغاء اشتراك الأخبار اليومية</b>
+━━━━━━━━━━━━━━━━━
+
+هل أنت متأكد إنك عايز تلغي اشتراكك في الأخبار اليومية؟
+
+💡 ممكن تشترك تاني أي وقت."""
+    else:
+        return """❌ <b>Unsubscribe from Daily News</b>
+━━━━━━━━━━━━━━━━━
+
+Are you sure you want to unsubscribe from daily news?
+
+💡 You can re-subscribe anytime."""
+
+
+def subscribers_info(count: int, language: str = "ar") -> str:
+    """معلومات المشتركين"""
+    if language == "ar":
+        return f"""📊 <b>معلومات المشتركين</b>
+━━━━━━━━━━━━━━━━━
+
+📬 عدد المشتركين في الأخبار اليومية: <b>{count}</b>
+⏰ موعد الإرسال: 9:00 صباحاً بتوقيت القاهرة
+📰 المصادر: {len(__import__('config').RSS_FEEDS)} مصدر RSS عالمي"""
+    else:
+        return f"""📊 <b>Subscribers Info</b>
+━━━━━━━━━━━━━━━━━
+
+📬 Daily news subscribers: <b>{count}</b>
+⏰ Send time: 9:00 AM Cairo time
+📰 Sources: {len(__import__('config').RSS_FEEDS)} global RSS feeds"""
 
 
 def language_selection() -> str:

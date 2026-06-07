@@ -246,12 +246,24 @@ RETRY_DELAY = 5  # كان 10، دلوقتي 5
 # ═══════════════════════════════════════
 
 BOT_NAME = "My Bro"
-BOT_VERSION = "3.1"
+BOT_VERSION = "4.0"
 
 # Memory / Storage
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 USERS_FILE = os.path.join(DATA_DIR, "users.json")
 LOG_FILE = os.path.join(DATA_DIR, "bot.log")
+
+# ═══════════════════════════════════════
+# إعدادات الجدولة - Scheduler Settings
+# ═══════════════════════════════════════
+
+# توقيت بث الأخبار اليومية (توقيت القاهرة)
+DAILY_NEWS_HOUR = 9   # 9 الصبح
+DAILY_NEWS_MINUTE = 0  # الساعة 9:00 بالظبط
+DAILY_NEWS_TIMEZONE = "Africa/Cairo"
+
+# تأخير بين إرسال الأخبار لكل مشترك (ثانية) - عشان ميحصلش spam
+BROADCAST_DELAY_SECONDS = 0.5
 
 # No News Message
 NO_NEWS_MESSAGE = "لا توجد اليوم أخبار كبيرة في مجال الذكاء الاصطناعي تستحق التنبيه. 🤖"

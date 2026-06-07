@@ -12,8 +12,17 @@
       "wired.com"
     ],
     "created_at": "2026-06-07T20:38:01.497744",
-    "last_interaction": "2026-06-07T21:15:22.933961",
+    "last_interaction": "2026-06-07T21:26:10.170524",
     "commands_used": 15,
-    "chat_count": 8
+    "chat_count": 9
+  },
+  "7406055354": {
+    "language": "ar",
+    "news_time": "09:00",
+    "sources": [],
+    "created_at": "2026-06-07T21:38:30.748560",
+    "last_interaction": "2026-06-07T21:39:52.856013",
+    "commands_used": 1,
+    "chat_count": 2
   }
 }
