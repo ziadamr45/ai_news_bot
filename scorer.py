@@ -168,28 +168,22 @@ def calculate_article_score(article: Dict) -> float:
     return total_score
 
 
-def rank_articles(articles: List[Dict], max_count: int = 5, min_count: int = 3) -> List[Dict]:
+def rank_articles(articles: List[Dict], max_count: int = 50, min_count: int = 0) -> List[Dict]:
     """
-    ترتيب الأخبار حسب النتيجة واختيار الأهم
+    ترتيب الأخبار حسب النتيجة - يرسل كل الأخبار المتاحة بدون حد
     """
+    if not articles:
+        return articles
+
     # حساب النتيجة لكل خبر
     for article in articles:
         calculate_article_score(article)
 
-    # ترتيب تنازلي
+    # ترتيب تنازلي - الأهم الأول
     sorted_articles = sorted(articles, key=lambda x: x["scores"]["total"], reverse=True)
 
-    # تحديد عدد الأخبار
+    # تحديد عدد الأخبار (بدون حد عملي)
     count = min(max_count, len(sorted_articles))
-
-    # لو أقل من الحد الأدنى، نرجع اللي عندنا
-    if len(sorted_articles) < min_count:
-        # بس لازم تكون أخبار مهمة (نتيجة > 3)
-        significant = [a for a in sorted_articles if a["scores"]["total"] > 3]
-        if len(significant) < min_count:
-            logger.info(f"Not enough significant articles ({len(significant)} < {min_count})")
-            return significant
-
     selected = sorted_articles[:count]
 
     # تحديد أهم خبر
@@ -198,7 +192,7 @@ def rank_articles(articles: List[Dict], max_count: int = 5, min_count: int = 3) 
         for article in selected[1:]:
             article["is_top"] = False
 
-    logger.info(f"Selected top {len(selected)} articles out of {len(articles)}")
+    logger.info(f"Selected {len(selected)} articles out of {len(articles)}")
     for i, article in enumerate(selected):
         logger.info(f"  #{i+1}: {article['title'][:60]} (Score: {article['scores']['total']})")
 

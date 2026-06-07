@@ -21,8 +21,8 @@ OPENROUTER_FALLBACK_MODELS = [
 ]
 
 # News Settings
-MAX_NEWS_COUNT = 5
-MIN_NEWS_COUNT = 3
+MAX_NEWS_COUNT = 50  # بدون حد عملي - يرسل كل الأخبار المتاحة
+MIN_NEWS_COUNT = 0   # حتى لو خبر واحد يبعته
 NEWS_FETCH_HOURS = 24  # جلب أخبار آخر 24 ساعة
 
 # Scoring Weights
