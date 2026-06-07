@@ -246,7 +246,7 @@ RETRY_DELAY = 5  # كان 10، دلوقتي 5
 # ═══════════════════════════════════════
 
 BOT_NAME = "My Bro"
-BOT_VERSION = "2.1"
+BOT_VERSION = "3.0"
 
 # Memory / Storage
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")

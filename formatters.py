@@ -5,37 +5,37 @@
 
 
 def welcome_message(language: str = "ar") -> str:
-    """رسالة الترحيب"""
+    """رسالة الترحيب الاحترافية"""
     if language == "ar":
         return """👋 <b>أهلاً بك في My Bro</b>
 
-رفيقك الذكي في عالم الذكاء الاصطناعي:
+أنا مساعدك الذكي لمتابعة عالم الذكاء الاصطناعي.
 
-📰 أخبار AI فورية
-🤖 محادثة ذكية
-📚 تعلم AI
-🔍 بحث متقدم
-📈 تتبع الترندات
+يمكنني مساعدتك في:
 
-🔍 بحث ويب مباشر
+📰 أخبار الذكاء الاصطناعي
+🤖 الإجابة على الأسئلة
+📚 التعلم والتطوير
+🔍 البحث عن الأخبار
+📈 متابعة التريندات
+🏢 متابعة الشركات
 
-اكتب <b>/help</b> لعرض الأوامر المتاحة
-أو فقط اكتب أي سؤال وسأجيبك! 💬"""
+اختر من الأزرار بالأسفل أو اكتب سؤالك مباشرة. 💬"""
     else:
         return """👋 <b>Welcome to My Bro</b>
 
-Your AI companion for:
+I'm your smart AI assistant for following the AI world.
+
+I can help you with:
 
 📰 AI News
-🤖 AI Chat
-📚 Learning AI
-🔍 AI Search
-📈 AI Trends
+🤖 Answering Questions
+📚 Learning & Development
+🔍 Searching News
+📈 Following Trends
+🏢 Company Reports
 
-🔍 Web Search
-
-Type <b>/help</b> to see available commands
-Or just ask me anything! 💬"""
+Choose from buttons below or just type your question. 💬"""
 
 
 def help_message(language: str = "ar") -> str:
@@ -120,10 +120,10 @@ def format_error(message: str, language: str = "ar") -> str:
 
 
 def format_loading(language: str = "ar") -> str:
-    """رسالة تحميل"""
+    """رسالة تحميل احترافية"""
     if language == "ar":
-        return "⏳ جاري المعالجة..."
-    return "⏳ Processing..."
+        return "⏳ جاري المعالجة...\n 🔴⚪⚪"
+    return "⏳ Processing...\n 🔴⚪⚪"
 
 
 def language_selection() -> str:
