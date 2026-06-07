@@ -126,6 +126,9 @@ Question: {query}
             system = "You are a smart assistant. Be accurate and use appropriate emojis. NEVER use Markdown."
 
         response = _call_ai_sync(prompt, system_prompt=system, temperature=0.5, max_tokens=1500)
+        from formatters import clean_ai_response
+        if response:
+            response = clean_ai_response(response)
         return response or ("لم أتمكن من العثور على معلومات. 🤖" if language == "ar" else "I couldn't find information. 🤖")
 
     # تجميع نتائج البحث
@@ -170,6 +173,9 @@ Format requirements:
         system = "You are a smart assistant answering based on real search results. Use emojis and nice HTML formatting. NEVER use Markdown."
 
     response = _call_ai_sync(prompt, system_prompt=system, temperature=0.5, max_tokens=1500)
+    from formatters import clean_ai_response
+    if response:
+        response = clean_ai_response(response)
     return response or ("لم أتمكن من معالجة نتائج البحث. 🤖" if language == "ar" else "I couldn't process search results. 🤖")
 
 

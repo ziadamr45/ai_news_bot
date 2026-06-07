@@ -13,18 +13,18 @@ CHAT_ID = os.environ.get("CHAT_ID", "")
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
-# النموذج الرئيسي - سريع وكفؤ
-OPENROUTER_MODEL = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
+# النموذج الرئيسي - سريع وجودة عالية (مش reasoning عشان ميبطأش)
+OPENROUTER_MODEL = "qwen/qwen3-8b:free"
 
-# النموذج السريع - للأسئلة البسيطة والتحيات
-FAST_MODEL = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
+# النموذج السريع - للأسئلة البسيطة والتحيات (أسرع نموذج)
+FAST_MODEL = "google/gemma-3-4b-it:free"
 
-# النماذج البديلة - مرتبة حسب السرعة
+# النماذج البديلة - مرتبة حسب السرعة والجودة
 OPENROUTER_FALLBACK_MODELS = [
-    "nvidia/nemotron-3-ultra-550b-a55b:free",
+    "meta-llama/llama-4-scout:free",
+    "mistralai/mistral-small-3.1-24b-instruct:free",
     "qwen/qwen3-235b-a22b:free",
-    "openrouter/owl-alpha",
-    "nvidia/nemotron-3-super-120b-a12b:free",
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
 ]
 
 # News Settings

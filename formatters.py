@@ -15,31 +15,32 @@ def clean_ai_response(text: str) -> str:
     if not text:
         return text
 
-    # 1. تحويل **text** أو __text__ لـ <b>text</b> (bold)
+    # 1. تحويل ```code block``` لـ <code>code</code> (الأول عشان ده الأطول)
+    text = re.sub(r'```\w*\n?(.*?)```', r'<code>\1</code>', text, flags=re.DOTALL)
+
+    # 2. تحويل **text** أو __text__ لـ <b>text</b> (bold)
     text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
     text = re.sub(r'__(.+?)__', r'<b>\1</b>', text)
 
-    # 2. تحويل *text* أو _text_ لـ <i>text</i> (italic) - بس لو مش جوا tag
+    # 3. تحويل *text* لـ <i>text</i> (italic) - بس لو مش جوا tag
     text = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'<i>\1</i>', text)
-    text = re.sub(r'(?<!_)_(?!_)(.+?)(<!_)_(?!_)', r'<i>\1</i>', text)
 
-    # 3. تحويل ~~text~~ لـ <s>text</s> (strikethrough)
+    # 4. تحويل _text_ لـ <i>text</i> (italic) - لو مش جوا كلمة
+    text = re.sub(r'(?<!\w)_(?!_)(.+?)(<!_)_(?!\w)', r'<i>\1</i>', text)
+
+    # 5. تحويل ~~text~~ لـ <s>text</s> (strikethrough)
     text = re.sub(r'~~(.+?)~~', r'<s>\1</s>', text)
 
-    # 4. تحويل `code` لـ <code>code</code>
+    # 6. تحويل `code` لـ <code>code</code>
     text = re.sub(r'`([^`]+)`', r'<code>\1</code>', text)
 
-    # 5. تحويل ```code block``` لـ <code>code</code>
-    text = re.sub(r'```\w*\n?(.*?)```', r'<code>\1</code>', text, flags=re.DOTALL)
-
-    # 6. شيل ### و ## و # (عناوين Markdown)
+    # 7. شيل ### و ## و # (عناوين Markdown)
     text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
 
-    # 7. شيل --- أو *** أو ___ (خطوط أفقية)
+    # 8. شيل --- أو *** أو ___ (خطوط أفقية)
     text = re.sub(r'^[-*_]{3,}\s*$', '', text, flags=re.MULTILINE)
 
-    # 8. شيل | من الجداول (pipe)
-    # لو في سطر فيه | كتير يبقى جدول - نحوله لأسطر عادية
+    # 9. معالجة الجداول (pipe |) - نحولها لأسطر عادية
     lines = text.split('\n')
     cleaned_lines = []
     for line in lines:
@@ -54,13 +55,13 @@ def clean_ai_response(text: str) -> str:
         cleaned_lines.append(line)
     text = '\n'.join(cleaned_lines)
 
-    # 9. شيل - في بداية السطور (bullet points) واستبدله بـ •
+    # 10. شيل - في بداية السطور (bullet points) واستبدله بـ •
     text = re.sub(r'^[-*]\s+', '• ', text, flags=re.MULTILINE)
 
-    # 10. شيل > في بداية السطور (quotes)
+    # 11. شيل > في بداية السطور (quotes)
     text = re.sub(r'^>\s+', '', text, flags=re.MULTILINE)
 
-    # 11. شيل أي * متبقية لوحدها (مش جوا tag)
+    # 12. شيل أي * متبقية لوحدها (مش جوا tag)
     # بخلص الـ * اللي متبقية بره الـ HTML tags
     result = []
     in_tag = False
@@ -73,14 +74,16 @@ def clean_ai_response(text: str) -> str:
             result.append(char)
         elif char == '*' and not in_tag:
             continue  # شيل الـ * البره
+        elif char == '|' and not in_tag:
+            continue  # شيل أي | متبقي
         else:
             result.append(char)
     text = ''.join(result)
 
-    # 12. شيل مسافات زيادة في نهاية السطور
+    # 13. شيل مسافات زيادة في نهاية السطور
     text = re.sub(r'[ \t]+$', '', text, flags=re.MULTILINE)
 
-    # 13. شيل أسطر فاضية متكررة (أكتر من 2)
+    # 14. شيل أسطر فاضية متكررة (أكتر من 2)
     text = re.sub(r'\n{3,}', '\n\n', text)
 
     return text.strip()
