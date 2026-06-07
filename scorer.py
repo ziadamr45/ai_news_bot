@@ -1,155 +1,205 @@
-"""Score and rank news articles by importance."""
+"""
+تقييم الأخبار - News Scoring Module
+يقوم بتقييم كل خبر بناءً على عدة معايير لاختيار الأهم
+"""
 
+import re
 import logging
-from datetime import datetime, timezone, timedelta
 from typing import List, Dict
+from urllib.parse import urlparse
 
-from config import (
-    SOURCE_PRIORITIES,
-    SOURCE_PRIORITY_WEIGHT,
-    KEYWORD_RELEVANCE_WEIGHT,
-    RECENCY_WEIGHT,
-    TITLE_QUALITY_WEIGHT,
-    CAIRO_TZ,
-)
+from config import SCORE_WEIGHTS, SOURCE_CREDIBILITY, AI_KEYWORDS
 
 logger = logging.getLogger(__name__)
 
 
-def _source_priority_score(article: Dict) -> float:
-    """Score based on source credibility and priority."""
-    domain = article.get("source_domain", "")
+def calculate_ai_relevance(title: str, description: str = "") -> float:
+    """
+    حساب صلة الخبر بالذكاء الاصطناعي (0-10)
+    كلما زاد عدد الكلمات المفتاحية الموجودة، زادت النتيجة
+    """
+    text = f"{title} {description}".lower()
+    match_count = 0
+    total_keywords = len(AI_KEYWORDS)
 
-    # Check exact domain match
-    if domain in SOURCE_PRIORITIES:
-        return float(SOURCE_PRIORITIES[domain])
+    high_value_keywords = [
+        "openai", "chatgpt", "gpt-4", "gpt-5", "o1", "o3", "o4",
+        "gemini", "deepmind", "claude", "anthropic", "grok",
+        "agi", "ai agents", "ai agent", "foundation model",
+        "large language model", "sora"
+    ]
 
-    # Check partial domain match
-    for source_domain, priority in SOURCE_PRIORITIES.items():
-        if source_domain in domain or domain.endswith(source_domain):
-            return float(priority)
+    high_value_matches = 0
+    for keyword in AI_KEYWORDS:
+        if len(keyword) <= 4:
+            pattern = r'\b' + re.escape(keyword) + r'\b'
+            if re.search(pattern, text, re.IGNORECASE):
+                match_count += 1
+                if keyword in high_value_keywords:
+                    high_value_matches += 1
+        else:
+            if keyword.lower() in text:
+                match_count += 1
+                if keyword in high_value_keywords:
+                    high_value_matches += 1
 
-    # Unknown source — low score
-    return 2.0
-
-
-def _keyword_relevance_score(article: Dict) -> float:
-    """Score based on number and quality of AI keyword matches."""
-    keyword_count = article.get("ai_keyword_count", 0)
-    matched = article.get("matched_keywords", [])
-
-    if keyword_count == 0:
-        return 0.0
-
-    # High-value keywords that indicate major news
-    high_value_keywords = {
-        "openai", "chatgpt", "gpt-4", "gpt-5", "gemini",
-        "deepmind", "anthropic", "claude ai", "agi",
-        "ai regulation", "ai act", "ai safety",
-        "ai funding", "ai investment",
-    }
-
-    high_value_count = sum(1 for k in matched if k.lower() in high_value_keywords)
-
-    # Base score from keyword count (capped at 5)
-    base_score = min(keyword_count, 5) / 5.0 * 7.0
+    # النتيجة الأساسية بناءً على عدد التطابقات
+    base_score = min(10, (match_count / 5) * 10)
 
     # Bonus for high-value keywords
-    bonus = high_value_count * 1.5
+    bonus = min(3, high_value_matches * 1.5)
 
-    return min(base_score + bonus, 10.0)
+    score = min(10, base_score + bonus)
+    return round(score, 2)
 
 
-def _recency_score(article: Dict) -> float:
-    """Score based on how recent the article is."""
-    published = article.get("published", "")
-    if not published:
-        return 5.0  # Middle score if we can't determine recency
+def calculate_importance(title: str, description: str = "") -> float:
+    """
+    حساب أهمية الخبر (0-10)
+    بناءً على كلمات تدل على أهمية كبيرة
+    """
+    text = f"{title} {description}".lower()
 
+    importance_keywords = [
+        ("breakthrough", 3), ("announced", 2), ("launched", 2), ("released", 2),
+        ("first", 2), ("revolutionary", 3), ("historic", 3), ("major", 2),
+        ("groundbreaking", 3), ("new model", 3), ("new ai", 2.5),
+        ("update", 1.5), ("upgrade", 1.5), ("unveiled", 2),
+        ("acquisition", 2.5), ("billion", 2), ("funding", 2),
+        ("banned", 2), ("regulation", 2), ("law", 2),
+        ("beat", 2), ("surpass", 2), ("record", 2),
+        ("open source", 2.5), ("free", 1.5),
+    ]
+
+    score = 0
+    for keyword, weight in importance_keywords:
+        if keyword in text:
+            score += weight
+
+    return min(10, round(score, 2))
+
+
+def calculate_industry_impact(title: str, description: str = "") -> float:
+    """
+    حساب تأثير الخبر على الصناعة (0-10)
+    بناءً على مدى تأثير الخبر على الصناعة ككل
+    """
+    text = f"{title} {description}".lower()
+
+    impact_keywords = [
+        ("industry", 2), ("enterprise", 2), ("business", 1.5),
+        ("market", 2), ("competitor", 2), ("competition", 2),
+        ("regulation", 3), ("law", 3), ("ban", 3), ("policy", 2.5),
+        ("safety", 2), ("risk", 2), ("danger", 2), ("threat", 2),
+        ("job", 2), ("employment", 2), ("workforce", 2), ("replace", 2.5),
+        ("billion", 3), ("trillion", 3), ("investment", 2.5),
+        ("partnership", 2), ("collaboration", 1.5),
+        ("open source", 3), ("democratize", 2.5),
+        ("medical", 2), ("healthcare", 2), ("education", 2),
+        ("military", 3), ("defense", 2.5),
+    ]
+
+    score = 0
+    for keyword, weight in impact_keywords:
+        if keyword in text:
+            score += weight
+
+    return min(10, round(score, 2))
+
+
+def get_source_credibility(url: str) -> float:
+    """
+    حساب مصداقية المصدر (0-10)
+    بناءً على جدول المصادر الموثوقة
+    """
     try:
-        from dateutil import parser as date_parser
-        dt = date_parser.parse(published)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
+        domain = urlparse(url).netloc.lower()
+        # إزالة www. لو موجود
+        domain = domain.replace("www.", "")
 
-        now = datetime.now(timezone.utc)
-        age_hours = (now - dt).total_seconds() / 3600
+        # البحث المباشر
+        if domain in SOURCE_CREDIBILITY:
+            return SOURCE_CREDIBILITY[domain]
 
-        if age_hours < 0:
-            return 10.0  # Future article (clock skew) — give max score
-        elif age_hours < 6:
-            return 10.0
-        elif age_hours < 12:
-            return 8.0
-        elif age_hours < 24:
-            return 6.0
-        elif age_hours < 48:
-            return 3.0
-        else:
-            return 1.0
-    except Exception:
-        return 5.0
+        # البحث الجزئي
+        for source_domain, score in SOURCE_CREDIBILITY.items():
+            if source_domain in domain or domain in source_domain:
+                return score
+
+    except Exception as e:
+        logger.warning(f"Error parsing URL for credibility: {e}")
+
+    # قيمة افتراضية للمصادر غير المعروفة
+    return 5.0
 
 
-def _title_quality_score(article: Dict) -> float:
-    """Score based on title quality indicators."""
+def calculate_article_score(article: Dict) -> float:
+    """
+    حساب النتيجة الإجمالية للخبر
+    """
     title = article.get("title", "")
-    exclusion_count = article.get("exclusion_count", 0)
+    description = article.get("description", "")
+    url = article.get("link", "")
 
-    score = 5.0  # Base score
+    ai_relevance = calculate_ai_relevance(title, description)
+    importance = calculate_importance(title, description)
+    industry_impact = calculate_industry_impact(title, description)
+    source_credibility = get_source_credibility(url)
 
-    # Longer, more specific titles tend to be more important
-    if len(title) > 50:
-        score += 1.0
-    if len(title) > 80:
-        score += 0.5
+    # حساب النتيجة المرجحة
+    total_score = (
+        ai_relevance * SCORE_WEIGHTS["ai_relevance"] +
+        importance * SCORE_WEIGHTS["importance"] +
+        industry_impact * SCORE_WEIGHTS["industry_impact"] +
+        source_credibility * SCORE_WEIGHTS["source_credibility"]
+    )
 
-    # Penalize exclusion keywords
-    score -= exclusion_count * 2.0
+    article["scores"] = {
+        "ai_relevance": ai_relevance,
+        "importance": importance,
+        "industry_impact": industry_impact,
+        "source_credibility": source_credibility,
+        "total": round(total_score, 2)
+    }
 
-    # Bonus for source domain being a known entity
-    source = article.get("source", "")
-    tier1_sources = ["OpenAI Blog", "Google AI Blog", "Microsoft AI Blog", "NVIDIA Blog", "Reuters"]
-    if source in tier1_sources:
-        score += 2.0
+    logger.info(f"Score for '{title[:50]}': {total_score:.2f} "
+                f"(AI:{ai_relevance} Imp:{importance} Impact:{industry_impact} Src:{source_credibility})")
 
-    return max(score, 0.0)
-
-
-def score_article(article: Dict) -> float:
-    """Calculate composite score for an article."""
-    source_score = _source_priority_score(article) * SOURCE_PRIORITY_WEIGHT
-    keyword_score = _keyword_relevance_score(article) * KEYWORD_RELEVANCE_WEIGHT
-    recency_score = _recency_score(article) * RECENCY_WEIGHT
-    title_score = _title_quality_score(article) * TITLE_QUALITY_WEIGHT
-
-    total = source_score + keyword_score + recency_score + title_score
-
-    return round(total, 2)
+    return total_score
 
 
-def score_and_rank(articles: List[Dict], max_items: int = 5) -> List[Dict]:
-    """Score all articles and return top items."""
-    if not articles:
-        return []
-
-    # Calculate scores
+def rank_articles(articles: List[Dict], max_count: int = 5, min_count: int = 3) -> List[Dict]:
+    """
+    ترتيب الأخبار حسب النتيجة واختيار الأهم
+    """
+    # حساب النتيجة لكل خبر
     for article in articles:
-        article["score"] = score_article(article)
+        calculate_article_score(article)
 
-    # Sort by score (descending)
-    ranked = sorted(articles, key=lambda x: x["score"], reverse=True)
+    # ترتيب تنازلي
+    sorted_articles = sorted(articles, key=lambda x: x["scores"]["total"], reverse=True)
 
-    # Log top scores for debugging
-    for i, article in enumerate(ranked[:10]):
-        logger.info(
-            f"  #{i+1} Score: {article['score']:.1f} | "
-            f"Source: {article.get('source', 'unknown')} | "
-            f"Title: {article['title'][:60]}..."
-        )
+    # تحديد عدد الأخبار
+    count = min(max_count, len(sorted_articles))
 
-    # Return top items
-    top = ranked[:max_items]
+    # لو أقل من الحد الأدنى، نرجع اللي عندنا
+    if len(sorted_articles) < min_count:
+        # بس لازم تكون أخبار مهمة (نتيجة > 3)
+        significant = [a for a in sorted_articles if a["scores"]["total"] > 3]
+        if len(significant) < min_count:
+            logger.info(f"Not enough significant articles ({len(significant)} < {min_count})")
+            return significant
 
-    logger.info(f"Selected top {len(top)} articles (from {len(articles)} candidates)")
-    return top
+    selected = sorted_articles[:count]
+
+    # تحديد أهم خبر
+    if selected:
+        selected[0]["is_top"] = True
+        for article in selected[1:]:
+            article["is_top"] = False
+
+    logger.info(f"Selected top {len(selected)} articles out of {len(articles)}")
+    for i, article in enumerate(selected):
+        logger.info(f"  #{i+1}: {article['title'][:60]} (Score: {article['scores']['total']})")
+
+    return selected

@@ -1,116 +1,125 @@
-"""Configuration constants for the AI News Bot."""
+"""
+إعدادات البوت - Bot Configuration
+يتم قراءة جميع البيانات الحساسة من متغيرات البيئة (GitHub Secrets)
+"""
 
 import os
-from datetime import datetime, timezone, timedelta
 
-# Cairo timezone
-CAIRO_TZ = timezone(timedelta(hours=2))
-
-# Environment variables
+# Telegram Settings
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 CHAT_ID = os.environ.get("CHAT_ID", "")
+
+# Gemini API Settings
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+GEMINI_MODEL = "gemini-2.0-flash"
 
-# News settings
-MAX_NEWS_ITEMS = 5
-MIN_NEWS_ITEMS = 1
-NEWS_LOOKBACK_HOURS = 24
+# News Settings
+MAX_NEWS_COUNT = 5
+MIN_NEWS_COUNT = 3
+NEWS_FETCH_HOURS = 24  # جلب أخبار آخر 24 ساعة
 
-# Scoring weights
-SOURCE_PRIORITY_WEIGHT = 4.0
-KEYWORD_RELEVANCE_WEIGHT = 3.0
-RECENCY_WEIGHT = 1.5
-TITLE_QUALITY_WEIGHT = 1.0
-
-# Source priority levels (10 = highest)
-SOURCE_PRIORITIES = {
-    # Highest priority (Tier 1)
-    "reuters.com": 10,
-    "openai.com": 10,
-    "deepmind.google": 10,
-    "deepmind.com": 10,
-    "anthropic.com": 10,
-    "blogs.microsoft.com": 9,
-    "microsoft.com": 9,
-    "blogs.nvidia.com": 9,
-    "nvidia.com": 9,
-    # Secondary priority (Tier 2)
-    "techcrunch.com": 7,
-    "technologyreview.com": 7,
-    "venturebeat.com": 6,
-    "theverge.com": 6,
-    "huggingface.co": 6,
-    # Additional sources
-    "arstechnica.com": 5,
-    "wired.com": 5,
-    "zdnet.com": 4,
-    "engadget.com": 4,
-    "blog.google": 7,
-    "ai.google": 8,
+# Scoring Weights
+SCORE_WEIGHTS = {
+    "ai_relevance": 0.35,      # صلة بالذكاء الاصطناعي
+    "importance": 0.25,        # أهمية الخبر
+    "industry_impact": 0.25,   # تأثير على الصناعة
+    "source_credibility": 0.15 # مصداقية المصدر
 }
 
-# AI-related keywords for filtering (case-insensitive)
+# Source Credibility Scores (0-10)
+SOURCE_CREDIBILITY = {
+    "openai.com": 10,
+    "deepmind.google": 10,
+    "anthropic.com": 10,
+    "blog.google": 9,
+    "reuters.com": 9,
+    "techcrunch.com": 8,
+    "theverge.com": 8,
+    "arstechnica.com": 7,
+    "venturebeat.com": 7,
+    "wired.com": 7,
+    "arxiv.org": 8,
+    "huggingface.co": 8,
+    "ai.google": 9,
+    "mistral.ai": 8,
+    "x.ai": 8,
+    "meta.ai": 9,
+    "nvidia.com": 8,
+}
+
+# AI Keywords for filtering (English)
 AI_KEYWORDS = [
-    "openai", "chatgpt", "gpt-4", "gpt-5", "gpt model", "o1", "o3",
-    "google ai", "gemini", "deepmind", "alphafold",
-    "anthropic", "claude ai",
-    "xai", "grok",
-    "meta ai", "llama",
-    "microsoft ai", "copilot ai", "phi-",
-    "nvidia ai", "nvidia chip", "gpu ai",
-    "ai agent", "ai agents", "autonomous ai",
-    "foundation model", "large language model", "llm",
-    "ai research", "ai paper", "neurips", "icml", "iclr",
-    "ai funding", "ai investment", "ai valuation",
-    "ai regulation", "ai law", "ai policy", "ai act",
-    "ai product", "ai launch", "ai release",
-    "artificial intelligence", "machine learning",
-    "generative ai", "diffusion model",
-    "ai safety", "ai alignment", "ai risk",
-    "transformer model", "multimodal ai",
-    "ai chip", "ai hardware", "ai infrastructure",
-    "sora", "dall-e", "midjourney",
+    "openai", "chatgpt", "gpt-4", "gpt-5", "o1", "o3", "o4",
+    "gemini", "deepmind", "google ai",
+    "claude", "anthropic",
+    "grok", "x.ai", "xAI",
+    "ai agents", "ai agent", "autonomous ai",
+    "foundation model", "foundation models", "large language model", "llm",
+    "artificial intelligence", "machine learning", "deep learning",
+    "generative ai", "genai",
+    "diffusion model", "text-to-image", "text-to-video",
+    "sora", "dall-e", "midjourney", "stable diffusion",
+    "copilot", "ai assistant",
+    "mistral", "llama", "phi",
+    "neural network", "transformer",
     "agi", "artificial general intelligence",
+    "reinforcement learning", "rlhf",
+    "multimodal ai", "vision language model",
+    "ai regulation", "ai safety", "ai alignment",
+    "robot", "humanoid", "autonomous",
+    "nvidia ai", "gpu ai", "ai chip",
+    "ai startup", "ai funding", "ai acquisition",
 ]
 
-# Exclusion keywords (if found, reduce score significantly)
+# Exclusion Keywords - topics to filter OUT
 EXCLUSION_KEYWORDS = [
     "smartphone", "iphone", "android phone", "samsung galaxy",
-    "laptop review", "gaming laptop", "macbook",
-    "gaming", "game release", "esports", "playstation", "xbox",
-    "crypto", "bitcoin", "ethereum", "nft",
-    "stock market", "share price",
-    "software update", "ios update", "android update",
-    "rumor", "leaked", "unconfirmed",
-    "discount", "deal", "sale",
+    "crypto", "bitcoin", "ethereum", "nft", "blockchain",
+    "gaming", "game release", "esports",
+    "social media drama", "tiktok ban",
+    "electric vehicle", "ev car", "tesla stock",
+    "weather", "sports", "celebrity",
 ]
 
 # RSS Feed URLs
-RSS_FEEDS = {
-    # Tier 1 sources
-    "OpenAI Blog": "https://openai.com/blog/rss.xml",
-    "Google AI Blog": "https://blog.google/technology/ai/rss/",
-    "Microsoft AI Blog": "https://blogs.microsoft.com/ai/feed/",
-    "NVIDIA Blog": "https://blogs.nvidia.com/feed/",
-    # Tier 2 sources
-    "TechCrunch AI": "https://techcrunch.com/category/artificial-intelligence/feed/",
-    "VentureBeat AI": "https://venturebeat.com/category/ai/feed/",
-    "MIT Tech Review": "https://www.technologyreview.com/feed/",
-    "The Verge AI": "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml",
-    "Hugging Face Blog": "https://huggingface.co/blog/feed.xml",
-    "Ars Technica AI": "https://feeds.arstechnica.com/arstechnica/technology-lab",
-    "Wired AI": "https://www.wired.com/feed/tag/ai/latest/rss",
-}
+RSS_FEEDS = [
+    "https://openai.com/blog/rss.xml",
+    "https://blog.google/technology/ai/rss/",
+    "https://www.anthropic.com/feed.xml",
+    "https://techcrunch.com/category/artificial-intelligence/feed/",
+    "https://www.reuters.com/technology/artificial-intelligence/rss.xml",
+    "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml",
+    "https://arstechnica.com/tag/ai/feed/",
+    "https://venturebeat.com/category/ai/feed/",
+    "https://www.wired.com/feed/tag/ai/latest/rss",
+]
 
-# Gemini API settings
-GEMINI_MODEL = "gemini-2.0-flash"
-GEMINI_MAX_TOKENS = 2048
-GEMINI_TEMPERATURE = 0.3
-
-# Retry settings
+# Retry Settings
 MAX_RETRIES = 3
-RETRY_DELAY_SECONDS = 5
-REQUEST_TIMEOUT_SECONDS = 30
+RETRY_DELAY = 5  # seconds
 
-# Logging
-LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")
+# Request Timeout
+REQUEST_TIMEOUT = 30  # seconds
+
+# No News Message
+NO_NEWS_MESSAGE = "لا توجد اليوم أخبار كبيرة في مجال الذكاء الاصطناعي تستحق التنبيه. 🤖"
+
+# Message Template
+MESSAGE_TEMPLATE = """📰 <b>أخبار الذكاء الاصطناعي اليوم</b>
+📅 {date}
+
+━━━━━━━━━━━━━━━━━
+
+{news_items}
+
+━━━━━━━━━━━━━━━━━
+🤖 <i>بوت أخبار AI — يتم التشغيل تلقائياً كل يوم الساعة 9 صباحاً بتوقيت القاهرة</i>"""
+
+NEWS_ITEM_TEMPLATE = """{badge} <b>{title}</b>
+
+{summary}
+
+🔗 <a href="{url}">اقرأ المزيد</a>"""
+
+TOP_NEWS_BADGE = "🔴"
+REGULAR_NEWS_BADGE = "⚪️"

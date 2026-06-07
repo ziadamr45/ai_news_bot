@@ -1,102 +1,102 @@
-# 🤖 AI News Telegram Bot
+# 🤖 بوت أخبار الذكاء الاصطناعي - AI News Telegram Bot
 
-بوت تليجرام تلقائي يبعث ملخص يومي بالعربي لأهم أخبار الذكاء الاصطناعي.
+بوت تيليجرام تلقائي يرسل ملخص يومي لأهم أخبار الذكاء الاصطناعي باللغة العربية.
 
 ## المميزات
 
-- ✅ تشغيل تلقائي يومياً الساعة 9:00 صباحاً بتوقيت القاهرة
-- ✅ جمع الأخبار من مصادر موثوقة (RSS feeds)
-- ✅ فلترة الأخبار للذكاء الاصطناعي فقط
-- ✅ نظام تسجيل لتقييم أهمية الأخبار
-- ✅ ملخصات عربية احترافية باستخدام Gemini API
-- ✅ منع التكرار والأخبار المضللة
-- ✅ أعلى 3-5 أخبار فقط يومياً
-- ✅ نشر تلقائي عبر GitHub Actions
-
-## الإعداد
-
-### 1. المتطلبات
-
-- Python 3.12+
-- حساب GitHub
-- Telegram Bot Token (من @BotFather)
-- Gemini API Key (من Google AI Studio)
-
-### 2. إعداد التليجرام
-
-1. ابحث عن @BotFather في تليجرام
-2. ابعث `/newbot` واتبع التعليمات
-3. احفظ الـ Token
-4. ابعت رسالة للبوت
-5. استخدم الـ API لجلب الـ CHAT_ID
-
-### 3. GitHub Secrets
-
-في إعدادات المستودع (Settings > Secrets and variables > Actions):
-
-| Secret | الوصف |
-|--------|-------|
-| `BOT_TOKEN` | Telegram Bot Token |
-| `CHAT_ID` | Chat ID الخاص بك |
-| `GEMINI_API_KEY` | Gemini API Key |
-
-### 4. التشغيل المحلي
-
-```bash
-# نسخ ملف البيئة
-cp .env.example .env
-
-# تعبئة البيانات
-# BOT_TOKEN=...
-# CHAT_ID=...
-# GEMINI_API_KEY=...
-
-# تثبيت المتطلبات
-pip install -r requirements.txt
-
-# تشغيل البوت
-python main.py
-
-# تشغيل في وضع الاختبار
-python main.py --test
-```
+- 📰 جلب الأخبار من مصادر RSS موثوقة (OpenAI, DeepMind, Anthropic, TechCrunch, Reuters...)
+- 🔍 فلترة ذكية للأخبار المرتبطة بالذكاء الاصطناعي فقط
+- 📊 نظام تقييم متعدد المعايير لاختيار الأخبار الأهم
+- 🌐 تلخيص بالعربية باستخدام Gemini API
+- ⏰ تشغيل تلقائي يومياً الساعة 9 صباحاً بتوقيت القاهرة
+- 🔄 إعادة محاولة تلقائية عند الفشل
+- 🚫 كشف الأخبار المكررة والمكررة
 
 ## الهيكل
 
 ```
 ai-news-bot/
-├── main.py              # نقطة التشغيل الرئيسية
-├── news_fetcher.py      # جلب الأخبار من RSS feeds
-├── filters.py           # فلترة الأخبار المتعلقة بالذكاء الاصطناعي
-├── scorer.py            # نظام تسجيل وترتيب الأخبار
-├── summarizer.py        # توليد الملخصات العربية
-├── telegram_sender.py   # إرسال الرسائل لتليجرام
-├── config.py            # الإعدادات
-├── requirements.txt     # متطلبات Python
+├── main.py              # نقطة البداية الرئيسية
+├── news_fetcher.py      # جلب الأخبار من RSS
+├── filters.py           # فلترة الأخبار
+├── scorer.py            # تقييم وترتيب الأخبار
+├── summarizer.py        # تلخيص الأخبار بالعربية (Gemini)
+├── telegram_sender.py   # إرسال الرسائل عبر تيليجرام
+├── config.py            # الإعدادات والمتغيرات
+├── requirements.txt     # المكتبات المطلوبة
 ├── .env.example         # نموذج متغيرات البيئة
 ├── .gitignore
 ├── README.md
 └── .github/
     └── workflows/
-        └── daily_news.yml  # جدول التشغيل اليومي
+        └── daily_news.yml  # GitHub Actions workflow
 ```
+
+## الإعداد
+
+### 1. إنشاء بوت تيليجرام
+1. افتح [@BotFather](https://t.me/BotFather) على تيليجرام
+2. أرسل `/newbot` واتبع التعليمات
+3. احفظ الـ Token
+
+### 2. الحصول على Chat ID
+1. أضف البوت إلى المجموعة أو القناة
+2. أرسل رسالة
+3. افتح `https://api.telegram.org/bot<TOKEN>/getUpdates`
+4. ابحث عن `chat.id`
+
+### 3. الحصول على Gemini API Key
+1. اذهب إلى [Google AI Studio](https://makersuite.google.com/app/apikey)
+2. أنشئ مفتاح API جديد
+3. احفظ المفتاح
+
+### 4. إعداد GitHub Secrets
+في صفحة المستودع على GitHub:
+1. اذهب إلى **Settings** > **Secrets and variables** > **Actions**
+2. أضف الثلاثة أسرار:
+   - `BOT_TOKEN` - توكن بوت تيليجرام
+   - `CHAT_ID` - معرف المحادثة
+   - `GEMINI_API_KEY` - مفتاح Gemini API
+
+## التشغيل
+
+### تلقائي (GitHub Actions)
+البوت يعمل تلقائياً كل يوم الساعة 9 صباحاً بتوقيت القاهرة.
+
+### تشغيل يدوي
+يمكنك تشغيل البوت يدوياً من صفحة Actions في المستودع.
+
+### تشغيل محلي
+```bash
+pip install -r requirements.txt
+export BOT_TOKEN="your_token"
+export CHAT_ID="your_chat_id"
+export GEMINI_API_KEY="your_key"
+python main.py
+```
+
+## نظام التقييم
+
+كل خبر يتم تقييمه بناءً على 4 معايير:
+
+| المعيار | الوزن | الوصف |
+|---------|-------|-------|
+| صلة بالذكاء الاصطناعي | 35% | عدد وأهمية الكلمات المفتاحية |
+| أهمية الخبر | 25% | كلمات تدل على أهمية (breakthrough, launched...) |
+| تأثير على الصناعة | 25% | مدى تأثير الخبر على الصناعة |
+| مصداقية المصدر | 15% | تصنيف المصدر من 0-10 |
 
 ## المصادر
 
-### الأولوية القصوى
 - OpenAI Blog
-- Google DeepMind Blog
-- Anthropic News
-- Microsoft AI Blog
-- NVIDIA Blog
-- Reuters
-
-### أولوية ثانوية
+- Google AI Blog
+- Anthropic
 - TechCrunch AI
-- MIT Technology Review
-- VentureBeat AI
+- Reuters AI
 - The Verge AI
-- Hugging Face Blog
+- Ars Technica
+- VentureBeat AI
+- Wired AI
 
 ## الترخيص
 

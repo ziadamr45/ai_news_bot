@@ -1,0 +1,52 @@
+name: Daily AI News
+
+on:
+  # تشغيل يومي الساعة 9 صباحاً بتوقيت القاهرة (Africa/Cairo = UTC+2)
+  # 9:00 AM Cairo = 7:00 AM UTC
+  schedule:
+    - cron: '0 7 * * *'
+
+  # إمكانية التشغيل اليدوي
+  workflow_dispatch:
+
+jobs:
+  send-news:
+    runs-on: ubuntu-latest
+
+    env:
+      BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+      CHAT_ID: ${{ secrets.CHAT_ID }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run AI News Bot
+        run: python main.py
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.CHAT_ID }}" \
+            -d text="⚠️ حدث خطأ في تشغيل بوت أخبار AI. تحقق من GitHub Actions." \
+            -d parse_mode="HTML"

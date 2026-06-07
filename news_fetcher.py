@@ -1,153 +1,152 @@
-"""Fetch AI news from RSS feeds and web sources."""
+"""
+جلب الأخبار - News Fetcher Module
+يقوم بجلب الأخبار من مصادر RSS المتعددة
+"""
 
 import logging
-import hashlib
-from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Optional
+from datetime import datetime, timezone
+from urllib.parse import urlparse
+
 import feedparser
 import requests
 
-from config import (
-    RSS_FEEDS,
-    NEWS_LOOKBACK_HOURS,
-    CAIRO_TZ,
-    REQUEST_TIMEOUT_SECONDS,
-    MAX_RETRIES,
-    RETRY_DELAY_SECONDS,
-)
+from config import RSS_FEEDS, REQUEST_TIMEOUT, MAX_RETRIES, RETRY_DELAY
 
 logger = logging.getLogger(__name__)
 
 
-def _make_request_with_retry(url: str) -> Optional[str]:
-    """Make HTTP request with retries."""
-    for attempt in range(MAX_RETRIES):
-        try:
-            headers = {
-                "User-Agent": "Mozilla/5.0 (compatible; AINewsBot/1.0; +https://github.com/ziadamr45)"
-            }
-            response = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
-            response.raise_for_status()
-            return response.text
-        except requests.RequestException as e:
-            logger.warning(f"Attempt {attempt + 1}/{MAX_RETRIES} failed for {url}: {e}")
-            if attempt < MAX_RETRIES - 1:
-                import time
-                time.sleep(RETRY_DELAY_SECONDS)
-    return None
-
-
-def _is_recent(published_date: str, lookback_hours: int = NEWS_LOOKBACK_HOURS) -> bool:
-    """Check if an article was published within the lookback window."""
-    try:
-        # feedparser can parse most date formats
-        from time import mktime
-        parsed_time = feedparser._parse_date(published_date)
-        if parsed_time is None:
-            # Try direct parsing
-            try:
-                dt = datetime.fromisoformat(published_date.replace("Z", "+00:00"))
-            except (ValueError, AttributeError):
-                return True  # If we can't parse the date, include it
-        else:
-            dt = datetime.fromtimestamp(mktime(parsed_time), tz=timezone.utc)
-
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=lookback_hours)
-        return dt >= cutoff
-    except Exception:
-        # If date parsing fails, include the article (better safe than sorry)
-        return True
-
-
-def _content_hash(title: str, url: str) -> str:
-    """Generate a hash for deduplication."""
-    normalized = (title.strip().lower() + url.strip().lower()).encode("utf-8")
-    return hashlib.md5(normalized).hexdigest()
-
-
-def fetch_rss_feed(feed_name: str, feed_url: str) -> List[Dict]:
-    """Fetch and parse a single RSS feed."""
+def fetch_rss_feed(feed_url: str) -> List[Dict]:
+    """
+    جلب الأخبار من مصدر RSS واحد
+    """
     articles = []
-    try:
-        logger.info(f"Fetching RSS feed: {feed_name} ({feed_url})")
 
-        # Try fetching with requests first for better control
-        xml_content = _make_request_with_retry(feed_url)
-        if xml_content:
-            feed = feedparser.parse(xml_content)
-        else:
-            # Fallback to direct feedparser
-            feed = feedparser.parse(feed_url)
+    try:
+        logger.info(f"Fetching RSS feed: {feed_url}")
+
+        # استخدام requests مع timeout قبل feedparser
+        # لأن feedparser مش بيدعم timeout كويس
+        response = requests.get(
+            feed_url,
+            timeout=REQUEST_TIMEOUT,
+            headers={
+                "User-Agent": "AI-News-Bot/1.0 (Telegram Bot)"
+            }
+        )
+        response.raise_for_status()
+
+        # تحليل الـ RSS
+        feed = feedparser.parse(response.content)
 
         if feed.bozo and not feed.entries:
-            logger.warning(f"RSS feed {feed_name} returned malformed data: {feed.bozo_exception}")
+            logger.warning(f"Failed to parse feed {feed_url}: {feed.bozo_exception}")
             return articles
 
         for entry in feed.entries:
             try:
-                title = entry.get("title", "").strip()
-                link = entry.get("link", "").strip()
-                summary = entry.get("summary", entry.get("description", "")).strip()
-                published = entry.get("published", entry.get("updated", ""))
-
-                # Remove HTML tags from summary
-                if summary:
-                    import re
-                    summary = re.sub(r"<[^>]+>", "", summary)
-                    summary = re.sub(r"\s+", " ", summary).strip()
-
-                if not title or not link:
-                    continue
-
-                # Check recency
-                if published and not _is_recent(published):
-                    continue
-
-                articles.append({
-                    "title": title,
-                    "url": link,
-                    "summary": summary[:500] if summary else "",
-                    "published": published,
-                    "source": feed_name,
-                    "source_domain": _extract_domain(link),
-                    "content_hash": _content_hash(title, link),
-                })
-
+                article = parse_entry(entry, feed_url)
+                if article and article.get("title"):
+                    articles.append(article)
             except Exception as e:
-                logger.warning(f"Error parsing entry from {feed_name}: {e}")
+                logger.warning(f"Error parsing entry from {feed_url}: {e}")
                 continue
 
-        logger.info(f"Fetched {len(articles)} articles from {feed_name}")
+        logger.info(f"Fetched {len(articles)} articles from {feed_url}")
 
+    except requests.exceptions.Timeout:
+        logger.error(f"Timeout fetching {feed_url}")
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error fetching {feed_url}: {e}")
     except Exception as e:
-        logger.error(f"Error fetching RSS feed {feed_name}: {e}")
+        logger.error(f"Unexpected error fetching {feed_url}: {e}")
 
     return articles
 
 
-def _extract_domain(url: str) -> str:
-    """Extract domain from URL."""
-    try:
-        from urllib.parse import urlparse
-        parsed = urlparse(url)
-        domain = parsed.netloc.replace("www.", "")
-        return domain
-    except Exception:
-        return ""
+def parse_entry(entry, feed_url: str) -> Optional[Dict]:
+    """
+    تحليل مدخل RSS واستخراج البيانات
+    """
+    article = {
+        "title": getattr(entry, "title", "").strip(),
+        "link": getattr(entry, "link", "").strip(),
+        "description": "",
+        "published": None,
+        "source": "",
+        "source_url": feed_url,
+    }
+
+    # استخراج الوصف
+    if hasattr(entry, "summary"):
+        # إزالة HTML tags
+        import re
+        article["description"] = re.sub(r'<[^>]+>', '', entry.summary).strip()
+    elif hasattr(entry, "description"):
+        import re
+        article["description"] = re.sub(r'<[^>]+>', '', entry.description).strip()
+
+    # استخراج تاريخ النشر
+    published = None
+    if hasattr(entry, "published_parsed") and entry.published_parsed:
+        try:
+            published = datetime(*entry.published_parsed[:6], tzinfo=timezone.utc)
+        except Exception:
+            pass
+    elif hasattr(entry, "updated_parsed') and entry.updated_parsed"):
+        try:
+            published = datetime(*entry.updated_parsed[:6], tzinfo=timezone.utc)
+        except Exception:
+            pass
+
+    article["published"] = published
+
+    # استخراج اسم المصدر
+    if hasattr(entry, "source") and hasattr(entry.source, "title"):
+        article["source"] = entry.source.title
+    else:
+        # استخدام اسم النطاق
+        try:
+            domain = urlparse(feed_url).netloc
+            article["source"] = domain.replace("www.", "")
+        except Exception:
+            article["source"] = "Unknown"
+
+    return article
 
 
-def fetch_all_news() -> List[Dict]:
-    """Fetch news from all configured RSS sources."""
+def fetch_all_feeds() -> List[Dict]:
+    """
+    جلب الأخبار من جميع مصادر RSS
+    """
     all_articles = []
-    seen_hashes = set()
 
-    for feed_name, feed_url in RSS_FEEDS.items():
-        articles = fetch_rss_feed(feed_name, feed_url)
-        for article in articles:
-            # Deduplicate by content hash
-            if article["content_hash"] not in seen_hashes:
-                seen_hashes.add(article["content_hash"])
-                all_articles.append(article)
+    for feed_url in RSS_FEEDS:
+        articles = fetch_rss_feed(feed_url)
+        all_articles.extend(articles)
 
-    logger.info(f"Total unique articles fetched: {len(all_articles)}")
-    return all_articles
+    logger.info(f"Total articles fetched from all feeds: {len(all_articles)}")
+
+    # إزالة المكررات بناءً على الرابط
+    seen_links = set()
+    unique_articles = []
+    for article in all_articles:
+        link = article.get("link", "")
+        if link and link not in seen_links:
+            seen_links.add(link)
+            unique_articles.append(article)
+        elif not link:
+            unique_articles.append(article)
+
+    logger.info(f"After deduplication: {len(unique_articles)} unique articles")
+    return unique_articles
+
+
+def fetch_news() -> List[Dict]:
+    """
+    الوظيفة الرئيسية لجلب الأخبار
+    """
+    logger.info("Starting news fetch process...")
+    articles = fetch_all_feeds()
+    logger.info(f"News fetch complete. Total: {len(articles)} articles")
+    return articles

@@ -1,223 +1,156 @@
-"""Generate Arabic summaries using Gemini API."""
+"""
+تلخيص الأخبار - News Summarizer Module
+يستخدم Gemini API لتلخيص الأخبار بالعربية
+"""
 
 import logging
 from typing import List, Dict, Optional
-import requests
-import json
 
-from config import (
-    GEMINI_API_KEY,
-    GEMINI_MODEL,
-    GEMINI_MAX_TOKENS,
-    GEMINI_TEMPERATURE,
-    MAX_RETRIES,
-    RETRY_DELAY_SECONDS,
-    REQUEST_TIMEOUT_SECONDS,
-    CAIRO_TZ,
-)
+import google.generativeai as genai
+
+from config import GEMINI_API_KEY, GEMINI_MODEL, MAX_RETRIES, RETRY_DELAY
 
 logger = logging.getLogger(__name__)
 
-
-def _call_gemini_api(prompt: str) -> Optional[str]:
-    """Call Gemini API with retries."""
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
-
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "maxOutputTokens": GEMINI_MAX_TOKENS,
-            "temperature": GEMINI_TEMPERATURE,
-        },
-    }
-
-    for attempt in range(MAX_RETRIES):
-        try:
-            response = requests.post(
-                url,
-                json=payload,
-                timeout=REQUEST_TIMEOUT_SECONDS,
-                headers={"Content-Type": "application/json"},
-            )
-            response.raise_for_status()
-
-            data = response.json()
-            text = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
-
-            if text:
-                return text.strip()
-            else:
-                logger.warning(f"Gemini returned empty response (attempt {attempt + 1})")
-
-        except requests.exceptions.RequestException as e:
-            logger.warning(f"Gemini API attempt {attempt + 1}/{MAX_RETRIES} failed: {e}")
-            if attempt < MAX_RETRIES - 1:
-                import time
-                time.sleep(RETRY_DELAY_SECONDS)
-
-    return None
+# تعيين الـ API Key
+genai.configure(api_key=GEMINI_API_KEY)
 
 
-def _build_summary_prompt(articles: List[Dict]) -> str:
-    """Build the prompt for Gemini to generate Arabic summaries."""
+def create_summary_prompt(articles: List[Dict]) -> str:
+    """
+    إنشاء الـ prompt لإرساله لـ Gemini
+    """
     articles_text = ""
     for i, article in enumerate(articles, 1):
-        articles_text += f"""
----
-خبر رقم {i}:
-العنوان: {article['title']}
-الملخص المتاح: {article.get('summary', 'لا يوجد ملخص')}
-المصدر: {article.get('source', 'غير محدد')}
-الرابط: {article['url']}
-الدرجة: {article.get('score', 0)}
----
-"""
+        articles_text += f"\n--- الخبر {i} ---\n"
+        articles_text += f"العنوان: {article.get('title', '')}\n"
+        articles_text += f"الوصف: {article.get('description', '')}\n"
+        articles_text += f"المصدر: {article.get('source', '')}\n"
+        articles_text += f"الرابط: {article.get('link', '')}\n"
 
-    prompt = f"""أنت محرر أخبار ذكاء اصطناعي محترف. مهمتك هي كتابة ملخصات عربية مختصرة ومهنية لأهم أخبار الذكاء الاصطناعي.
-
-القواعد:
-1. اكتب ملخص عربي مختصر (3-4 جمل فقط) لكل خبر
-2. استخدم عربية فصحى مبسطة مناسبة للقارئ المصري
-3. لا تترجم حرفياً — اكتب بأسلوب طبيعي ومهني
-4. ركز على الأهمية والتأثير العملي للخبر
-5. لا تخترع معلومات غير موجودة في النص الأصلي
-6. إذا كان الملخص المتاح فارغاً، اكتب ملخصاً بناءً على العنوان فقط
-7. حدد أهم خبر في اليوم
-
-الأخبار:
-{articles_text}
+    prompt = f"""أنت خبير في أخبار الذكاء الاصطناعي. قم بتلخيص الأخبار التالية باللغة العربية.
 
 المطلوب:
-لكل خبر، اكتب:
-- عنوان عربي مختصر وواضح (سطر واحد)
-- ملخص عربي مختصر (3-4 جمل)
-- أهم خبر اليوم (رقم الخبر الأهم مع سبب قصير)
+1. تلخيص كل خبر في 2-3 جمل بالعربية الفصحى
+2. التركيز على الجوهر والأهمية
+3. استخدام لغة واضحة ومباشرة
+4. ذكر اسم الشركة أو المنتج إن وُجد
+5. عدم إضافة معلومات غير موجودة في الخبر الأصلي
+6. التلخيص يجب أن يكون مفيد للقارئ العربي المهتم بالذكاء الاصطناعي
 
-أجب بهذا التنسيق بالضبط:
+الأخبار:{articles_text}
 
-خبر1:
-العنوان: ...
-الملخص: ...
-
-خبر2:
-العنوان: ...
-الملخص: ...
-
-(وهكذا لكل الأخبار)
-
-أهم خبر اليوم: رقم X - السبب: ...
-"""
+قم بإرجاع التلخيصات في الصيغة التالية لكل خبر:
+SUMMARY_START
+[التلخيص بالعربية]
+SUMMARY_END"""
 
     return prompt
 
 
-def _parse_gemini_response(response_text: str, articles: List[Dict]) -> List[Dict]:
-    """Parse Gemini's response and map summaries to articles."""
+def parse_summaries(response_text: str, num_articles: int) -> List[str]:
+    """
+    استخراج التلخيصات من رد Gemini
+    """
     summaries = []
 
-    for i, article in enumerate(articles, 1):
-        # Try to extract the summary for this article number
-        arabic_title = article["title"]  # Default to original title
-        arabic_summary = ""  # Will be filled from Gemini response
+    # محاولة استخراج بالصيغة المحددة
+    parts = response_text.split("SUMMARY_START")
+    for part in parts[1:]:  # تجاهل الجزء الأول قبل أول SUMMARY_START
+        end_idx = part.find("SUMMARY_END")
+        if end_idx != -1:
+            summary = part[:end_idx].strip()
+            if summary:
+                summaries.append(summary)
 
-        # Pattern matching for Arabic response
-        import re
+    # لو الصيغة المحددة ماشتغلتش، بنقسم بالأرقام
+    if len(summaries) != num_articles:
+        summaries = []
+        lines = response_text.strip().split("\n")
+        current_summary = []
 
-        # Match news block (خبر1, خبر 1, etc.)
-        news_pattern = rf"خبر\s*{i}\s*:\s*(.*?)(?=خبر\s*{i+1}\s*:|أهم خبر اليوم|$)"
-        news_match = re.search(news_pattern, response_text, re.DOTALL)
+        for line in lines:
+            line = line.strip()
+            if not line:
+                if current_summary:
+                    summary_text = " ".join(current_summary).strip()
+                    if summary_text and len(summary_text) > 10:
+                        summaries.append(summary_text)
+                    current_summary = []
+                continue
+            current_summary.append(line)
 
-        if news_match:
-            news_block = news_match.group(1)
+        if current_summary:
+            summary_text = " ".join(current_summary).strip()
+            if summary_text and len(summary_text) > 10:
+                summaries.append(summary_text)
 
-            # Extract Arabic title
-            title_match = re.search(r"العنوان\s*:\s*(.+?)(?:\n|$)", news_block)
-            if title_match:
-                arabic_title = title_match.group(1).strip()
+    # التأكد من عدد التلخيصات
+    if len(summaries) < num_articles:
+        # إضافة تلخيصات فارغة لو ناقصة
+        while len(summaries) < num_articles:
+            summaries.append("تفاصيل الخبر متاحة عبر الرابط المرفق.")
 
-            # Extract Arabic summary
-            summary_match = re.search(r"الملخص\s*:\s*(.+?)(?=\n\n|\nخبر|$)", news_block, re.DOTALL)
-            if summary_match:
-                arabic_summary = summary_match.group(1).strip()
+    # اقتطاع لو زائدة
+    summaries = summaries[:num_articles]
 
-        # Fallback: if we couldn't parse, use the original title
-        if not arabic_summary:
-            arabic_summary = article.get("summary", article["title"])[:200]
-
-        summaries.append({
-            "arabic_title": arabic_title,
-            "arabic_summary": arabic_summary,
-            "url": article["url"],
-            "source": article.get("source", ""),
-            "score": article.get("score", 0),
-        })
-
-    # Extract the most important news
-    most_important = 1  # Default to first (highest scored)
-    import_match = re.search(r"أهم خبر اليوم\s*:\s*رقم\s*(\d+)", response_text)
-    if import_match:
-        try:
-            most_important = int(import_match.group(1))
-        except ValueError:
-            pass
-
-    return summaries, most_important
+    return summaries
 
 
-def generate_summaries(articles: List[Dict]) -> tuple:
-    """Generate Arabic summaries for articles using Gemini API."""
+def summarize_articles(articles: List[Dict]) -> List[Dict]:
+    """
+    تلخيص قائمة الأخبار باستخدام Gemini API
+    """
     if not articles:
-        return [], 0
+        logger.warning("No articles to summarize")
+        return articles
 
     if not GEMINI_API_KEY:
-        logger.error("GEMINI_API_KEY not set — cannot generate summaries")
-        return [], 0
-
-    logger.info(f"Generating Arabic summaries for {len(articles)} articles...")
-
-    prompt = _build_summary_prompt(articles)
-    response = _call_gemini_api(prompt)
-
-    if not response:
-        logger.error("Failed to get response from Gemini API")
-        # Fallback: use original titles
-        summaries = []
+        logger.error("GEMINI_API_KEY not set. Using descriptions as summaries.")
         for article in articles:
-            summaries.append({
-                "arabic_title": article["title"],
-                "arabic_summary": article.get("summary", "")[:200],
-                "url": article["url"],
-                "source": article.get("source", ""),
-                "score": article.get("score", 0),
-            })
-        return summaries, 1
+            article["arabic_summary"] = article.get("description", "")[:200]
+        return articles
 
-    summaries, most_important = _parse_gemini_response(response, articles)
-    logger.info(f"Generated {len(summaries)} Arabic summaries")
-    return summaries, most_important
+    logger.info(f"Summarizing {len(articles)} articles using Gemini API...")
 
+    prompt = create_summary_prompt(articles)
 
-def format_message(summaries: List[Dict], most_important: int) -> str:
-    """Format the final Telegram message in Arabic."""
-    from datetime import datetime
+    for attempt in range(MAX_RETRIES):
+        try:
+            model = genai.GenerativeModel(GEMINI_MODEL)
+            response = model.generate_content(
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.3,
+                    max_output_tokens=2048,
+                )
+            )
 
-    now = datetime.now(CAIRO_TZ)
-    date_str = now.strftime("%d/%m/%Y")
+            if response and response.text:
+                summaries = parse_summaries(response.text, len(articles))
 
-    number_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣"]
+                for i, article in enumerate(articles):
+                    if i < len(summaries):
+                        article["arabic_summary"] = summaries[i]
+                    else:
+                        article["arabic_summary"] = article.get("description", "")[:200]
 
-    message = f"🧠 أهم أخبار الذكاء الاصطناعي اليوم\n\n📅 {date_str}\n\n"
+                logger.info(f"Successfully summarized {len(summaries)} articles")
+                return articles
+            else:
+                logger.warning(f"Gemini returned empty response (attempt {attempt + 1})")
 
-    for i, item in enumerate(summaries):
-        emoji = number_emojis[i] if i < len(number_emojis) else f"{i+1}."
-        message += f"{emoji} {item['arabic_title']}\n\n"
-        message += f"الملخص:\n{item['arabic_summary']}\n\n"
-        message += f"المصدر:\n{item['url']}\n\n"
-        message += "━━━━━━━━━━━━\n\n"
+        except Exception as e:
+            logger.error(f"Gemini API error (attempt {attempt + 1}): {e}")
 
-    # Most important news
-    if summaries and 1 <= most_important <= len(summaries):
-        best = summaries[most_important - 1]
-        message += f"🎯 أهم خبر اليوم:\n{best['arabic_title']}"
+        if attempt < MAX_RETRIES - 1:
+            import time
+            time.sleep(RETRY_DELAY)
 
-    return message.strip()
+    # في حالة فشل كل المحاولات، نستخدم الوصف الأصلي
+    logger.warning("All Gemini attempts failed. Using original descriptions.")
+    for article in articles:
+        desc = article.get("description", "")
+        article["arabic_summary"] = desc[:200] if desc else "تفاصيل الخبر متاحة عبر الرابط المرفق."
+
+    return articles
