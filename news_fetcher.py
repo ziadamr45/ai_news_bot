@@ -1,8 +1,10 @@
 """
 جلب الأخبار - News Fetcher Module
 يقوم بجلب الأخبار من مصادر RSS المتعددة
+يتم فلترة الأخبار حسب التاريخ أثناء الجلب لتوفير الوقت وال带宽
 """
 
+import re
 import logging
 from typing import List, Dict, Optional
 from datetime import datetime, timezone
@@ -11,22 +13,55 @@ from urllib.parse import urlparse
 import feedparser
 import requests
 
-from config import RSS_FEEDS, REQUEST_TIMEOUT, MAX_RETRIES, RETRY_DELAY
+from config import RSS_FEEDS, REQUEST_TIMEOUT, MAX_RETRIES, RETRY_DELAY, NEWS_FETCH_HOURS
 
 logger = logging.getLogger(__name__)
+
+
+def _is_recent(published: datetime = None) -> bool:
+    """
+    التحقق من أن الخبر ضمن الإطار الزمني المحدد
+    """
+    if published is None:
+        return True  # لو مفيش تاريخ، نسيبه يعدي (هيتفلتر بعدين)
+
+    now = datetime.now(timezone.utc)
+
+    # Handle timezone-naive datetimes
+    if published.tzinfo is None:
+        published = published.replace(tzinfo=timezone.utc)
+
+    time_diff = now - published
+    return time_diff.total_seconds() <= NEWS_FETCH_HOURS * 3600
+
+
+def _parse_published(entry) -> Optional[datetime]:
+    """
+    استخراج تاريخ النشر من المدخل
+    """
+    if hasattr(entry, "published_parsed") and entry.published_parsed:
+        try:
+            return datetime(*entry.published_parsed[:6], tzinfo=timezone.utc)
+        except Exception:
+            pass
+    if hasattr(entry, "updated_parsed") and entry.updated_parsed:
+        try:
+            return datetime(*entry.updated_parsed[:6], tzinfo=timezone.utc)
+        except Exception:
+            pass
+    return None
 
 
 def fetch_rss_feed(feed_url: str) -> List[Dict]:
     """
     جلب الأخبار من مصدر RSS واحد
+    يتم فلترة الأخبار حسب التاريخ أثناء الجلب لتوفير الوقت
     """
     articles = []
 
     try:
         logger.info(f"Fetching RSS feed: {feed_url}")
 
-        # استخدام requests مع timeout قبل feedparser
-        # لأن feedparser مش بيدعم timeout كويس
         response = requests.get(
             feed_url,
             timeout=REQUEST_TIMEOUT,
@@ -43,16 +78,28 @@ def fetch_rss_feed(feed_url: str) -> List[Dict]:
             logger.warning(f"Failed to parse feed {feed_url}: {feed.bozo_exception}")
             return articles
 
+        total_entries = len(feed.entries)
+        skipped_old = 0
+
         for entry in feed.entries:
             try:
-                article = parse_entry(entry, feed_url)
+                # استخراج تاريخ النشر الأول
+                published = _parse_published(entry)
+
+                # فلترة حسب التاريخ أثناء الجلب - تخطي الأخبار القديمة
+                if published and not _is_recent(published):
+                    skipped_old += 1
+                    continue
+
+                article = parse_entry(entry, feed_url, published)
                 if article and article.get("title"):
                     articles.append(article)
             except Exception as e:
                 logger.warning(f"Error parsing entry from {feed_url}: {e}")
                 continue
 
-        logger.info(f"Fetched {len(articles)} articles from {feed_url}")
+        logger.info(f"Fetched {len(articles)} recent articles from {feed_url} "
+                    f"(skipped {skipped_old} old out of {total_entries} total)")
 
     except requests.exceptions.Timeout:
         logger.error(f"Timeout fetching {feed_url}")
@@ -64,7 +111,7 @@ def fetch_rss_feed(feed_url: str) -> List[Dict]:
     return articles
 
 
-def parse_entry(entry, feed_url: str) -> Optional[Dict]:
+def parse_entry(entry, feed_url: str, published: datetime = None) -> Optional[Dict]:
     """
     تحليل مدخل RSS واستخراج البيانات
     """
@@ -72,40 +119,21 @@ def parse_entry(entry, feed_url: str) -> Optional[Dict]:
         "title": getattr(entry, "title", "").strip(),
         "link": getattr(entry, "link", "").strip(),
         "description": "",
-        "published": None,
+        "published": published,
         "source": "",
         "source_url": feed_url,
     }
 
     # استخراج الوصف
     if hasattr(entry, "summary"):
-        # إزالة HTML tags
-        import re
         article["description"] = re.sub(r'<[^>]+>', '', entry.summary).strip()
     elif hasattr(entry, "description"):
-        import re
         article["description"] = re.sub(r'<[^>]+>', '', entry.description).strip()
-
-    # استخراج تاريخ النشر
-    published = None
-    if hasattr(entry, "published_parsed") and entry.published_parsed:
-        try:
-            published = datetime(*entry.published_parsed[:6], tzinfo=timezone.utc)
-        except Exception:
-            pass
-    elif hasattr(entry, "updated_parsed") and entry.updated_parsed:
-        try:
-            published = datetime(*entry.updated_parsed[:6], tzinfo=timezone.utc)
-        except Exception:
-            pass
-
-    article["published"] = published
 
     # استخراج اسم المصدر
     if hasattr(entry, "source") and hasattr(entry.source, "title"):
         article["source"] = entry.source.title
     else:
-        # استخدام اسم النطاق
         try:
             domain = urlparse(feed_url).netloc
             article["source"] = domain.replace("www.", "")
@@ -125,7 +153,7 @@ def fetch_all_feeds() -> List[Dict]:
         articles = fetch_rss_feed(feed_url)
         all_articles.extend(articles)
 
-    logger.info(f"Total articles fetched from all feeds: {len(all_articles)}")
+    logger.info(f"Total recent articles fetched from all feeds: {len(all_articles)}")
 
     # إزالة المكررات بناءً على الرابط
     seen_links = set()
@@ -148,5 +176,5 @@ def fetch_news() -> List[Dict]:
     """
     logger.info("Starting news fetch process...")
     articles = fetch_all_feeds()
-    logger.info(f"News fetch complete. Total: {len(articles)} articles")
+    logger.info(f"News fetch complete. Total: {len(articles)} recent articles")
     return articles
