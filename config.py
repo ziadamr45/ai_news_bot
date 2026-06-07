@@ -12,12 +12,19 @@ CHAT_ID = os.environ.get("CHAT_ID", "")
 # OpenRouter API Settings
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-OPENROUTER_MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free"
+
+# النموذج الرئيسي - سريع وكفؤ
+OPENROUTER_MODEL = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
+
+# النموذج السريع - للأسئلة البسيطة والتحيات
+FAST_MODEL = "moonshotai/kimi-vl-a3b-thinking:free"
+
+# النماذج البديلة - مرتبة حسب السرعة
 OPENROUTER_FALLBACK_MODELS = [
+    "nvidia/nemotron-3-ultra-550b-a55b:free",
+    "qwen/qwen3-235b-a22b:free",
     "openrouter/owl-alpha",
     "nvidia/nemotron-3-super-120b-a12b:free",
-    "poolside/laguna-m.1:free",
-    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
 ]
 
 # News Settings
@@ -218,16 +225,28 @@ ROADMAPS = {
     },
 }
 
-# Retry Settings
-MAX_RETRIES = 3
-RETRY_DELAY = 10  # seconds
+# ═══════════════════════════════════════
+# إعدادات السرعة - Speed Settings
+# ═══════════════════════════════════════
 
-# Request Timeout
-REQUEST_TIMEOUT = 30  # seconds
+# مهلة الطلب العادية (ثانية) - تم تقليلها لتسريع الاستجابة
+REQUEST_TIMEOUT = 20  # كان 30، دلوقتي 20
 
-# Bot Settings
+# مهلة الطلب السريع (ثانية) - للأسئلة البسيطة
+FAST_TIMEOUT = 12
+
+# عدد محاولات إعادة المحاولة
+MAX_RETRIES = 2  # كان 3، دلوقتي 2
+
+# تأخير بين المحاولات (ثانية)
+RETRY_DELAY = 5  # كان 10، دلوقتي 5
+
+# ═══════════════════════════════════════
+# إعدادات البوت - Bot Settings
+# ═══════════════════════════════════════
+
 BOT_NAME = "My Bro"
-BOT_VERSION = "2.0"
+BOT_VERSION = "2.1"
 
 # Memory / Storage
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")

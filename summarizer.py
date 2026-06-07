@@ -10,7 +10,8 @@ import requests
 
 from config import (
     OPENROUTER_API_KEY, OPENROUTER_BASE_URL, OPENROUTER_MODEL,
-    OPENROUTER_FALLBACK_MODELS, MAX_RETRIES, RETRY_DELAY, REQUEST_TIMEOUT
+    OPENROUTER_FALLBACK_MODELS, FAST_MODEL, MAX_RETRIES, RETRY_DELAY,
+    REQUEST_TIMEOUT, FAST_TIMEOUT
 )
 
 logger = logging.getLogger(__name__)
@@ -176,8 +177,11 @@ def summarize_articles(articles: List[Dict]) -> List[Dict]:
 
     prompt = create_summary_prompt(articles)
 
-    # قائمة الموديلات للتجربة (الرئيسي + البدائل)
-    models_to_try = [OPENROUTER_MODEL] + OPENROUTER_FALLBACK_MODELS
+    # قائمة الموديلات للتجربة (السريع أولاً + الرئيسي + البدائل)
+    if FAST_MODEL:
+        models_to_try = [FAST_MODEL, OPENROUTER_MODEL] + OPENROUTER_FALLBACK_MODELS
+    else:
+        models_to_try = [OPENROUTER_MODEL] + OPENROUTER_FALLBACK_MODELS
 
     for attempt in range(MAX_RETRIES):
         for model in models_to_try:

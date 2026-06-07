@@ -1,6 +1,6 @@
 """
 My Bro - مساعد الذكاء الاصطناعي الشخصي
-بوت تيليجرام كامل مع أوامر + محادثة ذكية
+بوت تيليجرام كامل مع أوامر + محادثة ذكية + بحث ويب
 """
 
 import logging
@@ -316,7 +316,7 @@ async def trending_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """أمر /search <query>"""
+    """أمر /search <query> - بحث في الويب + أخبار RSS"""
     user_id = update.effective_user.id
     lang = get_language(user_id)
     increment_command_count(user_id)
@@ -331,47 +331,79 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    loading_msg = await update.message.reply_text(format_loading(lang))
+    loading_msg = await update.message.reply_text(
+        "🔍 جاري البحث..." if lang == "ar" else "🔍 Searching..."
+    )
 
     try:
+        # 1. أولاً: بحث في أخبار RSS المحلية
         articles = fetch_news()
-
-        # بحث في العناوين والأوصاف
         query_lower = query.lower()
-        results = []
+        rss_results = []
         for article in articles:
             title = article.get("title", "").lower()
             desc = article.get("description", "").lower()
             if query_lower in title or query_lower in desc:
-                results.append(article)
+                rss_results.append(article)
 
-        if not results:
-            # لو مفيش نتائج من الأخبار، استخدم AI
+        # 2. ثانياً: بحث في الويب باستخدام DuckDuckGo
+        from web_search import search_web, format_search_results
+        web_results = search_web(query, max_results=5)
+
+        # بناء الرسالة
+        message = ""
+
+        if rss_results:
+            if lang == "ar":
+                message += f"📰 <b>أخبار RSS عن: {query}</b>\n━━━━━━━━━━━━━━━━━\n\n"
+            else:
+                message += f"📰 <b>RSS News about: {query}</b>\n━━━━━━━━━━━━━━━━━\n\n"
+
+            summarized_rss = summarize_articles(rss_results[:5])
+            for i, article in enumerate(summarized_rss):
+                message += format_news_item(
+                    i + 1, article['title'],
+                    article.get('arabic_summary', ''),
+                    article['link'],
+                    i == 0
+                )
+                message += "\n\n"
+
+        if web_results:
+            if lang == "ar":
+                message += f"🌐 <b>نتائج بحث الويب: {query}</b>\n━━━━━━━━━━━━━━━━━\n\n"
+            else:
+                message += f"🌐 <b>Web Search: {query}</b>\n━━━━━━━━━━━━━━━━━\n\n"
+
+            for i, r in enumerate(web_results[:5], 1):
+                title = r.get("title", "")
+                snippet = r.get("snippet", "")
+                link = r.get("link", "")
+                message += f"{i}. 📄 <b>{title}</b>\n"
+                if snippet:
+                    message += f"   {snippet[:200]}\n"
+                if link:
+                    message += f'   🔗 <a href="{link}">اقرأ المزيد</a>\n' if lang == "ar" else f'   🔗 <a href="{link}">Read more</a>\n'
+                message += "\n"
+
+        if not rss_results and not web_results:
+            # لو مفيش نتائج خالص، نستخدم AI
             if lang == "ar":
                 ai_response = smart_chat(f"ابحث عن معلومات عن: {query}", lang)
             else:
                 ai_response = smart_chat(f"Search for information about: {query}", lang)
-            await loading_msg.edit_text(ai_response, parse_mode="HTML")
-            return
-
-        summarized = summarize_articles(results)
-
-        if lang == "ar":
-            message = f"🔍 <b>نتائج البحث: {query}</b>\n━━━━━━━━━━━━━━━━━\n\n"
+            message = ai_response
         else:
-            message = f"🔍 <b>Search Results: {query}</b>\n━━━━━━━━━━━━━━━━━\n\n"
+            message += "━━━━━━━━━━━━━━━━━\n🤖 <i>My Bro — بحث متقدم</i>"
 
-        items = []
-        for i, article in enumerate(summarized):
-            items.append(format_news_item(
-                i + 1, article['title'],
-                article.get('arabic_summary', ''),
-                article['link'],
-                i == 0
-            ))
-
-        message += "\n\n".join(items)
-        await loading_msg.edit_text(message, parse_mode="HTML", disable_web_page_preview=True)
+        # تقسيم لو الرسالة طويلة
+        if len(message) > 4000:
+            chunks = [message[i:i+4000] for i in range(0, len(message), 4000)]
+            for chunk in chunks:
+                await update.message.reply_text(chunk, parse_mode="HTML", disable_web_page_preview=True)
+            await loading_msg.delete()
+        else:
+            await loading_msg.edit_text(message, parse_mode="HTML", disable_web_page_preview=True)
 
     except Exception as e:
         logger.error(f"Error in /search: {e}")
@@ -523,6 +555,7 @@ async def sources_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     معالجة الرسائل العادية (محادثة ذكية + إعدادات)
+    + بحث ويب تلقائي لو المستخدم سأل عن شيء يحتاج معلومات حالية
     """
     user_id = update.effective_user.id
     text = update.message.text.strip()
@@ -577,9 +610,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 set_sources(user_id, selected)
                 user_states.pop(user_id, None)
                 if lang == "ar":
-                    await update.message.reply_text(f"✅ تم تحديث المصادر المفضلة")
+                    await update.message.reply_text("✅ تم تحديث المصادر المفضلة")
                 else:
-                    await update.message.reply_text(f"✅ Preferred sources updated")
+                    await update.message.reply_text("✅ Preferred sources updated")
             else:
                 await update.message.reply_text(
                     "❌ أرقام غير صحيحة" if lang == "ar" else "❌ Invalid numbers"
@@ -590,14 +623,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         return
 
-    # محادثة ذكية عادية
+    # محادثة ذكية عادية (+ بحث ويب تلقائي)
     increment_chat_count(user_id)
 
     loading_msg = await update.message.reply_text(format_loading(lang))
 
     try:
         response = smart_chat(text, lang)
-        await loading_msg.edit_text(response, parse_mode="HTML")
+        await loading_msg.edit_text(response, parse_mode="HTML", disable_web_page_preview=True)
     except Exception as e:
         logger.error(f"Error in smart chat: {e}")
         await loading_msg.edit_text(
@@ -647,7 +680,7 @@ def main():
             ("breaking", "🔴 Breaking news"),
             ("weekly", "📊 Weekly summary"),
             ("trending", "📈 Trending topics"),
-            ("search", "🔍 Search AI news"),
+            ("search", "🔍 Search AI news & web"),
             ("company", "🏢 Company report"),
             ("ask", "💬 Ask a question"),
             ("learn", "📚 Learn a topic"),
@@ -661,7 +694,7 @@ def main():
 
     app.post_init = post_init
 
-    logger.info(f"{BOT_NAME} is running! 🚀")
+    logger.info(f"{BOT_NAME} v{BOT_VERSION} is running! 🚀")
     app.run_polling(drop_pending_updates=True)
 
 

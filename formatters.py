@@ -17,6 +17,8 @@ def welcome_message(language: str = "ar") -> str:
 🔍 بحث متقدم
 📈 تتبع الترندات
 
+🔍 بحث ويب مباشر
+
 اكتب <b>/help</b> لعرض الأوامر المتاحة
 أو فقط اكتب أي سؤال وسأجيبك! 💬"""
     else:
@@ -29,6 +31,8 @@ Your AI companion for:
 📚 Learning AI
 🔍 AI Search
 📈 AI Trends
+
+🔍 Web Search
 
 Type <b>/help</b> to see available commands
 Or just ask me anything! 💬"""
@@ -60,7 +64,11 @@ def help_message(language: str = "ar") -> str:
 /time — تغيير وقت الأخبار
 /sources — المصادر المفضلة
 
-💡 <b>ملاحظة:</b> ممكن تتكلم معايا بشكل عادي من غير أوامر!"""
+🌐 <b>بحث الويب</b>
+ابحث عن أي شيء في الويب مباشرة!
+مثال: "ابحث عن أحدث أخبار OpenAI"
+
+💡 <b>ملاحظة:</b> ممكن تتكلم معايا بشكل عادي من غير أوامر! أنا ببحث في الويب تلقائياً لو سألت عن شيء يحتاج معلومات حالية 🔍"""
     else:
         return """🤖 <b>My Bro Commands</b>
 ━━━━━━━━━━━━━━━━━
@@ -85,7 +93,7 @@ def help_message(language: str = "ar") -> str:
 /time — Change news time
 /sources — Preferred sources
 
-💡 <b>Note:</b> You can chat with me naturally without commands!"""
+💡 <b>Note:</b> You can chat with me naturally without commands! I automatically search the web when you ask about current information 🔍"""
 
 
 def format_news_item(index: int, title: str, summary: str, url: str, is_top: bool = False) -> str:
