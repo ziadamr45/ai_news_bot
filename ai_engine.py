@@ -201,31 +201,43 @@ async def smart_chat(user_message: str, language: str = "ar", user_id: int = Non
     # 5. كشف أسئلة عن المؤسس
     creator_context = ""
     user_lower = user_message.lower()
-    creator_triggers_ar = ["مين عملك", "مين صانعك", "مين أسسك", "مين صانع البوت", "مين عمل البوت", "مين مبرمجك", "مين المطور", "مين أنشأك", "مين صاحبك"]
-    creator_triggers_en = ["who made you", "who created you", "who built you", "who is your creator", "who developed you", "who is the developer", "who founded", "who programmed you"]
+    creator_triggers_ar = ["مين عملك", "مين صانعك", "مين أسسك", "مين صانع البوت", "مين عمل البوت", "مين مبرمجك", "مين المطور", "مين أنشأك", "مين صاحبك", "مين صاحب البوت", "ازاي اتواصل مع المطور", "ازاي اجيب المطور", "مين المؤسس", "مين صاحب الفكرة", "عايز اتواصل مع مين عملك", "معلومات عن المطور", "مين صانعك يا بوت", "اعرف عن المطور"]
+    creator_triggers_en = ["who made you", "who created you", "who built you", "who is your creator", "who developed you", "who is the developer", "who founded", "who programmed you", "who is the founder", "who designed you", "how to contact creator", "how to contact developer", "tell me about your creator", "who owns you", "who is the owner", "creator info", "developer info", "about the developer"]
     for trigger in creator_triggers_ar + creator_triggers_en:
         if trigger in user_lower:
             if language == "ar":
-                creator_context = f"""المستخدم سأل عن صانعك. أجب بالتالي:
+                creator_context = f"""المستخدم سأل عن صانعك. أجب بالتالي بطريقة ودية:
 أنا اتعملت بواسطة {CREATOR_INFO['name_ar']} — {CREATOR_INFO['title_ar']}.
 {CREATOR_INFO['bio_ar']}
+الشركة: {CREATOR_INFO.get('company_ar', 'Qudra Tech')}
+البريد: {CREATOR_INFO.get('email', '')}
 ممكن تتواصل معاه:
 - الموقع: {CREATOR_INFO['website']}
 - GitHub: {CREATOR_INFO['github']}
 - LinkedIn: {CREATOR_INFO['linkedin']}
 - Telegram: {CREATOR_INFO['telegram']}
 - X: {CREATOR_INFO['twitter']}
+- Facebook: {CREATOR_INFO['facebook']}
+- Instagram: {CREATOR_INFO['instagram']}
+- YouTube: {CREATOR_INFO['youtube']}
+- Email: {CREATOR_INFO.get('email', '')}
 اتعمل بحب في مصر 🇪🇬"""
             else:
-                creator_context = f"""The user asked about your creator. Answer with:
+                creator_context = f"""The user asked about your creator. Answer with in a friendly way:
 I was created by {CREATOR_INFO['name_en']} — {CREATOR_INFO['title_en']}.
 {CREATOR_INFO['bio_en']}
+Company: {CREATOR_INFO.get('company_en', 'Qudra Tech')}
+Email: {CREATOR_INFO.get('email', '')}
 You can reach him at:
 - Website: {CREATOR_INFO['website']}
 - GitHub: {CREATOR_INFO['github']}
 - LinkedIn: {CREATOR_INFO['linkedin']}
 - Telegram: {CREATOR_INFO['telegram']}
 - X: {CREATOR_INFO['twitter']}
+- Facebook: {CREATOR_INFO['facebook']}
+- Instagram: {CREATOR_INFO['instagram']}
+- YouTube: {CREATOR_INFO['youtube']}
+- Email: {CREATOR_INFO.get('email', '')}
 Made with love in Egypt 🇪🇬"""
             break
 
@@ -330,6 +342,15 @@ User information (use this to personalize your response):
             return "⚠️ أنا مش قادر أرد دلوقتي بسبب ضغط على السيرفر. 🔄 جرب تاني بعد شوية — هشتغل إن شاء الله!"
         else:
             return "⚠️ I can't respond right now due to server load. 🔄 Try again shortly — I'll be back up!"
+
+    # حفظ المحادثة في الذاكرة
+    if user_id and response:
+        try:
+            from memory import save_conversation
+            save_conversation(user_id, "user", user_message[:500])
+            save_conversation(user_id, "bot", response[:500])
+        except Exception as e:
+            logger.debug(f"Save conversation error: {e}")
 
     return response
 

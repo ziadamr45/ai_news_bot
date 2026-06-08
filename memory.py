@@ -55,6 +55,7 @@ def init_database():
             sources TEXT DEFAULT '[]',
             subscribed INTEGER DEFAULT 0,
             response_length TEXT DEFAULT 'medium',
+            notification_enabled INTEGER DEFAULT 1,
             interests TEXT DEFAULT '[]',
             favorite_companies TEXT DEFAULT '[]',
             created_at TEXT,
@@ -554,6 +555,16 @@ INTEREST_KEYWORDS = {
     "machine learning": "Machine Learning", "deep learning": "Deep Learning",
     "python": "Python", "nextjs": "Next.js", "react": "React",
     "typescript": "TypeScript", "docker": "Docker",
+    "web development": "Web Development", "frontend": "Frontend Development",
+    "backend": "Backend Development", "fullstack": "Full-Stack Development",
+    "devops": "DevOps", "cloud computing": "Cloud Computing",
+    "cybersecurity": "Cybersecurity", "data science": "Data Science",
+    "data engineering": "Data Engineering", "mlops": "MLOps",
+    "ai ethics": "AI Ethics", "sustainability": "Green AI",
+    "edge ai": "Edge AI", "on-device ai": "On-Device AI",
+    "ai art": "AI Art", "ai music": "AI Music",
+    "ai writing": "AI Writing", "chatbot": "Chatbots",
+    "voice assistant": "Voice Assistants",
 }
 
 COMPANY_KEYWORDS = {
@@ -831,6 +842,140 @@ def format_favorites_display(user_id: int, lang: str = "ar") -> str:
             text += f"📊 Total: {len(favorites)} items"
 
     return text
+
+
+# ═══════════════════════════════════════
+# إعدادات الإشعارات - Notification Settings
+# ═══════════════════════════════════════
+
+def get_notification_enabled(user_id: int) -> bool:
+    """هل الإشعارات مفعلة للمستخدم"""
+    user = get_user(user_id)
+    return bool(user.get("notification_enabled", 1))
+
+def set_notification_enabled(user_id: int, enabled: bool):
+    """تفعيل/إيقاف الإشعارات"""
+    update_user(user_id, {"notification_enabled": 1 if enabled else 0})
+
+
+# ═══════════════════════════════════════
+# الذاكرة الذكية المتقدمة - Advanced Smart Memory
+# ═══════════════════════════════════════
+
+# كلمات تدل على تفضيل واضح من المستخدم
+PREFERENCE_PATTERNS_AR = [
+    "بحب", "بعشق", "بفضل", "أحب", "عايز", "محتاج", "محتاجة",
+    "مفضلتي", "تفضيلي", "حبيبي", "أكتر حاجة",
+]
+PREFERENCE_PATTERNS_EN = [
+    "i love", "i like", "i prefer", "my favorite", "i want",
+    "i need", "my preference", "i enjoy", "i'm into",
+]
+
+# بيانات حساسة لا يتم حفظها أبداً
+SENSITIVE_PATTERNS = [
+    "password", "كلمة سر", "باسورد", "pin", "رمز سري",
+    "api key", "مفتاح", "token", "توكين",
+    "credit card", "بطاقة ائتمان", "visa", "mastercard",
+    "ssn", "رقم ضمان", "رقم قومي",
+    "private key", "مفتاح خاص", "secret", "سر",
+]
+
+
+def is_sensitive(text: str) -> bool:
+    """فحص هل النص يحتوي على بيانات حساسة"""
+    text_lower = text.lower()
+    for pattern in SENSITIVE_PATTERNS:
+        if pattern in text_lower:
+            return True
+    return False
+
+
+def has_preference_intent(text: str) -> bool:
+    """كشف هل المستخدم بيعبر عن تفضيل واضح"""
+    text_lower = text.lower()
+    for pattern in PREFERENCE_PATTERNS_AR:
+        if pattern in text_lower:
+            return True
+    for pattern in PREFERENCE_PATTERNS_EN:
+        if pattern in text_lower:
+            return True
+    return False
+
+
+def smart_save(user_id: int, text: str, role: str = "user"):
+    """
+    حفظ ذكي - بيحفظ بس المهم والحساس
+    - بيتجنب البيانات الحساسة
+    - بيفحص تفضيلات المستخدم
+    - بيحفظ الاهتمامات تلقائياً
+    """
+    if is_sensitive(text):
+        logger.debug(f"Skipping sensitive content for user {user_id}")
+        return
+
+    # حفظ المحادثة
+    save_conversation(user_id, role, text)
+
+    # كشف الاهتمامات
+    detect_interests(user_id, text)
+
+    # لو المستخدم بيعبر عن تفضيل، احفظه كذكرى
+    if role == "user" and has_preference_intent(text):
+        try:
+            # استخراج تفضيل بسيط
+            save_memory(user_id, f"preference_{datetime.now().strftime('%Y%m%d%H%M')}", text[:200], "preferences")
+        except Exception as e:
+            logger.debug(f"Smart save preference error: {e}")
+
+
+def get_personalized_greeting(user_id: int, lang: str = "ar") -> str:
+    """تجهيز تحية مخصصة بناءً على الذاكرة"""
+    user = get_user(user_id)
+    name = user.get("name", "")
+    interests = get_interests(user_id)
+
+    if lang == "ar":
+        if name:
+            greeting = f"أهلاً {name}! 👋"
+        else:
+            greeting = "أهلاً! 👋"
+
+        if interests:
+            top_interest = interests[0] if interests else ""
+            if top_interest:
+                greeting += f"\n🎯 عارف إنك مهتم بـ {top_interest}، ممكن أقولك آخر الأخبار عنه!"
+    else:
+        if name:
+            greeting = f"Hey {name}! 👋"
+        else:
+            greeting = "Hey! 👋"
+
+        if interests:
+            top_interest = interests[0] if interests else ""
+            if top_interest:
+                greeting += f"\n🎯 I know you're into {top_interest}, want me to share the latest news about it?"
+
+    return greeting
+
+
+def get_recommended_topic(user_id: int, lang: str = "ar") -> str:
+    """توصية موضوع بناءً على الاهتمامات"""
+    interests = get_interests(user_id)
+    learned = get_learned_topics(user_id)
+
+    if not interests:
+        return ""
+
+    # إيجاد اهتمام لم يتعلمه بعد
+    for interest in interests:
+        if interest.lower() not in [l.lower() for l in learned]:
+            if lang == "ar":
+                return f"💡 ممكن تتعلم عن {interest}! جرب <code>/learn {interest}</code>"
+            else:
+                return f"💡 You could learn about {interest}! Try <code>/learn {interest}</code>"
+
+    return ""
 
 
 # ═══════════════════════════════════════

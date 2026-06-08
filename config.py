@@ -301,7 +301,7 @@ ROADMAPS = {
 # ═══════════════════════════════════════
 
 BOT_NAME = "My Bro"
-BOT_VERSION = "6.0"
+BOT_VERSION = "7.0"
 
 # ═══════════════════════════════════════
 # معلومات المؤسس - Creator Info
@@ -310,10 +310,13 @@ BOT_VERSION = "6.0"
 CREATOR_INFO = {
     "name_en": "Ziad Amr",
     "name_ar": "زياد عمرو",
-    "title_en": "Egyptian Web Developer",
-    "title_ar": "مطوّر ويب مصري",
-    "bio_en": "Full-stack web developer specializing in Next.js, React, TypeScript, and modern web technologies. Building AI-powered tools and bots.",
-    "bio_ar": "مطوّر ويب متكامل متخصص في Next.js و React و TypeScript وتقنيات الويب الحديثة. بيبني أدوات وبوتات بتقنية الذكاء الاصطناعي.",
+    "title_en": "Egyptian Web Developer & AI Builder",
+    "title_ar": "مطوّر ويب مصري وباني أدوات ذكاء اصطناعي",
+    "bio_en": "Full-stack web developer specializing in Next.js, React, TypeScript, and modern web technologies. Building AI-powered tools and bots. Founder of Qudra Tech. Passionate about making AI accessible to Arabic speakers.",
+    "bio_ar": "مطوّر ويب متكامل متخصص في Next.js و React و TypeScript وتقنيات الويب الحديثة. بيبني أدوات وبوتات بتقنية الذكاء الاصطناعي. مؤسس Qudra Tech. شغوف إنه يخلي الذكاء الاصطناعي متاح للناطقين بالعربية.",
+    "company_en": "Qudra Tech",
+    "company_ar": "Qudra Tech",
+    "email": "ziad90216@gmail.com",
     "website": "https://ziadamrme.vercel.app",
     "github": "https://github.com/ziadamr45",
     "linkedin": "https://www.linkedin.com/in/ziad-amr-44633a411",
@@ -322,7 +325,16 @@ CREATOR_INFO = {
     "instagram": "https://www.instagram.com/ziadamr455/",
     "telegram": "https://t.me/ziadamr",
     "youtube": "https://youtube.com/@alhayat_ala_eltareq",
-    "tech_stack": ["Next.js", "React", "TypeScript", "Tailwind CSS", "PostgreSQL", "Prisma", "Node.js", "Python", "Docker"],
+    "threads": "https://www.threads.com/@ziadamr455",
+    "devto": "https://dev.to/ziad_amr_0e76916f10a8563a",
+    "tech_stack": ["Next.js", "React", "TypeScript", "Tailwind CSS", "PostgreSQL", "Prisma", "Node.js", "Python", "Docker", "AI/ML"],
+    "projects": [
+        {"name": "My Bro", "desc": "AI News Telegram Bot"},
+        {"name": "AuraEscape", "desc": "Endless Runner Game"},
+        {"name": "Eah-Elkalam", "desc": "Egyptian Trend Radar"},
+        {"name": "Quadra Studio", "desc": "Quranic Video Maker"},
+        {"name": "Bawabet-elhadas", "desc": "Smart News Portal"},
+    ],
 }
 
 # Memory / Storage

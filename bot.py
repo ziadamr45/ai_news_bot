@@ -1819,23 +1819,37 @@ def main():
     # تعيين أوامر البوت + تشغيل الجدولة بعد بدء event loop
     async def post_init(application):
         """بعد تشغيل البوت - inside event loop"""
-        await application.bot.set_my_commands([
-            ("start", "ابدأ / Start"),
-            ("news", "أخبار AI / AI News"),
-            ("breaking", "خبر عاجل / Breaking News"),
-            ("weekly", "ملخص أسبوعي / Weekly Summary"),
-            ("trending", "التريندات / Trending"),
-            ("search", "بحث / Search"),
-            ("ask", "اسأل / Ask"),
-            ("learn", "تعلم / Learn"),
-            ("roadmap", "خارطة طريق / Roadmap"),
-            ("company", "شركة / Company"),
-            ("subscribe", "اشترك / Subscribe"),
-            ("unsubscribe", "إلغاء الاشتراك / Unsubscribe"),
-            ("settings", "إعدادات / Settings"),
-            ("help", "مساعدة / Help"),
-        ])
-        logger.info("✅ Bot commands set")
+        # تسجيل الأوامر في تيليجرام - Register commands with Telegram
+        try:
+            from telegram import BotCommand
+            await application.bot.set_my_commands([
+                BotCommand("start", "بدء البوت / Start the bot"),
+                BotCommand("help", "المساعدة / Help"),
+                BotCommand("news", "أخبار AI / AI News"),
+                BotCommand("breaking", "خبر عاجل / Breaking news"),
+                BotCommand("weekly", "ملخص أسبوعي / Weekly summary"),
+                BotCommand("trending", "الترندات / Trending"),
+                BotCommand("search", "بحث / Search"),
+                BotCommand("deepsearch", "بحث عميق / Deep search"),
+                BotCommand("ask", "سؤال / Ask question"),
+                BotCommand("learn", "تعلم / Learn topic"),
+                BotCommand("roadmap", "خارطة طريق / Roadmap"),
+                BotCommand("company", "تقرير شركة / Company report"),
+                BotCommand("subscribe", "اشترك / Subscribe"),
+                BotCommand("unsubscribe", "إلغاء اشتراك / Unsubscribe"),
+                BotCommand("memory", "ذاكرتي / My memory"),
+                BotCommand("progress", "تقدم التعلم / Learning progress"),
+                BotCommand("favorite", "مفضلة / Favorite"),
+                BotCommand("favorites", "المفضلات / Favorites"),
+                BotCommand("forget", "امسح ذكرى / Forget memory"),
+                BotCommand("resetmemory", "مسح الكل / Reset memory"),
+                BotCommand("language", "اللغة / Language"),
+                BotCommand("about", "عن البوت / About"),
+                BotCommand("status", "حالة النظام / System status"),
+            ])
+            logger.info("Bot commands registered with Telegram successfully")
+        except Exception as e:
+            logger.warning(f"Failed to register commands with Telegram: {e}")
 
         # تشغيل الجدولة هنا (داخل event loop)
         _scheduler.start()

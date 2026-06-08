@@ -455,19 +455,24 @@ def about_message(language: str = "ar") -> str:
     from config import CREATOR_INFO, BOT_NAME, BOT_VERSION
 
     if language == "ar":
-        tech_list = " • ".join(CREATOR_INFO["tech_stack"][:6])
+        tech_list = " • ".join(CREATOR_INFO["tech_stack"][:7])
+        projects_text = ""
+        for p in CREATOR_INFO.get("projects", [])[:4]:
+            projects_text += f"  ▸ {p['name']} — {p['desc']}\n"
         return f"""🤖 <b>عن {BOT_NAME} v{BOT_VERSION}</b>
 ━━━━━━━━━━━━━━━━━
 
-<b>{BOT_NAME}</b> — مساعدك الذكي لمتابعة عالم الذكاء الاصطناعي 🧠
+<b>{BOT_NAME}</b> — مساعدك الذكي الشخصي لمتابعة عالم الذكاء الاصطناعي 🧠
 
 ✅ أخبار AI لحظة بلحظة
 ✅ محادثة ذكية مع AI
-✅ بحث في الويب
+✅ بحث في الويب والبحث العميق
 ✅ شروحات وخرائط طريق
 ✅ تقارير شركات AI
 ✅ بث أخبار يومي مجدول
 ✅ نظام ذاكرة ذكي بيفكرك
+✅ تحليل الصور بالذكاء الاصطناعي
+✅ بوت شخصي بيفتكر اهتماماتك
 
 ━━━━━━━━━━━━━━━━━
 
@@ -478,32 +483,47 @@ def about_message(language: str = "ar") -> str:
 
 {CREATOR_INFO['bio_ar']}
 
+🏢 <b>الشركة:</b> {CREATOR_INFO.get('company_ar', 'Qudra Tech')}
+
 🔗 <b>تواصل معاه:</b>
 🌐 الموقع: <a href="{CREATOR_INFO['website']}">ziadamrme.vercel.app</a>
 💻 GitHub: <a href="{CREATOR_INFO['github']}">ziadamr45</a>
 💼 LinkedIn: <a href="{CREATOR_INFO['linkedin']}">Ziad Amr</a>
 📱 Telegram: <a href="{CREATOR_INFO['telegram']}">@ziadamr</a>
 🐦 X: <a href="{CREATOR_INFO['twitter']}">@ziad90216</a>
+📘 Facebook: <a href="{CREATOR_INFO['facebook']}">Ziad Amr</a>
+📸 Instagram: <a href="{CREATOR_INFO['instagram']}">@ziadamr455</a>
+🎬 YouTube: <a href="{CREATOR_INFO['youtube']}">الحياة على الطريق</a>
+🧵 Threads: <a href="{CREATOR_INFO.get('threads', '#')}">@ziadamr455</a>
+📝 DEV: <a href="{CREATOR_INFO.get('devto', '#')}">ziad_amr</a>
+📧 Email: {CREATOR_INFO.get('email', '')}
 
 🛠️ <b>التقنيات:</b>
 {tech_list}
 
+🚀 <b>من أعماله:</b>
+{projects_text}
 ━━━━━━━━━━━━━━━━━
 🤖 <i>اتعمل بحب في مصر 🇪🇬</i>"""
     else:
-        tech_list = " • ".join(CREATOR_INFO["tech_stack"][:6])
+        tech_list = " • ".join(CREATOR_INFO["tech_stack"][:7])
+        projects_text = ""
+        for p in CREATOR_INFO.get("projects", [])[:4]:
+            projects_text += f"  ▸ {p['name']} — {p['desc']}\n"
         return f"""🤖 <b>About {BOT_NAME} v{BOT_VERSION}</b>
 ━━━━━━━━━━━━━━━━━
 
-<b>{BOT_NAME}</b> — Your smart AI assistant for the AI world 🧠
+<b>{BOT_NAME}</b> — Your smart personal AI assistant for the AI world 🧠
 
 ✅ Real-time AI news
 ✅ Smart AI chat
-✅ Web search
+✅ Web search & Deep Search
 ✅ Tutorials & roadmaps
 ✅ AI company reports
 ✅ Scheduled daily news
 ✅ Smart memory system
+✅ AI image analysis
+✅ Personalized to your interests
 
 ━━━━━━━━━━━━━━━━━
 
@@ -514,15 +534,25 @@ def about_message(language: str = "ar") -> str:
 
 {CREATOR_INFO['bio_en']}
 
+🏢 <b>Company:</b> {CREATOR_INFO.get('company_en', 'Qudra Tech')}
+
 🔗 <b>Get in touch:</b>
 🌐 Website: <a href="{CREATOR_INFO['website']}">ziadamrme.vercel.app</a>
 💻 GitHub: <a href="{CREATOR_INFO['github']}">ziadamr45</a>
 💼 LinkedIn: <a href="{CREATOR_INFO['linkedin']}">Ziad Amr</a>
 📱 Telegram: <a href="{CREATOR_INFO['telegram']}">@ziadamr</a>
 🐦 X: <a href="{CREATOR_INFO['twitter']}">@ziad90216</a>
+📘 Facebook: <a href="{CREATOR_INFO['facebook']}">Ziad Amr</a>
+📸 Instagram: <a href="{CREATOR_INFO['instagram']}">@ziadamr455</a>
+🎬 YouTube: <a href="{CREATOR_INFO['youtube']}">Alhayat Ala Eltareq</a>
+🧵 Threads: <a href="{CREATOR_INFO.get('threads', '#')}">@ziadamr455</a>
+📝 DEV: <a href="{CREATOR_INFO.get('devto', '#')}">ziad_amr</a>
+📧 Email: {CREATOR_INFO.get('email', '')}
 
 🛠️ <b>Tech Stack:</b>
 {tech_list}
 
+🚀 <b>Notable Projects:</b>
+{projects_text}
 ━━━━━━━━━━━━━━━━━
 🤖 <i>Made with love in Egypt 🇪🇬</i>"""
