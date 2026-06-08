@@ -11,6 +11,7 @@ def clean_ai_response(text: str) -> str:
     تنظيف رد AI من رموز Markdown الزيادة
     البوت بيستخدم HTML في تيليجرام، فـ Markdown بيبان كرموز غريبة
     بنحول الـ Markdown لـ HTML أو بنشيله لو مش محتاجينه
+    + معالجة الكلام اللي بيلزق في بعضه بسبب إزالة الرموز
     """
     if not text:
         return text
@@ -19,6 +20,10 @@ def clean_ai_response(text: str) -> str:
     text = re.sub(r'```\w*\n?(.*?)```', r'<code>\1</code>', text, flags=re.DOTALL)
 
     # 2. تحويل **text** أو __text__ لـ <b>text</b> (bold)
+    # مهم: نحط مسافة قبل وبعد الـ tag عشان الكلام ميلزقش
+    text = re.sub(r'(?<=\s)\*\*(.+?)\*\*(?=\s)', r' <b>\1</b> ', text)
+    text = re.sub(r'(?<=\s)\*\*(.+?)\*\*$', r' <b>\1</b>', text)
+    text = re.sub(r'^\*\*(.+?)\*\*(?=\s)', r'<b>\1</b> ', text)
     text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
     text = re.sub(r'__(.+?)__', r'<b>\1</b>', text)
 
@@ -34,11 +39,11 @@ def clean_ai_response(text: str) -> str:
     # 6. تحويل `code` لـ <code>code</code>
     text = re.sub(r'`([^`]+)`', r'<code>\1</code>', text)
 
-    # 7. شيل ### و ## و # (عناوين Markdown)
-    text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
+    # 7. شيل ### و ## و # (عناوين Markdown) - نحط سطر جديد بعدهم
+    text = re.sub(r'^#{1,6}\s+(.+)$', r'\n<b>\1</b>\n', text, flags=re.MULTILINE)
 
-    # 8. شيل --- أو *** أو ___ (خطوط أفقية)
-    text = re.sub(r'^[-*_]{3,}\s*$', '', text, flags=re.MULTILINE)
+    # 8. شيل --- أو *** أو ___ (خطوط أفقية) - نحط سطر فاضي بدالها
+    text = re.sub(r'^[-*_]{3,}\s*$', '\n', text, flags=re.MULTILINE)
 
     # 9. معالجة الجداول (pipe |) - نحولها لأسطر عادية
     lines = text.split('\n')
@@ -62,10 +67,12 @@ def clean_ai_response(text: str) -> str:
     text = re.sub(r'^>\s+', '', text, flags=re.MULTILINE)
 
     # 12. شيل أي * متبقية لوحدها (مش جوا tag)
-    # بخلص الـ * اللي متبقية بره الـ HTML tags
+    # هنا المشكلة الأساسية: لو شلنا * من غير ما نحط مسافة مكانها، الكلام بيلزق
+    # الحل: نحط مسافة مكان كل * بره الـ HTML tags
     result = []
     in_tag = False
-    for char in text:
+    prev_was_star = False
+    for i, char in enumerate(text):
         if char == '<':
             in_tag = True
             result.append(char)
@@ -73,18 +80,42 @@ def clean_ai_response(text: str) -> str:
             in_tag = False
             result.append(char)
         elif char == '*' and not in_tag:
-            continue  # شيل الـ * البره
+            # لو الـ * بين كلمتين (قبلها حرف وبعدها حرف) نحط مساحة
+            if i > 0 and i < len(text) - 1:
+                prev_char = text[i-1] if result else ''
+                next_char = text[i+1] if i+1 < len(text) else ''
+                # لو الحرف قبل وبعد مش مسافة، نحط مساحة عشان الكلام ميلزقش
+                if prev_char not in (' ', '\n', '') and next_char not in (' ', '\n', ''):
+                    result.append(' ')
+                elif prev_char not in (' ', '\n', '') or next_char not in (' ', '\n', ''):
+                    result.append(' ')
+            # بس نشيل الـ * نفسها
+            prev_was_star = True
         elif char == '|' and not in_tag:
             continue  # شيل أي | متبقي
         else:
             result.append(char)
+            prev_was_star = False
     text = ''.join(result)
 
-    # 13. شيل مسافات زيادة في نهاية السطور
+    # 13. فصل الكلمات العربية الملتصقة بالـ HTML tags
+    # مثال: "كلمة<b>عريضة</b>كلمة" ← "كلمة <b>عريضة</b> كلمة"
+    # قبل الـ opening tags
+    text = re.sub(r'([^\s<>])(<b>|<i>|<code>|<s>)', r'\1 \2', text)
+    # بعد الـ closing tags
+    text = re.sub(r'(</b>|</i>|</code>|</s>)([^\s<>])', r'\1 \2', text)
+
+    # 14. تأكد إن كل نقطة/قائمة بعدها سطر جديد
+    text = re.sub(r'(• [^\n]+)(?=[^\n•])', r'\1\n', text)
+
+    # 15. شيل مسافات زيادة في نهاية السطور
     text = re.sub(r'[ \t]+$', '', text, flags=re.MULTILINE)
 
-    # 14. شيل أسطر فاضية متكررة (أكتر من 2)
+    # 16. شيل أسطر فاضية متكررة (أكتر من 2)
     text = re.sub(r'\n{3,}', '\n\n', text)
+
+    # 17. شيل مسافات مزدوجة جوا السطر (من الإصلاحات فوق)
+    text = re.sub(r' {3,}', ' ', text)
 
     return text.strip()
 
