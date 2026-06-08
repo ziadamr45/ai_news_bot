@@ -43,6 +43,11 @@ WEB_SEARCH_TRIGGERS_AR = [
     "اعرف عن", "ايه الجديد في", "احدث اخبار", "اخبار اليوم عن",
     "معلومات عن", "هل يوجد", "في ايه جديد", "ايه آخر",
     "تصفح", "افتح موقع", "روح على", "شوفلي",
+    # كلمات إضافية للبحث
+    "ايه رأيك في", "ايه الفرق بين", "ازاي اعمل",
+    "هل صحيح", "ايه احسن", "ايه افضل",
+    "مين صاحب", "مين المؤسس", "مين اخترع",
+    "هل يوجد", "فين ممكن", "ازاي اجيب",
 ]
 
 WEB_SEARCH_TRIGGERS_EN = [
@@ -51,6 +56,11 @@ WEB_SEARCH_TRIGGERS_EN = [
     "browse", "check website", "go to", "look at",
     "tell me about", "what is the current", "what's the latest",
     "news about", "recent developments",
+    # Additional triggers
+    "what do you think about", "what's the difference",
+    "how do i", "is it true that", "what's the best",
+    "who invented", "who founded", "who created",
+    "where can i", "how to get",
 ]
 
 # كلمات تدل على إن المستخدم عاوز بحث عميق
@@ -81,13 +91,36 @@ CODING_TRIGGERS = [
 ]
 
 
+# كلمات تدل على إن السؤال عن شيء محتاج معلومات حديثة (مش موجود في بيانات التدريب)
+CURRENT_INFO_PATTERNS = [
+    # أحداث حالية
+    r'(ايه|اشن|اى|اي)\s*(اخبار|جديد|احدث|آخر|حصل|بيحصل)',
+    r'(what|how|when|where)\s*(is|are|was|were)\s*(the\s*)?(latest|current|new|recent|price|status)',
+    r'(اليوم|حالياً|الآن|دلوقتي|السنة دي|هالسنة)',
+    r'(today|currently|now|right now|this week|this month|this year|in 2025|in 2026)',
+    # أسئلة عن أشياء ممكن تتغير (أسعار، ترتيبات، إحصائيات)
+    r'(سعر|اسعار|تكلفة|كم|عدد|نسبة|ترتيب)',
+    r'(price|cost|how much|how many|ranking|score|rate)',
+    # منتجات وإصدارات جديدة
+    r'(اصدار|نسخة|تحديث|release|launch|announced|launching)',
+    r'(GPT-5|GPT-4.5|Claude 4|Gemini 2|Llama 4|o3|o4|Grok 3)',
+    # شركات وأخبارها
+    r'(اخبار|أخبار|news|جديد|update)\s*(openai|google|deepmind|anthropic|meta|xai|nvidia|microsoft|apple|tesla)',
+    r'(openai|google|deepmind|anthropic|meta|xai|nvidia|microsoft|apple|tesla)\s*(اخبار|أخبار|news|جديد|update|اشترى|acquired)',
+]
+
+
 def needs_web_search(text: str) -> bool:
     """
     كشف هل المستخدم محتاج بحث في الويب
     بناءً على كلمات مفتاحية ونوع السؤال
+    
+    القاعدة: أي سؤال عن معلومات ممكن تتغير مع الوقت لازم يبحث في الويب
+    لأن نموذج الـ AI معلوماته قديمة (بيانات تدريب لحد 2024)
     """
     text_lower = text.lower().strip()
 
+    # 1. كلمات مفتاحية مباشرة
     for trigger in WEB_SEARCH_TRIGGERS_AR:
         if trigger in text_lower:
             return True
@@ -96,26 +129,31 @@ def needs_web_search(text: str) -> bool:
         if trigger in text_lower:
             return True
 
-    current_patterns = [
-        r'(ايه|اشن|اى|اي)\s*(اخبار|جديد|احدث|آخر)',
-        r'(what|how|when|where)\s*(is|are|was|were)\s*(the\s*)?(latest|current|new|recent)',
-        r'(اليوم|حالياً|الآن|دلوقتي)',
-        r'(today|currently|now|right now|this week|this month)',
-    ]
-    for pattern in current_patterns:
+    # 2. أنماط الأسئلة عن معلومات حالية
+    for pattern in CURRENT_INFO_PATTERNS:
         if re.search(pattern, text_lower):
             return True
 
+    # 3. روابط URLs
     url_pattern = r'(https?://|www\.|\.com|\.org|\.net|\.app|\.io|\.dev)'
     if re.search(url_pattern, text_lower):
         return True
 
-    company_news_patterns = [
-        r'(اخبار|أخبار|news)\s*(openai|google|deepmind|anthropic|meta|xai|nvidia|microsoft)',
-        r'(openai|google|deepmind|anthropic|meta|xai|nvidia|microsoft)\s*(اخبار|أخبار|news|جديد|update)',
-    ]
-    for pattern in company_news_patterns:
-        if re.search(pattern, text_lower):
+    # 4. أسئلة عن شركات تقنية محددة (ممكن يكون في أخبار جديدة)
+    company_names = ['openai', 'chatgpt', 'anthropic', 'claude', 'deepmind', 'gemini',
+                    'nvidia', 'xai', 'grok', 'meta ai', 'mistral', 'perplexity']
+    question_words = ['who', 'what', 'when', 'where', 'how', 'why', 'is', 'are', 'was', 'مين', 'ايه', 'ازاي', 'ليه', 'هل', 'فين', 'امتى']
+    has_company = any(c in text_lower for c in company_names)
+    has_question = any(q in text_lower for q in question_words)
+    if has_company and has_question and len(text_lower) > 10:
+        return True
+
+    # 5. أسئلة طويلة ومفصلة (غالباً محتاجة معلومات دقيقة)
+    if len(text_lower) > 50 and has_question:
+        # لو السؤال طويل وفيه كلمات استفهام، ممكن يحتاج بحث
+        specific_keywords = ['model', 'نموذج', 'tool', 'أداة', 'app', 'تطبيق', 'software', 'برنامج',
+                          'company', 'شركة', 'startup', 'تقنية', 'technology', 'AI']
+        if any(k in text_lower for k in specific_keywords):
             return True
 
     return False
@@ -357,13 +395,19 @@ Made with love in Egypt 🇪🇬"""
 لو المستخدم بيكلمك في سياق محادثة، رد عليه مباشرة من غير مقدمات.
 ماتبدأش رسالتك بـ "أهلاً" أو "مرحباً" كل مرة - فقط أول مرة تتكلم فيها معاه.
 
-🔴🔴🔴 التاريخ والمعرفة الحالية: 🔴🔴🔴
+🔴🔴🔴 التاريخ والمعرفة الحالية (صارم جداً): 🔴🔴🔴
 {date_context}
-أنت تقدر تبحث في الويب وتجيب معلومات حديثة. لو المستخدم سأل عن حاجة حالية، ابحث واجيبله أحدث معلومات.
-ماتقولش أبداً "معلوماتي متوقفه في يناير 2024" أو أي تاريخ قديم.
+
+⚠️ قاعدة صارمة عن المعرفة:
+- بياناتك (training data) قديمة ومعرفتك بتنتهي في 2024.
+- لو المستخدم سأل عن أي حاجة بعد 2024 (أحداث جديدة، منتجات جديدة، أخبار، أسعار، إحصائيات) — ماتجاوبش من ذاكرتك لأنك مش هتبقي دقيق.
+- بدل كده، قول: "خليني أبحث في الويب وأجيبلك أحدث معلومات" — والبحث هيحصل تلقائياً.
+- ماتقولش أبداً إنك عارف حاجة مش عارفها. لو مش متأكد، قول صراحة.
+- ماتقولش "معلوماتي متوقفه في يناير 2024" — بدل كده قول "دعني أبحث عن أحدث معلومات".
+- لو جاوبت من ذاكرتك على سؤال عن معلومات حالية، لازم تضيف: "ملاحظة: المعلومات دي من بياناتي القديمة وممكن تكون مش محدثة"
 
 🔴🔴🔴 قدراتك: 🔴🔴🔴
-• 📰 أخبار AI اليومية • 🔍 بحث الويب • 🔬 بحث عميق • 👁️ تحليل الصور
+• 📰 أخبار AI اليومية • 🔍 بحث الويب الحقيقي • 🔬 بحث عميق • 👁️ تحليل الصور
 • 📚 تعلم AI • 🗺️ خرائط طريق • 🏢 تقارير شركات • 🧠 ذاكرة • 💻 برمجة
 
 🔴🔴🔴 مين أسسك: 🔴🔴🔴
@@ -382,6 +426,7 @@ Made with love in Egypt 🇪🇬"""
 4. لو عندك قائمة نقاط، افصل كل نقطة بسطر فاضي
 5. ماتلزقش كلمتين في بعض - دايماً حط مسافة بينهم
 6. لو الرسالة طويلة، قسمها لفقرات قصيرة مع سطور فاضية بينهم
+7. كل جملة لازم يكون في مسافة كافية بينها وبين اللي قبلها
 
 مثال صح:
 هذا نص عادي
@@ -389,6 +434,7 @@ Made with love in Egypt 🇪🇬"""
 <b>وهذا عنوان</b>
 
 • نقطة أولى
+
 • نقطة تانية
 
 وهذا نص تاني
@@ -431,13 +477,19 @@ You already introduced yourself at the start. Do NOT re-introduce yourself unles
 If the user is talking to you in an ongoing conversation, respond directly without preamble.
 Don't start every message with "Hello" or "Hi" — only the first time you interact.
 
-🔴🔴🔴 CURRENT DATE & KNOWLEDGE: 🔴🔴🔴
+🔴🔴🔴 CURRENT DATE & KNOWLEDGE (STRICT): 🔴🔴🔴
 {date_context}
-You CAN search the web and get up-to-date information. If the user asks about something current, search and provide the latest info.
-NEVER say "my knowledge is cut off at January 2024" or any old date.
+
+⚠️ STRICT KNOWLEDGE RULE:
+- Your training data is old and your knowledge ends in 2024.
+- If the user asks about ANYTHING after 2024 (recent events, new products, news, prices, statistics) — do NOT answer from your memory because you will be inaccurate.
+- Instead, say: "Let me search the web for the latest info" — and the search will happen automatically.
+- NEVER claim to know something you don't. If unsure, say so honestly.
+- NEVER say "my knowledge is cut off at January 2024" — instead say "Let me search for the latest information".
+- If you answer from your memory about current info, you MUST add: "Note: This info is from my training data and may not be up-to date"
 
 🔴🔴🔴 YOUR CAPABILITIES: 🔴🔴🔴
-• 📰 Daily AI News • 🔍 Web Search • 🔬 Deep Search • 👁️ Image Analysis
+• 📰 Daily AI News • 🔍 Real Web Search • 🔬 Deep Search • 👁️ Image Analysis
 • 📚 AI Learning • 🗺️ Roadmaps • 🏢 Company Reports • 🧠 Memory • 💻 Coding
 
 🔴🔴🔴 YOUR CREATOR: 🔴🔴🔴
@@ -456,6 +508,7 @@ ONLY use: <b>text</b> for bold, <i>text</i> for italic, <code>text</code> for co
 4. If you have a bullet list, separate each bullet with a blank line
 5. Never stick two words together — always have a space between them
 6. If the message is long, break it into short paragraphs with blank lines between them
+7. Every sentence must have enough spacing between it and the previous one
 
 Correct example:
 This is normal text
@@ -463,6 +516,7 @@ This is normal text
 <b>This is a heading</b>
 
 • First point
+
 • Second point
 
 This is more text

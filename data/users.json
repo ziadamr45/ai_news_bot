@@ -12,9 +12,9 @@
       "wired.com"
     ],
     "created_at": "2026-06-07T20:38:01.497744",
-    "last_interaction": "2026-06-08T01:33:07.118444",
+    "last_interaction": "2026-06-08T01:43:08.885919",
     "commands_used": 17,
-    "chat_count": 14
+    "chat_count": 15
   },
   "7406055354": {
     "language": "ar",
@@ -34,5 +34,13 @@
       "OpenAI",
       "Google"
     ]
+  },
+  "123456": {
+    "subscribed": true,
+    "last_interaction": "2026-06-08T02:00:29.582749"
+  },
+  "999999": {
+    "subscribed": true,
+    "last_interaction": "2026-06-08T02:01:13.797273"
   }
 }

@@ -105,8 +105,17 @@ def clean_ai_response(text: str) -> str:
     # بعد الـ closing tags
     text = re.sub(r'(</b>|</i>|</code>|</s>)([^\s<>])', r'\1 \2', text)
 
+    # 13b. فصل الكلمات الملتصقة بالـ HTML بشكل أوسع
+    # أي حرف مش whitespace قبل < مباشرة
+    text = re.sub(r'(\S)(<)', r'\1 \2', text)
+    # أي > مباشرة بعدة حرف مش whitespace
+    text = re.sub(r'(>)(\S)', r'\1 \2', text)
+
     # 14. تأكد إن كل نقطة/قائمة بعدها سطر جديد
     text = re.sub(r'(• [^\n]+)(?=[^\n•])', r'\1\n', text)
+
+    # 14b. فصل النقاط بسطر فاضي
+    text = re.sub(r'(• [^\n]+)\n(• )', r'\1\n\n\2', text)
 
     # 15. شيل مسافات زيادة في نهاية السطور
     text = re.sub(r'[ \t]+$', '', text, flags=re.MULTILINE)

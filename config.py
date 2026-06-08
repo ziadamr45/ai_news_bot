@@ -31,6 +31,9 @@ HUGGINGFACE_BASE_URL = "https://inference-api.nscale.com/v1"
 # Cohere (مجاني مع مفاتيح)
 COHERE_API_KEY = os.environ.get("COHERE_API_KEY", "")
 
+# Tavily (بحث حقيقي في الويب - الأفضل)
+TAVILY_API_KEY = os.environ.get("TAVILY_API_KEY", "")
+
 # OpenRouter (مجاني محدود - 50 طلب/يوم)
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"

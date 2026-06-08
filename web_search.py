@@ -1,7 +1,7 @@
 """
 بحث الويب - Web Search Module
-يستخدم DuckDuckGo (ddgs) للبحث مع تلخيص النتائج بالذكاء الاصطناعي
-+ دعم Tavily API كبديل أفضل للبحث
+يستخدم Tavily API كبحث أساسي (بحث حقيقي عالي الجودة)
++ DuckDuckGo كـ fallback
 + دعم المكالمات غير المتزامنة
 + دعم البحث العميق (Deep Search) باستخدام نماذج أقوى
 + استخدام Provider Manager مع تبديل تلقائي
@@ -25,10 +25,49 @@ TAVILY_API_KEY = os.environ.get("TAVILY_API_KEY", "")
 
 
 def _search_tavily_sync(query: str, max_results: int = 5, search_depth: str = "basic") -> List[Dict]:
-    """بحث عبر Tavily API (أفضل جودة)"""
+    """بحث عبر Tavily API (أفضل جودة - بحث حقيقي)"""
     if not TAVILY_API_KEY:
+        logger.warning("⚠️ TAVILY_API_KEY not set! Set it as environment variable.")
         return []
 
+    # محاولة 1: استخدام tavily-python SDK
+    try:
+        from tavily import TavilyClient
+        client = TavilyClient(api_key=TAVILY_API_KEY)
+        
+        if search_depth == "advanced":
+            response = client.search(query, max_results=max_results, search_depth="advanced", include_answer=True)
+        else:
+            response = client.search(query, max_results=max_results, search_depth="basic", include_answer=True)
+        
+        results = []
+        # Tavily بيرجع answer مباشر
+        if response.get("answer"):
+            results.append({
+                "title": "Tavily AI Answer",
+                "link": "",
+                "snippet": response["answer"],
+                "source": "Tavily AI",
+            })
+        
+        # النتائج التفصيلية
+        for r in response.get("results", []):
+            results.append({
+                "title": r.get("title", ""),
+                "link": r.get("url", ""),
+                "snippet": r.get("content", ""),
+                "source": r.get("source", ""),
+            })
+        
+        logger.info(f"✅ Tavily SDK search for '{query}': found {len(results)} results (depth={search_depth})")
+        return results
+
+    except ImportError:
+        logger.debug("tavily-python not installed, falling back to HTTP API")
+    except Exception as e:
+        logger.warning(f"Tavily SDK error: {e}, trying HTTP API...")
+
+    # محاولة 2: HTTP API مباشرة
     try:
         import requests
         url = "https://api.tavily.com/search"
@@ -41,7 +80,7 @@ def _search_tavily_sync(query: str, max_results: int = 5, search_depth: str = "b
             "include_raw_content": False,
         }
 
-        response = requests.post(url, json=payload, timeout=15)
+        response = requests.post(url, json=payload, timeout=20)
         response.raise_for_status()
         data = response.json()
 
@@ -49,7 +88,7 @@ def _search_tavily_sync(query: str, max_results: int = 5, search_depth: str = "b
         # Tavily بيرجع answer مباشر
         if data.get("answer"):
             results.append({
-                "title": "Tavily Answer",
+                "title": "Tavily AI Answer",
                 "link": "",
                 "snippet": data["answer"],
                 "source": "Tavily AI",
@@ -64,11 +103,11 @@ def _search_tavily_sync(query: str, max_results: int = 5, search_depth: str = "b
                 "source": r.get("source", ""),
             })
 
-        logger.info(f"Tavily search for '{query}': found {len(results)} results")
+        logger.info(f"✅ Tavily HTTP search for '{query}': found {len(results)} results (depth={search_depth})")
         return results
 
     except Exception as e:
-        logger.error(f"Tavily search error: {e}")
+        logger.error(f"❌ Tavily HTTP error: {e}")
         return []
 
 
@@ -91,16 +130,18 @@ def _get_ddgs():
 
 
 def _search_web_sync(query: str, max_results: int = 5) -> List[Dict]:
-    """البحث في الويب (متزامن) مع retry logic"""
-    # محاولة Tavily أولاً (أفضل جودة)
+    """البحث في الويب (متزامن) - Tavily أولاً ثم DuckDuckGo"""
+    # محاولة Tavily أولاً (أفضل جودة - بحث حقيقي)
     if TAVILY_API_KEY:
         tavily_results = _search_tavily_sync(query, max_results)
         if tavily_results:
             return tavily_results
+        logger.warning("⚠️ Tavily returned no results, trying DuckDuckGo...")
 
     # Fallback لـ DuckDuckGo
     DDGS = _get_ddgs()
     if DDGS is None:
+        logger.error("❌ No search method available! Install tavily-python or ddgs")
         return []
 
     # محاولة البحث مع retry
@@ -117,7 +158,7 @@ def _search_web_sync(query: str, max_results: int = 5) -> List[Dict]:
                         "snippet": r.get("body", ""),
                     })
 
-            logger.info(f"DuckDuckGo search for '{query}': found {len(results)} results")
+            logger.info(f"✅ DuckDuckGo search for '{query}': found {len(results)} results")
 
             # لو النتائج قليلة، نجرب بحث أوسع
             if len(results) < 2 and attempt == 0:
@@ -164,7 +205,7 @@ async def search_web(query: str, max_results: int = 5) -> List[Dict]:
 
 
 def _search_news_sync(query: str, max_results: int = 5) -> List[Dict]:
-    """البحث عن أخبار (متزامن) مع retry logic"""
+    """البحث عن أخبار (متزامن) - Tavily أولاً ثم DuckDuckGo"""
     # محاولة Tavily للأخبار
     if TAVILY_API_KEY:
         try:
@@ -190,7 +231,7 @@ def _search_news_sync(query: str, max_results: int = 5) -> List[Dict]:
                         "date": r.get("published_date", ""),
                     })
                 if results:
-                    logger.info(f"Tavily news search for '{query}': found {len(results)} results")
+                    logger.info(f"✅ Tavily news search for '{query}': found {len(results)} results")
                     return results
         except Exception as e:
             logger.error(f"Tavily news search error: {e}")
@@ -215,7 +256,7 @@ def _search_news_sync(query: str, max_results: int = 5) -> List[Dict]:
                         "date": r.get("date", ""),
                     })
 
-            logger.info(f"DuckDuckGo news search for '{query}': found {len(results)} results")
+            logger.info(f"✅ DuckDuckGo news search for '{query}': found {len(results)} results")
             return results
 
         except Exception as e:
@@ -247,26 +288,32 @@ def search_news(query: str, max_results: int = 5) -> List[Dict]:
 # ═══════════════════════════════════════
 
 def _search_and_summarize_sync(query: str, language: str = "ar") -> str:
-    """البحث والتلخيص (متزامن)"""
+    """البحث والتلخيص (متزامن) - بحث حقيقي في الويب"""
     from provider_manager import call_ai_sync
 
+    logger.info(f"🔍 Starting web search for: {query}")
     results = _search_web_sync(query, max_results=5)
 
     if not results:
+        logger.warning(f"⚠️ No search results found for: {query}")
         if language == "ar":
-            prompt = f"""أجب على السؤال التالي بأفضل ما تعرفه. إذا لم تكن متأكداً، اذكر ذلك.
+            prompt = f"""أنا بحثت في الويب عن سؤالك بس ملقيتش نتائج كافية. هجاوبك بأفضل اللي أعرفه، بس ممكن المعلومات تكون مش دقيقة لأنها من ذاكرتي مش من نتائج بحث حقيقية.
 
 السؤال: {query}
 
+⚠️ مهم: قول للمستخدم إنك بحثت وملقيتش نتائج كافية، وإن المعلومات دي من معرفتك الشخصية وممكن تكون مش محدثة. لو السؤال عن أحداث حديثة، نصحه يبحث بنفسه.
+
 ⚠️ ماتستخدمش Markdown (لا *, **, #, |). استخدم HTML فقط: <b>عريض</b> <i>مائل</i> <code>كود</code>"""
-            system = "أنت مساعد ذكي تجيب بالعربية الفصحى. كن دقيقاً واستخدم إيموجي مناسبة. ماتستخدمش Markdown أبداً."
+            system = "أنت مساعد ذكي تجيب بالعربية الفصحى. كن دقيقاً واستخدم إيموجي مناسبة. ماتستخدمش Markdown أبداً. لو مش متأكد من معلومة، قول صراحة."
         else:
-            prompt = f"""Answer the following question to the best of your knowledge. If unsure, say so.
+            prompt = f"""I searched the web for your question but couldn't find sufficient results. I'll answer from my knowledge, but this may not be up-to-date.
 
 Question: {query}
 
+⚠️ Important: Tell the user you searched but found limited results, and that this info is from your training data and may not be current. If asking about recent events, suggest they verify.
+
 ⚠️ NEVER use Markdown (no *, **, #, |). Use HTML only: <b>bold</b> <i>italic</i> <code>code</code>"""
-            system = "You are a smart assistant. Be accurate and use appropriate emojis. NEVER use Markdown."
+            system = "You are a smart assistant. Be honest about limitations. NEVER use Markdown."
 
         response = call_ai_sync(prompt, system_prompt=system, task_type="chat", temperature=0.5, max_tokens=1500)
         from formatters import clean_ai_response
@@ -274,6 +321,9 @@ Question: {query}
             response = clean_ai_response(response)
         return response or ("لم أتمكن من العثور على معلومات. 🤖" if language == "ar" else "I couldn't find information. 🤖")
 
+    # وجدنا نتائج بحث حقيقية! 🎉
+    logger.info(f"✅ Found {len(results)} real search results, summarizing...")
+    
     # تجميع نتائج البحث
     search_text = ""
     for i, r in enumerate(results, 1):
@@ -285,15 +335,16 @@ Question: {query}
             search_text += f"المصدر: {r['source']}\n"
 
     if language == "ar":
-        prompt = f"""بناءً على نتائج البحث التالية، أجب على سؤال المستخدم بالعربية الفصحى بطريقة مفيدة وشاملة.
-أضف الروابط المفيدة في إجابتك باستخدام تنسيق HTML.
+        prompt = f"""🔬 بحثت في الويب وجبت لك نتائج حقيقية! بناءً على نتائج البحث التالية، أجب على سؤال المستخدم بالعربية بطريقة مفيدة وشاملة.
+
+⚠️ مهم جداً: المعلومات دي من بحث حقيقي في الويب - استخدمها كلها واختار الأهم. ماتخترعش معلومات مش في النتائج.
 
 سؤال المستخدم: {query}
 
-نتائج البحث:{search_text}
+نتائج البحث الحقيقية:{search_text}
 
 المطلوب:
-- إجابة واضحة ومفيدة وشاملة
+- إجابة واضحة ومفيدة وشاملة بناءً على نتائج البحث
 - تنظيم المعلومات بوضوح
 - ذكر المصادر والروابط
 - استخدم إيموجي مناسبة
@@ -301,17 +352,18 @@ Question: {query}
 - كن مفصلاً ومفيداً
 
 ⚠️ ماتستخدمش Markdown أبداً (لا *, **, #, |, ---). استخدم HTML فقط: <b>عريض</b> <i>مائل</i> <code>كود</code> • نقاط"""
-        system = "أنت مساعد ذكي يجيب بالعربية الفصحى بناءً على نتائج بحث حقيقية. استخدم إيموجي وتنسيق HTML جميل. كن مفصلاً ومفيداً. ماتستخدمش Markdown أبداً."
+        system = "أنت مساعد ذكي يجيب بناءً على نتائج بحث حقيقية من الويب. ماتخترعش معلومات مش في النتائج. استخدم إيموجي وتنسيق HTML جميل. كن مفصلاً ومفيداً. ماتستخدمش Markdown أبداً."
     else:
-        prompt = f"""Based on the following search results, answer the user's question in English comprehensively.
-Include useful links in your answer using HTML format.
+        prompt = f"""🔬 I searched the web and found real results! Based on the following search results, answer the user's question comprehensively.
+
+⚠️ IMPORTANT: This is REAL web search data — use it all and highlight the most important. Do NOT make up information not in the results.
 
 User's question: {query}
 
-Search results:{search_text}
+Real search results:{search_text}
 
 Requirements:
-- Clear, helpful, and comprehensive answer
+- Clear, helpful, comprehensive answer based on search results
 - Well-organized information
 - Cite sources and links
 - Use appropriate emojis
@@ -319,7 +371,7 @@ Requirements:
 - Be detailed and helpful
 
 ⚠️ NEVER use Markdown (no *, **, #, |, ---). Use HTML only: <b>bold</b> <i>italic</i> <code>code</code> • bullets"""
-        system = "You are a smart assistant answering based on real search results. Use emojis and nice HTML formatting. Be detailed and helpful. NEVER use Markdown."
+        system = "You are a smart assistant answering based on REAL web search results. Do NOT fabricate information. Use emojis and nice HTML formatting. Be detailed and helpful. NEVER use Markdown."
 
     response = call_ai_sync(prompt, system_prompt=system, task_type="chat", temperature=0.5, max_tokens=2000)
     from formatters import clean_ai_response
@@ -348,39 +400,45 @@ def search_and_summarize(query: str, language: str = "ar") -> str:
 
 def _deep_search_and_summarize_sync(query: str, language: str = "ar") -> str:
     """
-    البحث العميق - يستخدم نماذج أقوى وبحث أشمل
-    يجمع نتائج من بحث الويب + بحث الأخبار + Tavily
+    البحث العميق - يستخدم Tavily Advanced + DuckDuckGo + بحث أخبار
     ثم يلخص بنموذج Deep Search مخصص
     """
     from provider_manager import call_ai_sync
 
-    # 1. بحث متعدد المصادر بالتوازي
+    logger.info(f"🔬 Starting DEEP search for: {query}")
+
+    # 1. بحث متعدد المصادر
     web_results = _search_web_sync(query, max_results=8)
     news_results = _search_news_sync(query, max_results=5)
 
-    # محاولة Tavily بحث عميق
+    # Tavily بحث عميق
     tavily_deep_results = []
     if TAVILY_API_KEY:
         tavily_deep_results = _search_tavily_sync(query, max_results=5, search_depth="advanced")
 
     all_results_count = len(web_results) + len(news_results) + len(tavily_deep_results)
+    logger.info(f"🔬 Deep search found {all_results_count} total results (web={len(web_results)}, news={len(news_results)}, tavily_adv={len(tavily_deep_results)})")
 
     if all_results_count == 0:
-        # لو مفيش نتائج، نحاول بالإجابة المباشرة
+        # لو مفيش نتائج، نحاول بالإجابة المباشرة مع تحذير
         if language == "ar":
-            prompt = f"""أجب على السؤال التالي بأفضل ما تعرفه بشكل مفصل وشامل.
+            prompt = f"""بحثت بعمق في الويب عن سؤالك بس ملقيتش نتائج كافية. هجاوبك بأفضل اللي أعرفه، بس خلي بالك إن المعلومات دي ممكن تكون مش محدثة لأنها من ذاكرتي.
 
 السؤال: {query}
 
+⚠️ مهم: قول صراحة إنك بحثت وملقيتش نتائج، وإن إجابتك ممكن تكون مش دقيقة لأنها من بياناتك القديمة.
+
 ⚠️ ماتستخدمش Markdown (لا *, **, #, |). استخدم HTML فقط: <b>عريض</b> <i>مائل</i> <code>كود</code> • نقاط"""
-            system = "أنت مساعد ذكي متخصص في البحث العميق. تجيب بالعربية الفصحى بشكل مفصل وشامل. ماتستخدمش Markdown أبداً."
+            system = "أنت باحث متخصص. تجيب بالعربية بشكل شامل. لو مش متأكد، قول صراحة. ماتستخدمش Markdown أبداً."
         else:
-            prompt = f"""Answer the following question comprehensively and in detail.
+            prompt = f"""I did a deep search but couldn't find sufficient results. I'll answer from my knowledge, but this may not be up-to-date.
 
 Question: {query}
 
+⚠️ Important: Be honest that you searched but found limited results, and your answer may not be current.
+
 ⚠️ NEVER use Markdown (no *, **, #, |). Use HTML only: <b>bold</b> <i>italic</i> <code>code</code> • bullets"""
-            system = "You are a smart assistant specialized in deep research. Answer comprehensively. NEVER use Markdown."
+            system = "You are a researcher. Be honest about limitations. NEVER use Markdown."
 
         response = call_ai_sync(prompt, system_prompt=system, task_type="deep_search", temperature=0.4, max_tokens=3000)
         from formatters import clean_ai_response
@@ -423,55 +481,55 @@ Question: {query}
             if r.get('date'):
                 search_text += f"التاريخ: {r['date']}\n"
 
-    # 3. تلخيص شامل باستخدام نموذج Deep Search
+    # 3. تلخيص شامل
     if language == "ar":
         prompt = f"""🔬 <b>بحث عميق</b>
 
-بناءً على نتائج البحث الشاملة التالية، قدّم إجابة مفصلة ومنظمة بالعربية الفصحى.
-المعلومات دي من بحث حقيقي في الويب — استخدمها كلها واختار الأهم.
+بحثت بعمق في الويب وجبت لك نتائج حقيقية من مصادر متعددة! بناءً على النتائج دي، قدّم إجابة مفصلة ومنظمة.
+
+⚠️ مهم جداً: المعلومات دي من بحث حقيقي — استخدمها كلها واختار الأهم. ماتخترعش أي معلومة مش موجودة في النتائج.
 
 سؤال المستخدم: {query}
 
 نتائج البحث الشاملة:{search_text}
 
 المطلوب:
-- إجابة شاملة ومفصلة جداً — مش مختصرة
+- إجابة شاملة ومفصلة جداً
 - تنظيم المعلومات بوضوح في أقسام
 - ذكر المصادر والروابط الحقيقية
 - مقارنة بين الآراء إن وُجدت
 - استنتاجات وتوقعات إن أمكن
 - الروابط: 🔗 <a href="الرابط">عنوان الرابط</a>
-- خليك مفيد ومفصل
 
 ⚠️ ماتستخدمش Markdown أبداً (لا *, **, #, |, ---). استخدم HTML فقط: <b>عريض</b> <i>مائل</i> <code>كود</code> • نقاط"""
-        system = """أنت باحث متخصص في البحث العميق. تجيب بالعربية الفصحى بشكل شامل ومفصل.
+        system = """أنت باحث متخصص في البحث العميق. تجيب بالعربية بشكل شامل ومفصل.
 تنظم المعلومات بشكل واضح مع ذكر المصادر.
-ماتستخدمش Markdown أبداً. استخدم HTML فقط: <b>عريض</b> <i>مائل</i> <code>كود</code> • نقاط.
-كن مفصلاً ومفيداً — مش مختصر."""
+ماتستخدمش Markdown أبداً. استخدم HTML فقط.
+ماتخترعش معلومات مش في نتائج البحث - لو مش متأكد، قول صراحة."""
     else:
         prompt = f"""🔬 <b>Deep Search</b>
 
-Based on the following comprehensive search results, provide a detailed and organized answer in English.
-This information is from real web search — use all of it and highlight the most important.
+I did a deep web search and found real results from multiple sources! Based on these results, provide a detailed and organized answer.
+
+⚠️ IMPORTANT: This is REAL web search data. Do NOT fabricate information not in the results.
 
 User's question: {query}
 
 Comprehensive search results:{search_text}
 
 Requirements:
-- Comprehensive and very detailed answer — not brief
+- Comprehensive and very detailed answer
 - Well-organized information in sections
 - Cite real sources and links
 - Compare different viewpoints if available
 - Include conclusions and predictions if possible
 - Links: 🔗 <a href="link">Link title</a>
-- Be detailed and helpful
 
 ⚠️ NEVER use Markdown (no *, **, #, |, ---). Use HTML only: <b>bold</b> <i>italic</i> <code>code</code> • bullets"""
         system = """You are a researcher specialized in deep search. Answer comprehensively and in detail.
 Organize information clearly with source citations.
-NEVER use Markdown. Use HTML only: <b>bold</b> <i>italic</i> <code>code</code> • bullets.
-Be detailed and helpful — not brief."""
+NEVER use Markdown. Use HTML only.
+Do NOT fabricate information - if unsure, say so honestly."""
 
     response = call_ai_sync(prompt, system_prompt=system, task_type="deep_search", temperature=0.4, max_tokens=4000)
     from formatters import clean_ai_response
