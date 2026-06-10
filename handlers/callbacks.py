@@ -315,6 +315,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             msg = "❓ Type your question about the file and I'll answer based on its content!"
         # Set user state to expect PDF question
         user_states[user_id] = {"waiting_for": "pdf_question"}
+        # 🔴 FIX: حفظ الـ workflow في الداتابيز كمان عشان يفضل بعد الـ restart
+        try:
+            from workflow_manager import set_workflow
+            set_workflow(user_id, "pdf_question", "waiting_for_question")
+        except Exception:
+            pass
         await query.message.reply_text(msg, parse_mode="HTML")
 
     # ═══ YouTube Processing Buttons ═══
@@ -780,6 +786,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "waiting_for": "image_edit",
             "image_base64": img_ctx.get("image_base64", ""),
         }
+        # 🔴 FIX: حفظ الـ workflow في الداتابيز كمان عشان يفضل بعد الـ restart
+        try:
+            from workflow_manager import set_workflow
+            set_workflow(user_id, "image_edit", "waiting_for_description", {"image_base64": img_ctx.get("image_base64", "")})
+        except Exception:
+            pass
         
         if lang == "ar":
             msg = "🖌️ <b>تعديل الصورة بالذكاء الاصطناعي</b>\n\nاكتب الوصف اللي عايز تعدّل بيه الصورة!\n\n💡 <b>أمثلة:</b>\n→ غيّر الخلفية لبحر\n→ خلي الألوان أدفأ\n→ ضيف إضاءة مسائية\n→ add a sunset sky\n→ make it look like a painting"
