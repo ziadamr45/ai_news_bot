@@ -2304,7 +2304,118 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                 "requested_downloads": [{"height": video_height, "vcodec": "h264", "acodec": "aac"}],
             }
         
-        # ═══ المحاولة 8: Cloudflare Worker (آخر محاولة) ═══
+        # ═══ المحاولة 8: Cobalt JWT — آخر طبقة قبل Cloudflare Worker ═══
+        # 🔴 ده JWT شخصي من cobalt.tools — بنستخدمه كـ آخر حل لو كل حاجة فشلت
+        # ليه آخر واحد؟ لأن الـ JWT بيتجدد وبيوقف — مش حل دائم
+        # بس لو شغال هيحل المشكلة وقتها
+        if info is None and is_youtube:
+            try:
+                from config import COBALT_JWT
+                
+                if COBALT_JWT:
+                    logger.info(f"🔐 Cobalt JWT: Last-resort attempt for {url[:80]}")
+                    
+                    try:
+                        await status_msg.edit_text(
+                            "🔐 جاري التحميل عبر Cobalt JWT..." if lang == "ar"
+                            else "🔐 Downloading via Cobalt JWT..."
+                        )
+                    except:
+                        pass
+                    
+                    jwt_quality_map = {"best": "1080", "medium": "720", "low": "480", "audio": "720"}
+                    jwt_quality = jwt_quality_map.get(quality, "720")
+                    is_jwt_audio = quality == "audio"
+                    
+                    jwt_headers = {
+                        "Accept": "application/json",
+                        "Content-Type": "application/json",
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                        "Authorization": f"Bearer {COBALT_JWT}",
+                    }
+                    
+                    jwt_payload = {
+                        "url": url,
+                        "videoQuality": jwt_quality,
+                        "filenameStyle": "classic",
+                    }
+                    
+                    if is_jwt_audio:
+                        jwt_payload["downloadMode"] = "audio"
+                        jwt_payload["audioFormat"] = "mp3"
+                    
+                    jwt_result = await _cobalt_api_request(
+                        "https://api.cobalt.tools", jwt_payload, jwt_headers,
+                        jwt_quality, is_jwt_audio, tmpdir
+                    )
+                    
+                    if jwt_result and jwt_result.get("filepath"):
+                        logger.info(f"🔐 Cobalt JWT succeeded! File: {jwt_result['filepath']}")
+                        
+                        file_path = jwt_result["filepath"]
+                        file_size = jwt_result.get("size", os.path.getsize(file_path))
+                        video_title = jwt_result.get("title", "YouTube Video")
+                        video_height = jwt_result.get("height", 720)
+                        
+                        size_mb = file_size / (1024 * 1024)
+                        size_str = f"{size_mb:.1f}MB"
+                        
+                        increment_usage(user_id, "youtube_summaries")
+                        try: track_event("media_downloads")
+                        except: pass
+                        
+                        await status_msg.delete()
+                        
+                        if quality == "audio":
+                            try:
+                                with open(file_path, 'rb') as f:
+                                    caption = f"📥 {'تم تحميل الصوت!' if lang == 'ar' else 'Audio downloaded!'}\n🎵 {video_title[:200]}\n📁 {size_str} | Cobalt JWT"
+                                    await message.reply_audio(
+                                        audio=f, filename=f"{video_title[:50]}.mp3",
+                                        caption=caption,
+                                        parse_mode="HTML",
+                                    )
+                            except Exception as send_err:
+                                logger.warning(f"⚠️ Cobalt JWT audio send failed: {send_err}")
+                                await message.reply_text(
+                                    f"❌ فشل إرسال الصوت ({size_str}). جرب تاني!" if lang == "ar"
+                                    else f"❌ Failed to send audio ({size_str}). Try again!"
+                                )
+                        else:
+                            try:
+                                with open(file_path, 'rb') as f:
+                                    tech_info = f"{video_height}p | {size_str} | Cobalt JWT"
+                                    caption = f"📥 {'تم تحميل الفيديو!' if lang == 'ar' else 'Video downloaded!'}\n🎬 {video_title[:200]}\n📊 {tech_info}"
+                                    await message.reply_video(
+                                        video=f, filename=f"{video_title[:50]}.mp4",
+                                        caption=caption,
+                                        parse_mode="HTML",
+                                        supports_streaming=True,
+                                    )
+                            except Exception as send_err:
+                                logger.warning(f"⚠️ Cobalt JWT video send failed: {send_err}")
+                                if "too large" in str(send_err).lower() or "file is too big" in str(send_err).lower():
+                                    await message.reply_text(
+                                        f"⚠️ الملف كبير ({size_str}). جرب جودة أقل!" if lang == "ar"
+                                        else f"⚠️ File too large ({size_str}). Try a lower quality!"
+                                    )
+                                else:
+                                    await message.reply_text(
+                                        f"❌ فشل إرسال الفيديو ({size_str}). جرب تاني!" if lang == "ar"
+                                        else f"❌ Failed to send video ({size_str}). Try again!"
+                                    )
+                        
+                        try: os.remove(file_path)
+                        except: pass
+                        return  # ✅ Cobalt JWT نجح!
+                    
+                    logger.warning(f"⚠️ Cobalt JWT failed, trying Cloudflare Worker...")
+                else:
+                    logger.info("🔐 Cobalt JWT: No COBALT_JWT configured, skipping")
+            except Exception as jwt_err:
+                logger.warning(f"⚠️ Cobalt JWT error: {jwt_err}")
+        
+        # ═══ المحاولة 9: Cloudflare Worker (آخر محاولة نهائية) ═══
         if info is None and is_youtube:
             from config import CLOUDFLARE_WORKER_URL
             if CLOUDFLARE_WORKER_URL:

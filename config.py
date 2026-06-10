@@ -534,6 +534,11 @@ COBALT_API_KEY = os.environ.get("COBALT_API_KEY", "")   # API Key من keys.json
 # اشترك في: https://rapidapi.com/snapvidsnet/api/threads-downloader
 RAPIDAPI_KEY = os.environ.get("RAPIDAPI_KEY", "")
 
+# Cobalt JWT — آخر fallback لليوتيوب (من cobalt.tools بعد Turnstile verification)
+# 🔴 مفيش logo/api/key — ده JWT شخصي بيتجدد من cobalt.tools
+# بنستخدمه كـ آخر محاولة لو كل الطرق التانية فشلت
+COBALT_JWT = os.environ.get("COBALT_JWT", "")
+
 # Invidious API — واجهة بديلة لليوتيوب (fallback بين RapidAPI و yt-dlp)
 # 🟣 الميزة: مجاني ومفتوح — مش بيتأثر بـ YouTube bot detection خالص
 # الطلبات بتروح لسيرفرات Invidious مش من الـ IP بتاعك
