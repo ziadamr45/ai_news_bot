@@ -1172,6 +1172,66 @@ async def _show_quality_selection(wa_id: str, url: str, wa_user_id: int,
         header_text=f"📥 تحميل من {platform_display}")
 
 
+async def _show_quality_selection_for_search(wa_id: str, url: str, title: str, 
+                                              wa_user_id: int, contact_name: str, 
+                                              message_id: str, is_admin: bool,
+                                              search_type: str = "video"):
+    """عرض اختيار الجودة بعد اختيار نتيجة من البحث — نفس قائمة التحميل العادي
+    
+    🔴 الفرق عن _show_quality_selection:
+    - دي بتتكلم بعد اختيار نتيجة بحث (مش بعد إرسال رابط)
+    - لو search_type="audio" → بتحط خيار الصوت كأول اختيار
+    - بتعرض عنوان الفيديو كمان
+    """
+    platform = _detect_platform(url)
+    platform_names = {
+        "youtube": "YouTube", "facebook": "Facebook", "instagram": "Instagram",
+        "tiktok": "TikTok", "twitter": "Twitter/X", "telegram": "Telegram",
+        "threads": "Threads", "reddit": "Reddit", "unknown": "🌐",
+    }
+    platform_display = platform_names.get(platform, platform)
+    url_key = _store_url(url)
+    
+    display_title = title[:50] if title else "فيديو"
+    body = f"📥 *اختار الجودة*\n\n📺 {display_title}\n🔗 المنصة: {platform_display}"
+    
+    # 🔴 لو البحث كان صوت → نحط خيار الصوت كأول اختيار في القائمة
+    if search_type == "audio":
+        sections = [{
+            "title": "🎵 صوت فقط",
+            "rows": [
+                {"id": f"dl_a_{url_key}", "title": "🎵 صوت بس MP3", "description": "استخراج الصوت فقط - الأسرع"},
+            ],
+        }, {
+            "title": "🎬 جودة الفيديو",
+            "rows": [
+                {"id": f"dl_v_b_{url_key}", "title": "🎬 أعلى جودة", "description": "1080p - أفضل جودة متاحة"},
+                {"id": f"dl_v_m_{url_key}", "title": "📹 جودة متوسطة", "description": "720p - توازن بين الجودة والحجم"},
+                {"id": f"dl_v_l_{url_key}", "title": "📱 جودة منخفضة", "description": "480p - حجم صغير"},
+            ],
+        }]
+    else:
+        sections = [{
+            "title": "🎬 جودة الفيديو",
+            "rows": [
+                {"id": f"dl_v_b_{url_key}", "title": "🎬 أعلى جودة", "description": "1080p - أفضل جودة متاحة"},
+                {"id": f"dl_v_m_{url_key}", "title": "📹 جودة متوسطة", "description": "720p - توازن بين الجودة والحجم"},
+                {"id": f"dl_v_l_{url_key}", "title": "📱 جودة منخفضة", "description": "480p - حجم صغير"},
+            ],
+        }, {
+            "title": "🎵 صوت فقط",
+            "rows": [
+                {"id": f"dl_a_{url_key}", "title": "🎵 صوت بس MP3", "description": "استخراج الصوت فقط"},
+            ],
+        }]
+    
+    await _send_interactive_list(wa_id, 
+        body_text=body,
+        button_text="اختار الجودة",
+        sections=sections,
+        header_text=f"📥 تحميل من {platform_display}")
+
+
 async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                      contact_name: str, message_id: str = "", is_admin: bool = False,
                                      quality: str = "best", force_audio: bool = False):
@@ -5271,8 +5331,8 @@ async def _handle_wa_search_callback(wa_id: str, callback_id: str, wa_user_id: i
             return
         
         r = cached["results"][idx]
-        await _send_whatsapp_message(wa_id, f"🎬 جاري تحميل الفيديو...\n\n📺 {r['title']}")
-        await _wa_download_youtube(wa_id, r['url'], wa_user_id, contact_name, message_id, is_admin, format="720")
+        # 🔴 FIX: بدل ما نحمل بجودة ثابتة، نعرض اختيار الجودة للمستخدم (زي التليجرام)
+        await _show_quality_selection_for_search(wa_id, r['url'], r['title'], wa_user_id, contact_name, message_id, is_admin, search_type="video")
     
     # صوت بالبحث: wa_as_{cache_key}_{index}
     elif callback_id.startswith("wa_as_"):
@@ -5291,8 +5351,8 @@ async def _handle_wa_search_callback(wa_id: str, callback_id: str, wa_user_id: i
             return
         
         r = cached["results"][idx]
-        await _send_whatsapp_message(wa_id, f"🎵 جاري تحميل الصوت...\n\n📺 {r['title']}")
-        await _wa_download_youtube(wa_id, r['url'], wa_user_id, contact_name, message_id, is_admin, format="mp3")
+        # 🔴 FIX: بدل ما نحمل صوت مباشرة، نعرض اختيار الجودة (فيديو أو صوت)
+        await _show_quality_selection_for_search(wa_id, r['url'], r['title'], wa_user_id, contact_name, message_id, is_admin, search_type="audio")
     
     # صور: wa_ph_{cache_key}_{count}
     elif callback_id.startswith("wa_ph_"):

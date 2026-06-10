@@ -548,24 +548,27 @@ async def handle_search_callback(update: Update, context: ContextTypes.DEFAULT_T
             await query.edit_message_text("❌ URL not available.")
         return
     
-    # تحميل الفيديو أو الصوت
+    # تحميل الفيديو أو الصوت — 🔴 FIX: عرض اختيار الجودة للمستخدم بدل التحميل المباشر
     if action == "sv":
-        # فيديو — نستخدم download handler
-        quality = "best"
-        await query.edit_message_text(
-            f"📥 جاري تحميل الفيديو: {title[:50]}..." if lang == "ar"
-            else f"📥 Downloading video: {title[:50]}..."
-        )
+        # فيديو — نعرض أزرار اختيار الجودة (زي /download بالظبط)
+        from handlers.download_handlers import _get_quality_keyboard
         
-        from handlers.download_handlers import _download_with_ytdlp
-        await _download_with_ytdlp(query, url, quality, lang, user_id)
+        if lang == "ar":
+            msg = f"📥 *اختر جودة التحميل*\n\n📺 {title[:100]}"
+        else:
+            msg = f"📥 *Choose download quality*\n\n📺 {title[:100]}"
+        
+        keyboard = _get_quality_keyboard(url, lang)
+        await query.edit_message_text(msg, parse_mode="Markdown", reply_markup=keyboard)
         
     elif action == "sa":
-        # صوت — نستخدم download handler مع جودة audio
-        await query.edit_message_text(
-            f"🎵 جاري تحميل الصوت: {title[:50]}..." if lang == "ar"
-            else f"🎵 Downloading audio: {title[:50]}..."
-        )
+        # صوت — نعرض أزرار اختيار الجودة (مع الصوت كأول خيار)
+        from handlers.download_handlers import _get_quality_keyboard, _store_url
         
-        from handlers.download_handlers import _download_with_ytdlp
-        await _download_with_ytdlp(query, url, "audio", lang, user_id)
+        if lang == "ar":
+            msg = f"🎵 *اختر جودة التحميل*\n\n📺 {title[:100]}"
+        else:
+            msg = f"🎵 *Choose download quality*\n\n📺 {title[:100]}"
+        
+        keyboard = _get_quality_keyboard(url, lang)
+        await query.edit_message_text(msg, parse_mode="Markdown", reply_markup=keyboard)
