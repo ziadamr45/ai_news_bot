@@ -176,13 +176,31 @@ def download_youtube(url: str, format: str = "720") -> Optional[Dict]:
         
         # ═══ الخطوة 1: بدء التحميل ═══
         logger.info(f"🎬 YouTube RapidAPI: Initiating download for {video_id} format={format}")
+        logger.info(f"🎬 YouTube RapidAPI: KEY={RAPIDAPI_KEY[:10]}... HOST={RAPIDAPI_HOST}")
         
-        init_response = requests.get(
-            f"{RAPIDAPI_BASE_URL}/api/v1/download",
-            headers=headers,
-            params={"id": video_id, "format": format},
-            timeout=30,
-        )
+        try:
+            init_response = requests.get(
+                f"{RAPIDAPI_BASE_URL}/api/v1/download",
+                headers=headers,
+                params={"id": video_id, "format": format},
+                timeout=30,
+            )
+        except requests.exceptions.ConnectionError as ce:
+            logger.error(f"🔴 YouTube RapidAPI: Connection error to {RAPIDAPI_HOST}: {ce}")
+            return {
+                "success": False,
+                "error": "connection_error",
+                "message": "مش قادر أوصل بخدمة RapidAPI. ممكن السيرفر محجوب.",
+            }
+        except requests.exceptions.Timeout as te:
+            logger.error(f"🔴 YouTube RapidAPI: Timeout connecting to {RAPIDAPI_HOST}: {te}")
+            return {
+                "success": False,
+                "error": "timeout",
+                "message": "RapidAPI استجابتها بطيئة.",
+            }
+        
+        logger.info(f"🎬 YouTube RapidAPI: Init response status={init_response.status_code}")
         
         # معالجة أخطاء HTTP
         if init_response.status_code == 401:
@@ -210,21 +228,32 @@ def download_youtube(url: str, format: str = "720") -> Optional[Dict]:
                 "message": "الخدمة مش متاحة حالياً. جرب تاني بعد شوية.",
             }
         elif init_response.status_code != 200:
+            logger.error(f"🔴 YouTube RapidAPI: Unexpected status {init_response.status_code}, body={init_response.text[:500]}")
             return {
                 "success": False,
                 "error": "http_error",
                 "message": f"خطأ من الخدمة ({init_response.status_code}). جرب تاني.",
             }
         
-        init_data = init_response.json()
+        try:
+            init_data = init_response.json()
+        except Exception as json_err:
+            logger.error(f"🔴 YouTube RapidAPI: Failed to parse JSON response: {json_err}, text={init_response.text[:500]}")
+            return {
+                "success": False,
+                "error": "parse_error",
+                "message": "الخدمة رجعت رد مش مفهوم.",
+            }
+        
+        logger.info(f"🎬 YouTube RapidAPI: Init data keys={list(init_data.keys())}, progressId={init_data.get('progressId')}")
         
         # استخراج progressId
         progress_id = init_data.get("progressId") or init_data.get("id") or init_data.get("jobId")
-        title = init_data.get("title", "")
+        title = init_data.get("title", "") or init_data.get("videoTitle", "") or ""
         
         if not progress_id:
             # ممكن الـ API رجع النتيجة مباشرة
-            download_url = init_data.get("downloadUrl") or init_data.get("download_url") or init_data.get("url")
+            download_url = init_data.get("downloadUrl") or init_data.get("download_url") or init_data.get("url") or init_data.get("link")
             if download_url:
                 return {
                     "success": True,
@@ -236,7 +265,7 @@ def download_youtube(url: str, format: str = "720") -> Optional[Dict]:
                     "video_id": video_id,
                 }
             
-            logger.error(f"YouTube RapidAPI: No progressId in response: {init_data}")
+            logger.error(f"🔴 YouTube RapidAPI: No progressId and no download URL in response: {json.dumps(init_data)[:500]}")
             return {
                 "success": False,
                 "error": "no_progress_id",
@@ -249,22 +278,33 @@ def download_youtube(url: str, format: str = "720") -> Optional[Dict]:
         for attempt in range(POLL_MAX_ATTEMPTS):
             time.sleep(POLL_INTERVAL)
             
-            progress_response = requests.get(
-                f"{RAPIDAPI_BASE_URL}/api/v1/progress",
-                headers=headers,
-                params={"id": progress_id},
-                timeout=30,
-            )
+            try:
+                progress_response = requests.get(
+                    f"{RAPIDAPI_BASE_URL}/api/v1/progress",
+                    headers=headers,
+                    params={"id": progress_id},
+                    timeout=30,
+                )
+            except requests.exceptions.ConnectionError:
+                logger.warning(f"🔴 YouTube RapidAPI: Connection error during progress check, attempt {attempt+1}")
+                continue
+            except requests.exceptions.Timeout:
+                logger.warning(f"🔴 YouTube RapidAPI: Timeout during progress check, attempt {attempt+1}")
+                continue
             
             if progress_response.status_code != 200:
                 logger.warning(f"YouTube RapidAPI: Progress check returned {progress_response.status_code}")
                 continue
             
-            progress_data = progress_response.json()
+            try:
+                progress_data = progress_response.json()
+            except Exception:
+                logger.warning(f"YouTube RapidAPI: Failed to parse progress JSON, attempt {attempt+1}")
+                continue
             
             # فحص هل التحميل خلص
             finished = progress_data.get("finished", False)
-            download_url = progress_data.get("downloadUrl") or progress_data.get("download_url") or progress_data.get("url")
+            download_url = progress_data.get("downloadUrl") or progress_data.get("download_url") or progress_data.get("url") or progress_data.get("link")
             
             if finished and download_url:
                 logger.info(f"✅ YouTube RapidAPI: Download ready for {video_id}")
@@ -280,10 +320,14 @@ def download_youtube(url: str, format: str = "720") -> Optional[Dict]:
                 }
             
             # فحص هل في خطأ
-            error_msg = progress_data.get("error") or progress_data.get("message")
+            error_msg = progress_data.get("error") or progress_data.get("message") or progress_data.get("errorMsg")
+            status_msg = progress_data.get("status", "")
             if error_msg and "something went wrong" in str(error_msg).lower():
                 # ممكن الفيديو محذوف أو خاص
-                logger.warning(f"YouTube RapidAPI: Error in progress: {error_msg}")
+                logger.warning(f"🔴 YouTube RapidAPI: Error in progress: {error_msg}")
+                continue
+            if status_msg and "error" in status_msg.lower():
+                logger.warning(f"🔴 YouTube RapidAPI: Error status in progress: {status_msg}")
                 continue
             
             # log التقدم
@@ -292,7 +336,7 @@ def download_youtube(url: str, format: str = "720") -> Optional[Dict]:
                 logger.info(f"🎬 YouTube RapidAPI: Progress {progress_pct}% for {video_id}")
         
         # لو وصلنا هنا يعني التحميل أخد وقت طويل أوي
-        logger.error(f"YouTube RapidAPI: Timeout waiting for {video_id}")
+        logger.error(f"🔴 YouTube RapidAPI: Timeout waiting for {video_id} after {POLL_MAX_ATTEMPTS} attempts")
         return {
             "success": False,
             "error": "timeout",
@@ -356,7 +400,10 @@ def download_youtube_file(url: str, format: str = "720", output_dir: str = "/tmp
     
     download_url = result.get("download_url")
     if not download_url:
+        logger.warning(f"🔴 download_youtube_file: No download_url in result, returning as-is")
         return result
+    
+    logger.info(f"📥 download_youtube_file: Downloading file from {download_url[:150]}")
     
     try:
         import requests
@@ -371,15 +418,24 @@ def download_youtube_file(url: str, format: str = "720", output_dir: str = "/tmp
         
         file_path = os.path.join(output_dir, f"yt_{video_id}_{format}.{ext}")
         
-        logger.info(f"📥 Downloading file from RapidAPI to {file_path}")
+        logger.info(f"📥 download_youtube_file: Saving to {file_path}")
         
-        response = requests.get(download_url, stream=True, timeout=120)
+        try:
+            response = requests.get(download_url, stream=True, timeout=120, allow_redirects=True)
+        except requests.exceptions.ConnectionError as ce:
+            logger.error(f"🔴 download_youtube_file: Connection error downloading from {download_url[:100]}: {ce}")
+            # 🟢 نرجع النتيجة مع الرابط عشان المستخدم يقدر يحمل يدوي
+            result["file_download_error"] = str(ce)
+            return result
+        except requests.exceptions.Timeout as te:
+            logger.error(f"🔴 download_youtube_file: Timeout downloading from {download_url[:100]}: {te}")
+            result["file_download_error"] = str(te)
+            return result
         
         if response.status_code != 200:
-            logger.error(f"Failed to download file: HTTP {response.status_code}")
-            result["success"] = False
-            result["error"] = "download_failed"
-            result["message"] = "فشل تحميل الملف من الخدمة."
+            logger.error(f"🔴 download_youtube_file: Failed to download file: HTTP {response.status_code} from {download_url[:100]}")
+            # 🟢 نرجع النتيجة مع الرابط كبديل بدل ما نخليها فشل
+            result["file_download_error"] = f"HTTP {response.status_code}"
             return result
         
         file_size = 0
@@ -389,6 +445,14 @@ def download_youtube_file(url: str, format: str = "720", output_dir: str = "/tmp
                     f.write(chunk)
                     file_size += len(chunk)
         
+        # 🔴 فحص حجم الملف — لو 0 بايت يبقى فشل
+        if file_size == 0:
+            logger.error(f"🔴 download_youtube_file: Downloaded file is empty (0 bytes)")
+            result["file_download_error"] = "empty_file"
+            try: os.remove(file_path)
+            except: pass
+            return result
+        
         result["file_path"] = file_path
         result["file_size"] = file_size
         
@@ -397,10 +461,9 @@ def download_youtube_file(url: str, format: str = "720", output_dir: str = "/tmp
         return result
         
     except Exception as e:
-        logger.error(f"File download error: {e}", exc_info=True)
-        result["success"] = False
-        result["error"] = "file_download_error"
-        result["message"] = "فشل حفظ الملف محلياً."
+        logger.error(f"🔴 File download error: {e}", exc_info=True)
+        # 🟢 نرجع النتيجة مع الرابط بدل ما نخليها فشل كامل
+        result["file_download_error"] = str(e)
         return result
 
 

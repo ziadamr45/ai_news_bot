@@ -4535,76 +4535,97 @@ async def _wa_download_youtube(wa_id: str, url: str, wa_user_id: int,
             rapidapi_failed = True
             result = None
         
-        if result and result.get("success") and result.get("file_path"):
-            file_path = result["file_path"]
-            file_size = result.get("file_size", 0)
+        # 🟢 تحقق من النتيجة — ممكن success=True بس مفيش file_path (لو تحميل الملف فشل)
+        if result and result.get("success"):
             real_title = result.get("title", "فيديو YouTube")
+            download_url = result.get("download_url", "")
+            file_download_error = result.get("file_download_error", "")
             
-            # لو الملف كبير، نجرب جودة أقل للفيديو
-            if not is_audio and file_size > 64 * 1024 * 1024:
-                _cleanup_wa_file(file_path)
-                await _send_whatsapp_message(wa_id, "🎬 الملف كبير، بجرب جودة أقل...")
-                try:
-                    result = await asyncio.wait_for(
-                        download_youtube_file_async(url, format="360", output_dir="/tmp"),
-                        timeout=60
-                    )
-                except asyncio.TimeoutError:
-                    result = None
-                    
-                if result and result.get("success") and result.get("file_path"):
-                    file_path = result["file_path"]
-                    file_size = result.get("file_size", 0)
-                    real_title = result.get("title", "فيديو YouTube")
-                else:
-                    # حتى الجودة الأقل فشلت — fallback لـ yt-dlp
-                    logger.warning("⚠️ RapidAPI failed for lower quality too, falling back to yt-dlp")
-                    rapidapi_failed = True
-            
-            if not rapidapi_failed:
-                # إرسال الملف عبر WhatsApp
-                try:
-                    with open(file_path, 'rb') as f:
-                        file_data = f.read()
-                    
-                    if is_audio:
-                        # إرسال كصوت
-                        await _send_whatsapp_audio(wa_id, file_data, title=real_title[:64])
-                    else:
-                        # إرسال كفيديو/مستند
-                        ext = "mp4"
-                        filename = f"{real_title[:50]}.{ext}"
-                        await _send_whatsapp_document(wa_id, file_data, filename, caption=f"🎬 {real_title}", content_type="video/mp4")
-                    
-                    await _send_whatsapp_message(wa_id, 
-                        f"✅ تم إرسال ال{'صوت' if is_audio else 'فيديو'}!"
-                    )
-                    
-                    # تحديث الاستخدام
-                    try:
-                        increment_usage(wa_user_id, "youtube_summaries")
-                    except Exception:
-                        pass
-                    
-                except Exception as e:
-                    logger.error(f"WA send YouTube media error: {e}")
-                    
-                    # لو فشل الإرسال، نبعت الرابط كبديل
-                    download_url = result.get("download_url", "") if result else ""
-                    if download_url:
-                        await _send_whatsapp_message(wa_id, 
-                            f"⚠️ حجم الملف كبير عشان نبعتو على واتساب.\n\n"
-                            f"🔗 رابط التحميل المباشر:\n{download_url}\n\n"
-                            f"🎬 {real_title}"
-                        )
-                    else:
-                        # فشل الإرسال ومفيش رابط — نجرب yt-dlp
-                        rapidapi_failed = True
-                finally:
+            # 🟢 الحالة 1: الملف اتحمل بنجاح
+            if result.get("file_path"):
+                file_path = result["file_path"]
+                file_size = result.get("file_size", 0)
+                
+                # لو الملف كبير، نجرب جودة أقل للفيديو
+                if not is_audio and file_size > 64 * 1024 * 1024:
                     _cleanup_wa_file(file_path)
+                    await _send_whatsapp_message(wa_id, "🎬 الملف كبير، بجرب جودة أقل...")
+                    try:
+                        result = await asyncio.wait_for(
+                            download_youtube_file_async(url, format="360", output_dir="/tmp"),
+                            timeout=60
+                        )
+                    except asyncio.TimeoutError:
+                        result = None
+                        
+                    if result and result.get("success") and result.get("file_path"):
+                        file_path = result["file_path"]
+                        file_size = result.get("file_size", 0)
+                        real_title = result.get("title", "فيديو YouTube")
+                    else:
+                        # حتى الجودة الأقل فشلت
+                        logger.warning("⚠️ RapidAPI failed for lower quality too")
+                        rapidapi_failed = True
                 
                 if not rapidapi_failed:
-                    return
+                    # إرسال الملف عبر WhatsApp
+                    try:
+                        with open(file_path, 'rb') as f:
+                            file_data = f.read()
+                        
+                        if is_audio:
+                            await _send_whatsapp_audio(wa_id, file_data, title=real_title[:64])
+                        else:
+                            ext = "mp4"
+                            filename = f"{real_title[:50]}.{ext}"
+                            await _send_whatsapp_document(wa_id, file_data, filename, caption=f"🎬 {real_title}", content_type="video/mp4")
+                        
+                        await _send_whatsapp_message(wa_id, 
+                            f"✅ تم إرسال ال{'صوت' if is_audio else 'فيديو'}!"
+                        )
+                        
+                        try:
+                            increment_usage(wa_user_id, "youtube_summaries")
+                        except Exception:
+                            pass
+                        
+                    except Exception as e:
+                        logger.error(f"WA send YouTube media error: {e}")
+                        
+                        # لو فشل الإرسال، نبعت الرابط كبديل
+                        if download_url:
+                            await _send_whatsapp_message(wa_id, 
+                                f"⚠️ حجم الملف كبير عشان نبعتو على واتساب.\n\n"
+                                f"🔗 رابط التحميل المباشر:\n{download_url}\n\n"
+                                f"🎬 {real_title}"
+                            )
+                        else:
+                            rapidapi_failed = True
+                    finally:
+                        _cleanup_wa_file(file_path)
+                    
+                    if not rapidapi_failed:
+                        return
+            
+            # 🟢 الحالة 2: RapidAPI رجعت رابط تحميل بس فشل تحميل الملف على السيرفر
+            elif download_url and file_download_error:
+                logger.warning(f"⚠️ RapidAPI got download URL but file download failed: {file_download_error}")
+                await _send_whatsapp_message(wa_id, 
+                    f"✅ تم تجهيز رابط التحميل!\n\n"
+                    f"🎬 {real_title}\n\n"
+                    f"🔗 رابط التحميل المباشر:\n{download_url}\n\n"
+                    f"⏰ الرابط صالح لفترة محدودة — حمّلو بسرعة!"
+                )
+                try:
+                    increment_usage(wa_user_id, "youtube_summaries")
+                except Exception:
+                    pass
+                return  # ✅ خلصنا — المستخدم اخد الرابط
+            
+            # 🟢 الحالة 3: success=True بس مفيش file_path ولا download_url
+            elif not download_url:
+                logger.warning(f"⚠️ RapidAPI returned success but no download URL or file path")
+                rapidapi_failed = True
         
         # ═══ RapidAPI فشلت أو علّقت → fallback لـ yt-dlp ═══
         if not rapidapi_failed:
@@ -5477,6 +5498,154 @@ async def debug_whatsapp_activity(request: web.Request):
         "total_events": len(_webhook_activity_log),
         "events": _webhook_activity_log[-20:],
         "summary": {
+
+async def debug_rapidapi(request: web.Request):
+    """GET /debug/rapidapi — Test RapidAPI YouTube download from Railway"""
+    import time as _time
+    
+    test_video_id = request.query.get("video_id", "dQw4w9WgXcQ")
+    test_format = request.query.get("format", "360")
+    test_full = request.query.get("full", "0") == "1"
+    
+    results = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "test_video_id": test_video_id,
+        "test_format": test_format,
+        "steps": {},
+    }
+    
+    try:
+        from youtube_rapidapi import (
+            RAPIDAPI_KEY, RAPIDAPI_HOST, RAPIDAPI_BASE_URL,
+            is_youtube_url, extract_video_id, download_youtube, download_youtube_file
+        )
+        
+        # Step 1: Check environment
+        results["steps"]["env_check"] = {
+            "RAPIDAPI_KEY_set": bool(RAPIDAPI_KEY),
+            "RAPIDAPI_KEY_prefix": RAPIDAPI_KEY[:10] + "..." if RAPIDAPI_KEY else "NOT SET",
+            "RAPIDAPI_HOST": RAPIDAPI_HOST,
+            "env_RAPIDAPI_KEY": os.environ.get("RAPIDAPI_KEY", "NOT SET")[:10] + "..." if os.environ.get("RAPIDAPI_KEY") else "NOT SET",
+        }
+        
+        # Step 2: Test API connectivity
+        t0 = _time.time()
+        try:
+            import requests as _req
+            headers = {
+                "x-rapidapi-host": RAPIDAPI_HOST,
+                "x-rapidapi-key": RAPIDAPI_KEY,
+                "Content-Type": "application/json",
+            }
+            init_resp = _req.get(
+                f"{RAPIDAPI_BASE_URL}/api/v1/download",
+                headers=headers,
+                params={"id": test_video_id, "format": test_format},
+                timeout=30,
+            )
+            t1 = _time.time()
+            results["steps"]["api_connect"] = {
+                "status": "ok",
+                "http_status": init_resp.status_code,
+                "response_time_ms": int((t1 - t0) * 1000),
+            }
+            
+            if init_resp.status_code == 200:
+                init_data = init_resp.json()
+                progress_id = init_data.get("progressId")
+                results["steps"]["api_connect"]["progressId"] = progress_id
+                results["steps"]["api_connect"]["title"] = init_data.get("title")
+                results["steps"]["api_connect"]["response_keys"] = list(init_data.keys())
+                
+                # Step 3: Test progress polling (just 3 attempts)
+                if progress_id:
+                    poll_results = []
+                    for i in range(3):
+                        _time.sleep(3)
+                        try:
+                            poll_resp = _req.get(
+                                f"{RAPIDAPI_BASE_URL}/api/v1/progress",
+                                headers=headers,
+                                params={"id": progress_id},
+                                timeout=30,
+                            )
+                            poll_data = poll_resp.json()
+                            poll_results.append({
+                                "attempt": i + 1,
+                                "status": poll_resp.status_code,
+                                "finished": poll_data.get("finished"),
+                                "has_url": bool(poll_data.get("downloadUrl") or poll_data.get("url")),
+                                "progress": poll_data.get("progress"),
+                            })
+                        except Exception as pe:
+                            poll_results.append({"attempt": i + 1, "error": str(pe)})
+                    
+                    results["steps"]["polling"] = poll_results
+                
+                # Step 4: Full download test (optional)
+                if test_full:
+                    t2 = _time.time()
+                    full_result = download_youtube(f"https://www.youtube.com/watch?v={test_video_id}", format=test_format)
+                    t3 = _time.time()
+                    results["steps"]["full_download"] = {
+                        "success": full_result.get("success") if full_result else False,
+                        "error": full_result.get("error") if full_result else "no_result",
+                        "has_download_url": bool(full_result.get("download_url")) if full_result else False,
+                        "time_ms": int((t3 - t2) * 1000),
+                        "title": full_result.get("title", "") if full_result else "",
+                    }
+                    
+                    # Step 5: File download test
+                    if full_result and full_result.get("success") and full_result.get("download_url"):
+                        t4 = _time.time()
+                        file_result = download_youtube_file(
+                            f"https://www.youtube.com/watch?v={test_video_id}",
+                            format=test_format,
+                            output_dir="/tmp"
+                        )
+                        t5 = _time.time()
+                        results["steps"]["file_download"] = {
+                            "success": file_result.get("success") if file_result else False,
+                            "has_file_path": bool(file_result.get("file_path")) if file_result else False,
+                            "file_size": file_result.get("file_size", 0) if file_result else 0,
+                            "file_download_error": file_result.get("file_download_error", "") if file_result else "",
+                            "time_ms": int((t5 - t4) * 1000),
+                        }
+                        # Cleanup
+                        if file_result and file_result.get("file_path"):
+                            try: os.remove(file_result["file_path"])
+                            except: pass
+            else:
+                results["steps"]["api_connect"]["error_body"] = init_resp.text[:500]
+                
+        except Exception as api_err:
+            results["steps"]["api_connect"] = {
+                "status": "error",
+                "error": str(api_err),
+                "error_type": type(api_err).__name__,
+            }
+    
+    except ImportError as imp_err:
+        results["steps"]["module_import"] = {
+            "status": "error",
+            "error": str(imp_err),
+        }
+    except Exception as e:
+        results["steps"]["unexpected_error"] = {
+            "error": str(e),
+            "error_type": type(e).__name__,
+        }
+    
+    return web.json_response(results, status=200)
+
+
+async def debug_whatsapp_activity(request: web.Request):
+    """GET /debug/whatsapp/activity — Recent webhook activity."""
+    return web.json_response({
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "total_events": len(_webhook_activity_log),
+        "events": _webhook_activity_log[-20:],
+        "summary": {
             "webhook_posts": sum(1 for e in _webhook_activity_log if e["event_type"] == "webhook_post"),
             "messages_received": sum(1 for e in _webhook_activity_log if e["event_type"] == "webhook_post" and e.get("data", {}).get("has_messages")),
             "status_updates": sum(1 for e in _webhook_activity_log if e["event_type"] == "webhook_post" and e.get("data", {}).get("has_statuses")),
@@ -5502,6 +5671,7 @@ def create_webhook_app() -> web.Application:
     app.router.add_get("/health", health_check)
     app.router.add_get("/debug/whatsapp", debug_whatsapp)
     app.router.add_get("/debug/whatsapp/activity", debug_whatsapp_activity)
+    app.router.add_get("/debug/rapidapi", debug_rapidapi)
 
     logger.info("✅ WhatsApp webhook routes registered")
     logger.info(f"   GET  /whatsapp/webhook — Meta verification")
@@ -5509,6 +5679,7 @@ def create_webhook_app() -> web.Application:
     logger.info(f"   GET  /health — Health check")
     logger.info(f"   GET  /debug/whatsapp — Full diagnostic")
     logger.info(f"   GET  /debug/whatsapp/activity — Webhook activity log")
+    logger.info(f"   GET  /debug/rapidapi — RapidAPI connectivity test")
     logger.info(f"   🔥 AI Integration: smart_chat() with Arabic support")
     logger.info(f"   🎤 Audio: Groq Whisper transcription")
     logger.info(f"   👁️ Vision: Image analysis via NVIDIA/Mistral")
