@@ -1091,119 +1091,32 @@ def _is_threads_url(url: str) -> bool:
 
 
 async def _download_threads_media_wa(url: str, tmpdir: str) -> dict | None:
-    """تحميل فيديو/صورة من Threads عن طريق استخراج الـ media URL من الـ page source
+    """تحميل فيديو/صورة من Threads — نفس الـ 3-layer fallback زي التليجرام
+    
+    🔴 الترتيب (مزامنة مع download_handlers.py):
+    1. data-sjs JSON parsing — استخراج من <script data-sjs> tags في HTML
+    2. GraphQL API — طلب مباشر من threads.net/api/graphql
+    3. RapidAPI — خدمة خارجية كـ fallback
     
     Returns: dict فيه {success, file_path, title, is_video} أو None
     """
-    import aiohttp
-    
     try:
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'Accept-Language': 'en-us,en;q=0.5',
-            'Sec-Fetch-Dest': 'document',
-            'Sec-Fetch-Mode': 'navigate',
-        }
+        # 🔴 نستورد الدوال المشتركة من download_handlers (نفس الكود بالظبط)
+        from handlers.download_handlers import _download_threads_media as _tg_threads_download
         
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=30)) as resp:
-                if resp.status != 200:
-                    logger.warning(f"🧵 Threads WA: Page returned status {resp.status}")
-                    return None
-                
-                html = await resp.text()
+        logger.info(f"🧵 Threads WA: Using shared 3-layer download (data-sjs → GraphQL → RapidAPI)")
         
-        if not html:
-            logger.warning("🧵 Threads WA: Empty page source")
-            return None
+        result = await _tg_threads_download(url, tmpdir, quality="best")
         
-        video_url = None
-        image_url = None
-        title = "Threads Post"
+        if result and result.get("success"):
+            logger.info(f"🧵 Threads WA: Download succeeded via {result.get('method', 'unknown')} method")
+            return result
         
-        # Method 1: og:video meta tag
-        og_video = re.search(r'<meta\s+property="og:video(?:_url)?"\s+content="([^"]+)"', html, re.IGNORECASE)
-        if not og_video:
-            og_video = re.search(r'<meta\s+content="([^"]+)"\s+property="og:video(?:_url)?"', html, re.IGNORECASE)
-        if og_video:
-            video_url = og_video.group(1)
-            logger.info(f"🧵 Threads WA: Found og:video URL")
-        
-        # Method 2: Search for video URL in JSON data
-        if not video_url:
-            video_matches = re.findall(r'"(?:video_url|videoUrl|playable_url|playableUrl)"\s*:\s*"([^"]+\.(?:mp4|mov)[^"]*)"', html, re.IGNORECASE)
-            if video_matches:
-                video_url = video_matches[0].replace('\\u0026', '&')
-                logger.info(f"🧵 Threads WA: Found video URL in JSON data")
-        
-        # Method 3: Search for any .mp4 URL
-        if not video_url:
-            mp4_matches = re.findall(r'(https?://[^"\s<>]+\.(?:mp4|mov)[^"\s<>]*)', html, re.IGNORECASE)
-            for mp4 in mp4_matches:
-                if 'scontent' in mp4 or 'cdninstagram' in mp4 or 'fbcdn' in mp4:
-                    video_url = mp4.replace('\\u0026', '&')
-                    logger.info(f"🧵 Threads WA: Found .mp4 URL in page source")
-                    break
-        
-        # Image fallback
-        og_image = re.search(r'<meta\s+property="og:image(?:_url)?"\s+content="([^"]+)"', html, re.IGNORECASE)
-        if not og_image:
-            og_image = re.search(r'<meta\s+content="([^"]+)"\s+property="og:image(?:_url)?"', html, re.IGNORECASE)
-        if og_image:
-            image_url = og_image.group(1)
-        
-        # Title
-        og_title = re.search(r'<meta\s+property="og:title"\s+content="([^"]+)"', html, re.IGNORECASE)
-        if not og_title:
-            og_title = re.search(r'<meta\s+content="([^"]+)"\s+property="og:title"', html, re.IGNORECASE)
-        if og_title:
-            title = og_title.group(1)[:200]
-        
-        # Download
-        if video_url:
-            logger.info(f"🧵 Threads WA: Downloading video...")
-            file_path = os.path.join(tmpdir, "threads_video.mp4")
-            
-            async with aiohttp.ClientSession() as session:
-                async with session.get(video_url, headers=headers, timeout=aiohttp.ClientTimeout(total=120)) as resp:
-                    if resp.status != 200:
-                        return None
-                    file_size = 0
-                    with open(file_path, 'wb') as f:
-                        async for chunk in resp.content.iter_chunked(8192):
-                            f.write(chunk)
-                            file_size += len(chunk)
-                    
-                    if file_size < 1000:
-                        try: os.remove(file_path)
-                        except: pass
-                        return None
-            
-            return {"success": True, "file_path": file_path, "file_size": file_size, "title": title, "is_video": True}
-        
-        elif image_url:
-            logger.info(f"🧵 Threads WA: Downloading image...")
-            file_path = os.path.join(tmpdir, "threads_image.jpg")
-            
-            async with aiohttp.ClientSession() as session:
-                async with session.get(image_url, headers=headers, timeout=aiohttp.ClientTimeout(total=60)) as resp:
-                    if resp.status != 200:
-                        return None
-                    file_size = 0
-                    with open(file_path, 'wb') as f:
-                        async for chunk in resp.content.iter_chunked(8192):
-                            f.write(chunk)
-                            file_size += len(chunk)
-            
-            return {"success": True, "file_path": file_path, "file_size": file_size, "title": title, "is_video": False}
-        
-        else:
-            logger.warning("🧵 Threads WA: No media URL found in page source")
-            return None
+        logger.warning(f"🧵 Threads WA: All 3 methods failed for {url[:80]}")
+        return None
     
     except Exception as e:
-        logger.warning(f"🧵 Threads WA: Error: {e}")
+        logger.warning(f"🧵 Threads WA: Error using shared download: {e}")
         return None
 
 
@@ -1783,15 +1696,211 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                     except: pass
                                     return
                     
-                    logger.warning(f"⚠️ Invidious failed, trying Cloudflare Worker...")
+                    logger.warning(f"⚠️ Invidious failed, trying Cobalt...")
                 except ImportError:
                     logger.warning("⚠️ invidious_api module not available, skipping Invidious")
                 except asyncio.TimeoutError:
-                    logger.warning(f"⚠️ Invidious timed out, trying Cloudflare Worker...")
+                    logger.warning(f"⚠️ Invidious timed out, trying Cobalt...")
                 except Exception as inv_err:
-                    logger.warning(f"⚠️ Invidious error: {inv_err}, trying Cloudflare Worker...")
+                    logger.warning(f"⚠️ Invidious error: {inv_err}, trying Cobalt...")
             
-            # ═══ المرحلة 4: Cloudflare Worker Proxy Fallback ═══
+            # ═══ المرحلة 4: Cobalt API Fallback (لليوتيوب بس) ═══
+            # 🔴 نفس fallback chain زي التليجرام بالظبط
+            # Cobalt Public API + Self-Hosted + JWT
+            if info is None and is_youtube:
+                try:
+                    from handlers.download_handlers import _try_cobalt_for_youtube
+                    
+                    logger.info(f"🟠 WhatsApp Cobalt: Attempting download for {url[:80]}")
+                    
+                    try:
+                        await _send_whatsapp_message(wa_id, "🟠 جاري التحميل عبر Cobalt...")
+                    except:
+                        pass
+                    
+                    cobalt_result = await asyncio.wait_for(
+                        _try_cobalt_for_youtube(url, quality, tmpdir),
+                        timeout=90
+                    )
+                    
+                    if cobalt_result and cobalt_result.get("filepath"):
+                        logger.info(f"🟠 WhatsApp Cobalt succeeded! File: {cobalt_result['filepath']}")
+                        
+                        cobalt_file = cobalt_result["filepath"] if "filepath" in cobalt_result else cobalt_result.get("file_path")
+                        cobalt_size = cobalt_result.get("size", os.path.getsize(cobalt_file) if os.path.exists(cobalt_file) else 0)
+                        cobalt_title = cobalt_result.get("title", "YouTube Video")
+                        cobalt_height = cobalt_result.get("height", 720)
+                        cobalt_size_mb = cobalt_size / (1024 * 1024)
+                        size_str = f"{cobalt_size_mb:.1f}MB"
+                        
+                        if cobalt_file and os.path.exists(cobalt_file):
+                            if is_audio_only or quality == "audio":
+                                try:
+                                    with open(cobalt_file, 'rb') as af:
+                                        media_response = requests.post(
+                                            f"{WHATSAPP_API_URL}/{WHATSAPP_PHONE_NUMBER_ID}/media",
+                                            headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
+                                            files={"file": (f"{cobalt_title[:50]}.mp3", af, "audio/mpeg")},
+                                            data={"messaging_product": "whatsapp", "type": "audio"},
+                                            timeout=120
+                                        )
+                                        if media_response.status_code == 200:
+                                            media_id = media_response.json().get("id")
+                                            await _send_whatsapp_audio(wa_id, media_id)
+                                            await feedback.success()
+                                            try: os.remove(cobalt_file)
+                                            except: pass
+                                            return
+                                except Exception as audio_send_err:
+                                    logger.warning(f"⚠️ Cobalt audio send failed: {audio_send_err}")
+                            else:
+                                if cobalt_size_mb <= 100:
+                                    try:
+                                        with open(cobalt_file, 'rb') as vf:
+                                            media_response = requests.post(
+                                                f"{WHATSAPP_API_URL}/{WHATSAPP_PHONE_NUMBER_ID}/media",
+                                                headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
+                                                files={"file": (f"{cobalt_title[:50]}.mp4", vf, "video/mp4")},
+                                                data={"messaging_product": "whatsapp", "type": "video"},
+                                                timeout=180
+                                            )
+                                            if media_response.status_code == 200:
+                                                media_id = media_response.json().get("id")
+                                                tech_info = f"{cobalt_height}p | {size_str} | Cobalt"
+                                                await _send_whatsapp_video(wa_id, media_id, caption=f"🎬 {cobalt_title[:200]}\n📥 {tech_info}")
+                                                await feedback.success()
+                                                try: os.remove(cobalt_file)
+                                                except: pass
+                                                return
+                                    except Exception as video_send_err:
+                                        logger.warning(f"⚠️ Cobalt video send failed: {video_send_err}")
+                                else:
+                                    await _send_whatsapp_message(wa_id, f"❌ فشل إرسال الفيديو من Cobalt. جرب تاني!")
+                                    await feedback.success()
+                                    try: os.remove(cobalt_file)
+                                    except: pass
+                                    return
+                    
+                    logger.warning(f"⚠️ Cobalt failed, trying Cobalt JWT...")
+                except ImportError:
+                    logger.warning("⚠️ Cobalt download handler not available, skipping Cobalt")
+                except asyncio.TimeoutError:
+                    logger.warning(f"⚠️ Cobalt timed out, trying Cobalt JWT...")
+                except Exception as cobalt_err:
+                    logger.warning(f"⚠️ Cobalt error: {cobalt_err}, trying Cobalt JWT...")
+            
+            # ═══ المرحلة 5: Cobalt JWT — آخر fallback قبل Cloudflare Worker ═══
+            # 🔴 ده JWT شخصي من cobalt.tools — بنستخدمه كـ آخر حل لو كل حاجة فشلت
+            if info is None and is_youtube:
+                try:
+                    from config import COBALT_JWT
+                    
+                    if COBALT_JWT:
+                        logger.info(f"🔐 WhatsApp Cobalt JWT: Last-resort attempt for {url[:80]}")
+                        
+                        try:
+                            await _send_whatsapp_message(wa_id, "🔐 جاري التحميل عبر Cobalt JWT...")
+                        except:
+                            pass
+                        
+                        import aiohttp as _aiohttp_wa
+                        import json as _json_wa
+                        
+                        is_audio_jwt = (quality == "audio")
+                        jwt_quality_map = {"best": "1080", "medium": "720", "low": "480", "audio": "720"}
+                        jwt_v_quality = jwt_quality_map.get(quality, "1080")
+                        
+                        jwt_payload = {
+                            "url": url,
+                            "videoQuality": jwt_v_quality,
+                            "filenameStyle": "basic",
+                        }
+                        if is_audio_jwt:
+                            jwt_payload["downloadMode"] = "audio"
+                        
+                        jwt_headers = {
+                            "Accept": "application/json",
+                            "Content-Type": "application/json",
+                            "Authorization": f"Bearer {COBALT_JWT}",
+                        }
+                        
+                        try:
+                            from handlers.download_handlers import _cobalt_api_request
+                            jwt_result = await asyncio.wait_for(
+                                _cobalt_api_request(
+                                    "https://api.cobalt.tools", jwt_payload, jwt_headers,
+                                    jwt_v_quality, is_audio_jwt, tmpdir
+                                ),
+                                timeout=90
+                            )
+                            
+                            if jwt_result and jwt_result.get("filepath"):
+                                logger.info(f"🔐 WhatsApp Cobalt JWT succeeded! File: {jwt_result['filepath']}")
+                                
+                                jwt_file = jwt_result["filepath"]
+                                jwt_size = jwt_result.get("size", os.path.getsize(jwt_file) if os.path.exists(jwt_file) else 0)
+                                jwt_title = jwt_result.get("title", "YouTube Video")
+                                jwt_height = jwt_result.get("height", 720)
+                                jwt_size_mb = jwt_size / (1024 * 1024)
+                                size_str = f"{jwt_size_mb:.1f}MB"
+                                
+                                if jwt_file and os.path.exists(jwt_file):
+                                    if is_audio_jwt:
+                                        try:
+                                            with open(jwt_file, 'rb') as af:
+                                                media_response = requests.post(
+                                                    f"{WHATSAPP_API_URL}/{WHATSAPP_PHONE_NUMBER_ID}/media",
+                                                    headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
+                                                    files={"file": (f"{jwt_title[:50]}.mp3", af, "audio/mpeg")},
+                                                    data={"messaging_product": "whatsapp", "type": "audio"},
+                                                    timeout=120
+                                                )
+                                                if media_response.status_code == 200:
+                                                    media_id = media_response.json().get("id")
+                                                    await _send_whatsapp_audio(wa_id, media_id)
+                                                    await feedback.success()
+                                                    try: os.remove(jwt_file)
+                                                    except: pass
+                                                    return
+                                        except Exception as audio_send_err:
+                                            logger.warning(f"⚠️ Cobalt JWT audio send failed: {audio_send_err}")
+                                    else:
+                                        if jwt_size_mb <= 100:
+                                            try:
+                                                with open(jwt_file, 'rb') as vf:
+                                                    media_response = requests.post(
+                                                        f"{WHATSAPP_API_URL}/{WHATSAPP_PHONE_NUMBER_ID}/media",
+                                                        headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
+                                                        files={"file": (f"{jwt_title[:50]}.mp4", vf, "video/mp4")},
+                                                        data={"messaging_product": "whatsapp", "type": "video"},
+                                                        timeout=180
+                                                    )
+                                                    if media_response.status_code == 200:
+                                                        media_id = media_response.json().get("id")
+                                                        tech_info = f"{jwt_height}p | {size_str} | Cobalt JWT"
+                                                        await _send_whatsapp_video(wa_id, media_id, caption=f"🎬 {jwt_title[:200]}\n📥 {tech_info}")
+                                                        await feedback.success()
+                                                        try: os.remove(jwt_file)
+                                                        except: pass
+                                                        return
+                                            except Exception as video_send_err:
+                                                logger.warning(f"⚠️ Cobalt JWT video send failed: {video_send_err}")
+                                        else:
+                                            await _send_whatsapp_message(wa_id, f"❌ فشل إرسال الفيديو من Cobalt JWT. جرب تاني!")
+                                            await feedback.success()
+                                            try: os.remove(jwt_file)
+                                            except: pass
+                                            return
+                            
+                            logger.warning(f"⚠️ Cobalt JWT failed, trying Cloudflare Worker...")
+                        except asyncio.TimeoutError:
+                            logger.warning(f"⚠️ Cobalt JWT timed out, trying Cloudflare Worker...")
+                    else:
+                        logger.info("🔐 Cobalt JWT: No COBALT_JWT configured, skipping")
+                except Exception as jwt_err:
+                    logger.warning(f"⚠️ Cobalt JWT error: {jwt_err}")
+            
+            # ═══ المرحلة 6: Cloudflare Worker Proxy Fallback (آخر محاولة) ═══
             # لو yt-dlp فشل على Railway (IPs محجوبة)، نجرب عبر Cloudflare Worker
             if info is None:
                 from config import CLOUDFLARE_WORKER_URL
