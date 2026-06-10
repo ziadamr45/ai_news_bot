@@ -1673,7 +1673,7 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                         logger.warning(f"⚠️ Piped video send failed: {video_send_err}")
                                 else:
                                     # File too large for WhatsApp — send link
-                                    await _send_whatsapp_message(wa_id, f"📁 الفيديو كبير ({piped_size_mb:.0f}MB) — مش ممكن نبعته عبر واتساب\n🎬 {piped_title[:200]}")
+                                    await _send_whatsapp_message(wa_id, f"❌ فشل إرسال الفيديو من Piped. جرب تاني!")
                                     await feedback.success()
                                     try: os.remove(target)
                                     except: pass
@@ -1777,7 +1777,7 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                     except Exception as video_send_err:
                                         logger.warning(f"⚠️ Invidious video send failed: {video_send_err}")
                                 else:
-                                    await _send_whatsapp_message(wa_id, f"📁 الفيديو كبير ({inv_size_mb:.0f}MB) — مش ممكن نبعته عبر واتساب\n🎬 {inv_title[:200]}")
+                                    await _send_whatsapp_message(wa_id, f"❌ فشل إرسال الفيديو من Invidious. جرب تاني!")
                                     await feedback.success()
                                     try: os.remove(target)
                                     except: pass
@@ -2084,10 +2084,10 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                     logger.warning(f"⚠️ WhatsApp send failed: {error_msg}")
                     
                     if quality != "audio" and quality != "low":
-                        # نجرب جودة أقل
+                        # نجرب جودة أقل بصمت
                         lower_quality = {"best": "medium", "medium": "low"}.get(quality, "low")
-                        await _send_whatsapp_message(wa_id,
-                            f"⚠️ الفيديو كبير ({file_size / 1024 / 1024:.1f}MB). جاري تحميل جودة أقل...")
+                        # 🔴 FIX: منقولش "كبير" — نجرب جودة أقل بصمت
+                        await _send_whatsapp_message(wa_id, "⏳ جاري تجربة جودة أقل...")
                         # تنظيف وإعادة المحاولة
                         try:
                             shutil.rmtree(tmpdir, ignore_errors=True)
@@ -2096,19 +2096,17 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                         await feedback.complete()
                         return await _download_and_send_video(wa_id, url, wa_user_id, contact_name, message_id, is_admin, quality=lower_quality)
                     else:
-                        # لو حتى الجودة المنخفضة فشلت
+                        # لو حتى الجودة المنخفضة فشلت — نقول فشل إرسال بدون ذكر الحجم
                         await _send_whatsapp_message(wa_id, 
                             f"📥 *{title}*\n\n"
-                            f"🔗 المنصة: {platform_display}\n"
-                            f"📊 الحجم: {file_size / 1024 / 1024:.1f}MB\n\n"
-                            f"⚠️ مش قادر أبعت الفيديو مباشرة على واتساب.\n"
-                            f"💡 جرب التليجرام عشان تحمل الفيديو هناك!")
+                            f"🔗 المنصة: {platform_display}\n\n"
+                            f"❌ فشل إرسال الفيديو. جرب تاني!")
             else:
-                # File too large for WhatsApp — جرب جودة أقل
+                # File actually exceeds 500MB limit — ده الحد الحقيقي
                 if quality != "audio" and quality != "low":
                     lower_quality = {"best": "medium", "medium": "low"}.get(quality, "low")
-                    await _send_whatsapp_message(wa_id,
-                        f"⚠️ الفيديو كبير جداً ({file_size / 1024 / 1024:.1f}MB). جاري تحميل جودة أقل...")
+                    # 🔴 FIX: منقولش حجم — نجرب جودة أقل بصمت
+                    await _send_whatsapp_message(wa_id, "⏳ جاري تجربة جودة أقل...")
                     try:
                         shutil.rmtree(tmpdir, ignore_errors=True)
                     except Exception:
@@ -2116,16 +2114,15 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                     await feedback.complete()
                     return await _download_and_send_video(wa_id, url, wa_user_id, contact_name, message_id, is_admin, quality=lower_quality)
                 
-                # حتى الجودة المنخفضة كبيرة — نبعت معلومات
+                # حتى الجودة المنخفضة كبيرة — ده الوحيد اللي نقول فيه كبير
                 duration = info.get('duration', 0)
                 duration_str = f"{int(duration // 60)}:{int(duration % 60):02d}" if duration else "غير معروف"
                 
                 await _send_whatsapp_message(wa_id,
                     f"📥 *{title}*\n\n"
                     f"🔗 المنصة: {platform_display}\n"
-                    f"⏱️ المدة: {duration_str}\n"
-                    f"📊 الحجم: {file_size / 1024 / 1024:.1f}MB\n\n"
-                    f"⚠️ الفيديو كبير على واتساب (الحد 512MB)\n\n"
+                    f"⏱️ المدة: {duration_str}\n\n"
+                    f"❌ الفيديو أكبر من الحد الأقصى (512MB).\n\n"
                     f"💡 جرب التليجرام عشان تحمل الفيديو بحجمه الكامل!")
             
             # Increment usage

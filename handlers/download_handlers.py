@@ -2118,19 +2118,21 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
         # Telegram Premium bots: 2GB limit
         # Telegram Free bots: 50MB limit (but we try anyway — Telegram handles the rejection)
         # If file is too large for direct send, we try sendVideo which streams the file
-        MAX_FILESIZE_DIRECT = 2000 * 1024 * 1024  # 2GB — Telegram premium bots support up to 2GB
-        MAX_FILESIZE_FALLBACK = 100 * 1024 * 1024  # 100MB — if direct fails, try lower quality
+        # 🔴 FIX: الحدود الحقيقية — بس نقول "كبير" لو عدى الحد فعلاً
+        TELEGRAM_MAX_FREE = 50 * 1024 * 1024     # 50MB — بوت مجاني
+        TELEGRAM_MAX_PREMIUM = 2000 * 1024 * 1024  # 2GB — بوت premium
         
-        if filesize > MAX_FILESIZE_DIRECT:
-            # فوق 2GB — محاولة بجودة أقل
+        if filesize > TELEGRAM_MAX_PREMIUM:
+            # فوق 2GB — ده الحد الأقصى الحقيقي
             if quality != "audio":
                 if lang == "ar":
-                    await status_msg.edit_text(f"⚠️ الملف كبير جداً ({filesize // (1024*1024)}MB). جاري تحميل جودة أقل...")
+                    await status_msg.edit_text(f"⏳ جاري تحميل جودة أقل...")
                 else:
-                    await status_msg.edit_text(f"⚠️ File too large ({filesize // (1024*1024)}MB). Trying lower quality...")
+                    await status_msg.edit_text(f"⏳ Trying lower quality...")
                 os.remove(filepath)
                 lower_quality = {"best": "medium", "medium": "low", "low": "audio"}.get(quality, "medium")
-                return await _download_with_ytdlp(update_or_query, url, lower_quality, lang, user_id, status_msg)
+                # 🔴 FIX: نمرر status_msg=None عشان ينشئ واحد جديد — القديم ممكن يكون اتمسح
+                return await _download_with_ytdlp(update_or_query, url, lower_quality, lang, user_id, status_msg=None)
             else:
                 if lang == "ar":
                     await status_msg.edit_text(f"❌ الملف كبير جداً ({filesize // (1024*1024)}MB). الحد الأقصى 2GB.\n💡 جرب تحميل صوت أقل جودة.")
@@ -2151,9 +2153,8 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
         size_mb = filesize / (1024 * 1024)
         size_str = f"{size_mb:.1f}MB"
         
-        await status_msg.delete()
-        
-        # 🔴 FIX: محاولة إرسال الملف مع fallback للجودة الأقل لو فشل الإرسال
+        # 🔴 FIX: منحذفش status_msg هنا — ممكن نحتاجه لو الإرسال فشل
+        # بنحذفه بس لو الإرسال نجح
         send_failed = False
         
         if quality == "audio":
@@ -2165,6 +2166,9 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                         caption=caption,
                         parse_mode="HTML",
                     )
+                # ✅ الإرسال نجح — نحذف status_msg
+                try: await status_msg.delete()
+                except: pass
             except Exception as send_err:
                 send_failed = True
                 logger.warning(f"⚠️ Audio send failed: {send_err}")
@@ -2183,21 +2187,23 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                         duration=int(duration) if duration else None,
                         supports_streaming=True,
                     )
+                # ✅ الإرسال نجح — نحذف status_msg
+                try: await status_msg.delete()
+                except: pass
             except Exception as send_err:
                 send_failed = True
                 # 🔴 FIX: نفرق بين "ملف كبير" و "خطأ تاني"
                 err_str = str(send_err).lower()
-                is_too_large = any(kw in err_str for kw in ["too large", "file is too big", "file too large", "exceeds", "413"])
-                logger.warning(f"⚠️ Video send failed: {send_err} | is_too_large={is_too_large}")
+                # 🔴 FIX: نقول "كبير" بس لو فعلاً عدى الحد
+                file_exceeds_limit = filesize > TELEGRAM_MAX_FREE  # 50MB — ده الحد الحقيقي للبوت المجاني
+                is_too_large = file_exceeds_limit and any(kw in err_str for kw in ["too large", "file is too big", "file too large", "exceeds", "413"])
+                logger.warning(f"⚠️ Video send failed: {send_err} | is_too_large={is_too_large} | file_size={filesize}")
         
-        # 🔴 FIX: لو الإرسال فشل — نفرق بين "ملف كبير" و "خطأ تاني"
+        # 🔴 FIX: لو الإرسال فشل — نفرق بين "ملف كبير حقيقي" و "خطأ تاني"
         if send_failed and quality != "audio":
             if is_too_large:
-                # فعلاً الملف كبير — نجرب جودة أقل
-                if lang == "ar":
-                    await message.reply_text(f"⚠️ الملف كبير ({size_str}) ومش قادر أبعته مباشرة. جاري تحميل جودة أقل...")
-                else:
-                    await message.reply_text(f"⚠️ File too large ({size_str}) for direct send. Trying lower quality...")
+                # فعلاً الملف كبير (أكتر من 50MB) — نجرب جودة أقل بصمت
+                logger.info(f"📥 File too large ({size_str}), retrying with lower quality silently...")
                 
                 try:
                     os.remove(filepath)
@@ -2205,7 +2211,10 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                     pass
                 
                 lower_quality = {"best": "medium", "medium": "low", "low": "audio"}.get(quality, "medium")
-                return await _download_with_ytdlp(update_or_query, url, lower_quality, lang, user_id, status_msg)
+                # 🔴 FIX: نمرر status_msg=None عشان ينشئ واحد جديد — القديم ممكن يكون اتمسح
+                try: await status_msg.edit_text("⏳ جاري تجربة جودة أقل..." if lang == "ar" else "⏳ Trying lower quality...")
+                except: pass
+                return await _download_with_ytdlp(update_or_query, url, lower_quality, lang, user_id, status_msg=None)
             else:
                 # مشكلة تانية (مش حجم) — نجرب نبعته كـ document
                 logger.info(f"⚠️ Video send failed (not size), trying send as document...")
@@ -2218,19 +2227,27 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                     # لو وصل كـ document — نعتبره نجاح
                     try: os.remove(filepath)
                     except: pass
+                    try: await status_msg.delete()
+                    except: pass
                     return
                 except Exception as doc_err:
                     logger.warning(f"⚠️ Document send also failed: {doc_err}")
+                    # 🔴 FIX: منقولش "كبير" — نقول فشل إرسال وبس
                     if lang == "ar":
-                        await message.reply_text(f"❌ فشل إرسال الفيديو ({size_str}). جرب تاني!")
+                        await message.reply_text(f"❌ فشل إرسال الفيديو. جرب تاني!")
                     else:
-                        await message.reply_text(f"❌ Failed to send video ({size_str}). Try again!")
+                        await message.reply_text(f"❌ Failed to send video. Try again!")
+                    try: await status_msg.delete()
+                    except: pass
                     return
         elif send_failed and quality == "audio":
+            # 🔴 FIX: منقولش حجم — نقول فشل إرسال وبس
             if lang == "ar":
-                await message.reply_text(f"❌ فشل إرسال الملف الصوتي ({size_str}). جرب تاني!")
+                await message.reply_text(f"❌ فشل إرسال الصوت. جرب تاني!")
             else:
-                await message.reply_text(f"❌ Failed to send audio file ({size_str}). Try again!")
+                await message.reply_text(f"❌ Failed to send audio. Try again!")
+            try: await status_msg.delete()
+            except: pass
     
     except asyncio.TimeoutError:
         logger.error("yt-dlp download timed out")
