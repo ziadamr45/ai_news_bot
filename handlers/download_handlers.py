@@ -141,12 +141,18 @@ def _extract_url(text: str) -> str:
 
 
 # ═══════════════════════════════════════
-# تحميل Threads — طريقة مخصصة
+# تحميل Threads — Fallback Chain متعدد الطبقات
 # ═══════════════════════════════════════
 
-# 🔴 yt-dlp مش بيدعم threads.com/threads.net — مفيش extractor
-# الحل: نجيب الـ media URL من الـ page source أو نستخدم Instagram API
-# Threads بيخزن الفيديو/الصورة في meta tags أو JSON في الـ page source
+# 🔴 Threads مش بيتحمل بسهولة لأن:
+# 1. yt-dlp مش بيدعم threads.com/threads.net رسمياً (مفيش extractor مخصص)
+# 2. الـ page source مش فيه الـ media URLs مباشرة (SPA/JS rendering)
+# 3. محتاجين API خارجي أو scraping محسّن
+#
+# ✅ Fallback Chain الجديدة:
+# 1. Cobalt API (Self-Hosted → Public) — أضمن وأسرع طريقة
+# 2. Threads LDT scraping (Linked Data Transfer) — استخراج من __a=1 أو JSON
+# 3. og:meta tags scraping — الطريقة القديمة المحسّنة
 
 _THREADS_URL_PATTERN = re.compile(r'(https?://)?(www\.)?threads\.(net|com)/', re.IGNORECASE)
 
@@ -156,18 +162,131 @@ def _is_threads_url(url: str) -> bool:
     return bool(_THREADS_URL_PATTERN.search(url))
 
 
-async def _download_threads_media(url: str, tmpdir: str) -> dict | None:
-    """تحميل فيديو/صورة من Threads عن طريق استخراج الـ media URL من الـ page source
+async def _try_cobalt_for_threads(url: str, quality: str, tmpdir: str) -> dict | None:
+    """تحميل من Threads عبر Cobalt API — Self-Hosted أولاً ثم Public
     
-    🔴 الطريقة:
-    1. نعمل GET request للصفحة
-    2. نبحث عن video URL أو image URL في الـ meta tags أو JSON
-    3. نحمّل الملف مباشرة
+    🔴 Cobalt بيدعم Threads رسمياً! ده الحل الأضمن والأسرع.
+    بنستخدم نفس الـ Cobalt API المستخدم لليوتيوب بس للـ Threads.
     
-    Returns: dict فيه {success, file_path, title, is_video} أو None
+    Returns: dict فيه {success, file_path, title, is_video, file_size} أو None
     """
     import aiohttp
     
+    # تحويل الجودة لصيغة Cobalt
+    quality_map = {"best": "1080", "medium": "720", "low": "480", "audio": "720"}
+    v_quality = quality_map.get(quality, "720")
+    is_audio = quality == "audio"
+    
+    # ═══ محاولة 1: Self-Hosted Cobalt ═══
+    try:
+        from config import COBALT_API_URL, COBALT_API_KEY
+        
+        if COBALT_API_URL:
+            api_url = COBALT_API_URL.rstrip("/")
+            
+            payload = {
+                "url": url,
+                "videoQuality": v_quality,
+                "downloadMode": "audio" if is_audio else "auto",
+                "audioFormat": "mp3" if is_audio else "best",
+                "filenameStyle": "classic",
+            }
+            
+            headers = {
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+            }
+            
+            if COBALT_API_KEY:
+                headers["Authorization"] = f"Api-Key {COBALT_API_KEY}"
+            
+            logger.info(f"🧵 Cobalt Self-Hosted: requesting Threads download for {url[:80]}")
+            
+            result = await _cobalt_api_request(api_url, payload, headers, v_quality, is_audio, tmpdir)
+            if result:
+                # تحويل النتيجة لصيغة Threads
+                return {
+                    "success": True,
+                    "file_path": result["filepath"],
+                    "file_size": result.get("size", 0),
+                    "title": result.get("title", "Threads Post"),
+                    "is_video": not is_audio,
+                    "method": "cobalt_self",
+                }
+            
+            logger.warning(f"⚠️ Cobalt Self-Hosted failed for Threads, trying Public API...")
+    except Exception as e:
+        logger.warning(f"⚠️ Cobalt Self-Hosted error for Threads: {e}")
+    
+    # ═══ محاولة 2: Cobalt Public API ═══
+    try:
+        from config import COBALT_API_KEY
+        
+        public_headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        }
+        
+        if COBALT_API_KEY:
+            public_headers["Authorization"] = f"Api-Key {COBALT_API_KEY}"
+        
+        public_payload = {
+            "url": url,
+            "videoQuality": v_quality,
+            "filenameStyle": "classic",
+        }
+        
+        if is_audio:
+            public_payload["downloadMode"] = "audio"
+            public_payload["audioFormat"] = "mp3"
+        
+        logger.info(f"🧵 Cobalt Public API: requesting Threads download for {url[:80]}")
+        
+        result = await _cobalt_api_request("https://api.cobalt.tools", public_payload, public_headers, v_quality, is_audio, tmpdir)
+        if result:
+            return {
+                "success": True,
+                "file_path": result["filepath"],
+                "file_size": result.get("size", 0),
+                "title": result.get("title", "Threads Post"),
+                "is_video": not is_audio,
+                "method": "cobalt_public",
+            }
+        
+        logger.warning(f"⚠️ Cobalt Public API failed for Threads")
+    except Exception as e:
+        logger.warning(f"⚠️ Cobalt Public API error for Threads: {e}")
+    
+    logger.warning(f"🧵 All Cobalt methods failed for Threads")
+    return None
+
+
+async def _download_threads_media(url: str, tmpdir: str, quality: str = "best") -> dict | None:
+    """تحميل فيديو/صورة من Threads — Fallback Chain محسّن
+    
+    🔴 الترتيب:
+    1. Cobalt API (Self-Hosted → Public) — الأضمن
+    2. LDT scraping (__a=1 + JSON-LD) — استخراج مباشر
+    3. og:meta tags scraping — الطريقة القديمة المحسّنة
+    
+    Returns: dict فيه {success, file_path, title, is_video, file_size} أو None
+    """
+    import aiohttp
+    
+    # ═══════════════════════════════════════
+    # الطريقة 1: Cobalt API — الأضمن والأسرع
+    # ═══════════════════════════════════════
+    cobalt_result = await _try_cobalt_for_threads(url, quality, tmpdir)
+    if cobalt_result and cobalt_result.get("success"):
+        logger.info(f"🧵 Threads: Cobalt download succeeded!")
+        return cobalt_result
+    
+    logger.warning("🧵 Threads: Cobalt failed, trying LDT scraping...")
+    
+    # ═══════════════════════════════════════
+    # الطريقة 2 & 3: Page Source Scraping
+    # ═══════════════════════════════════════
     try:
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
@@ -177,56 +296,219 @@ async def _download_threads_media(url: str, tmpdir: str) -> dict | None:
             'Sec-Fetch-Mode': 'navigate',
         }
         
+        # 🔴 محاولة 1: نطلب الصفحة مع ?__a=1 عشان نحصل على JSON data
+        # Threads (زي Instagram) بيرجع JSON لو أضفنا ?__a=1
+        scrape_url = url
+        if '?' not in url:
+            scrape_url = url + '?__a=1'
+        else:
+            scrape_url = url + '&__a=1'
+        
+        html = None
+        json_data = None
+        
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=30)) as resp:
-                if resp.status != 200:
-                    logger.warning(f"🧵 Threads: Page returned status {resp.status}")
-                    return None
-                
-                html = await resp.text()
+            async with session.get(scrape_url, headers=headers, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+                if resp.status == 200:
+                    content_type = resp.headers.get('Content-Type', '')
+                    if 'json' in content_type:
+                        # 🎉 رجع JSON مباشرة!
+                        try:
+                            json_data = await resp.json()
+                            logger.info(f"🧵 Threads: Got JSON response from ?__a=1")
+                        except:
+                            pass
+                    else:
+                        html = await resp.text()
+                        logger.info(f"🧵 Threads: Got HTML response from ?__a=1")
+                else:
+                    logger.warning(f"🧵 Threads: ?__a=1 returned status {resp.status}, trying normal URL...")
+                    
+                    # محاولة 2: نطلب الصفحة عادي
+                    async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=30)) as resp2:
+                        if resp2.status == 200:
+                            html = await resp2.text()
+                        else:
+                            logger.warning(f"🧵 Threads: Normal URL also returned status {resp2.status}")
+                            return None
         
-        if not html:
-            logger.warning("🧵 Threads: Empty page source")
-            return None
+        # 🔴 استخراج الـ media من JSON لو حصلنا عليه
+        if json_data:
+            return await _extract_threads_from_json(json_data, tmpdir, headers)
         
-        # 🔴 البحث عن video URL
-        # Threads بيحط الفيديو في og:video أو في JSON data
+        # 🔴 استخراج الـ media من HTML
+        if html:
+            return await _extract_threads_from_html(html, tmpdir, headers)
+        
+        logger.warning("🧵 Threads: No HTML or JSON data obtained")
+        return None
+    
+    except asyncio.TimeoutError:
+        logger.warning("🧵 Threads: Request timed out")
+        return None
+    except Exception as e:
+        logger.warning(f"🧵 Threads: Error: {e}")
+        return None
+
+
+async def _extract_threads_from_json(json_data: dict, tmpdir: str, headers: dict) -> dict | None:
+    """استخراج الفيديو/الصورة من JSON response من Threads ?__a=1"""
+    import aiohttp
+    
+    try:
         video_url = None
         image_url = None
         title = "Threads Post"
         
-        # Method 1: og:video meta tag
-        og_video = re.search(r'<meta\s+property="og:video(?:_url)?"\s+content="([^"]+)"', html, re.IGNORECASE)
-        if not og_video:
-            og_video = re.search(r'<meta\s+content="([^"]+)"\s+property="og:video(?:_url)?"', html, re.IGNORECASE)
-        if og_video:
-            video_url = og_video.group(1)
-            logger.info(f"🧵 Threads: Found og:video URL")
+        # الطريقة دي بتشتغل لو Threads رجع JSON API response
+        # الهيكل الممكن: graphql > shortcode_media أو items > [...] > media
         
-        # Method 2: Search for video URL in JSON data
+        # Method 1: items array (Instagram-like structure)
+        items = json_data.get('items', [])
+        if not items:
+            # Method 2: graphql > shortcode_media
+            graphql = json_data.get('graphql', {})
+            items = [graphql.get('shortcode_media', {})] if graphql.get('shortcode_media') else []
+        if not items:
+            # Method 3: data > media أو data > threads
+            data = json_data.get('data', {})
+            if isinstance(data, dict):
+                media = data.get('media', data.get('threads', []))
+                if isinstance(media, list):
+                    items = media
+                elif isinstance(media, dict):
+                    items = [media]
+        
+        if items:
+            first_item = items[0] if isinstance(items[0], dict) else {}
+            
+            # بحث عن video_url
+            video_url = (
+                first_item.get('video_url') or
+                first_item.get('playable_url') or
+                first_item.get('video_versions', [{}])[0].get('url') if first_item.get('video_versions') else None
+            )
+            
+            # بحث عن image_url
+            if not video_url:
+                image_url = (
+                    first_item.get('display_url') or
+                    first_item.get('image_versions2', {}).get('candidates', [{}])[0].get('url') or
+                    first_item.get('thumbnail_url') or
+                    first_item.get('display_src')
+                )
+            
+            # بحث عن title/caption
+            title = (
+                first_item.get('title') or
+                first_item.get('caption', {}).get('text', '') if isinstance(first_item.get('caption'), dict) else first_item.get('caption', '') or
+                "Threads Post"
+            )
+        
+        # تحميل الملف
+        if video_url:
+            return await _download_threads_file(video_url, tmpdir, headers, is_video=True, title=title)
+        elif image_url:
+            return await _download_threads_file(image_url, tmpdir, headers, is_video=False, title=title)
+        
+        logger.warning("🧵 Threads JSON: No media URL found")
+        return None
+    
+    except Exception as e:
+        logger.warning(f"🧵 Threads JSON extraction error: {e}")
+        return None
+
+
+async def _extract_threads_from_html(html: str, tmpdir: str, headers: dict) -> dict | None:
+    """استخراج الفيديو/الصورة من HTML page source من Threads"""
+    import aiohttp
+    
+    try:
+        video_url = None
+        image_url = None
+        title = "Threads Post"
+        
+        # ═══ Method 1: JSON-LD (Linked Data) — أفضل طريقة ═══
+        # Threads بيحط بيانات منظمة في script type="application/ld+json"
+        jsonld_matches = re.findall(
+            r'<script[^>]*type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
+            html, re.DOTALL | re.IGNORECASE
+        )
+        for jsonld_str in jsonld_matches:
+            try:
+                import json
+                jsonld = json.loads(jsonld_str)
+                # JSON-LD ممكن يكون list أو dict
+                items = jsonld if isinstance(jsonld, list) else [jsonld]
+                for item in items:
+                    # VideoObject
+                    if item.get('@type') == 'VideoObject' or (isinstance(item.get('@type'), list) and 'VideoObject' in item.get('@type', [])):
+                        video_url = item.get('contentUrl') or item.get('embedUrl')
+                        if video_url:
+                            title = item.get('name', item.get('title', 'Threads Post'))
+                            logger.info(f"🧵 Threads: Found video URL in JSON-LD")
+                            break
+                    # ImageObject
+                    elif item.get('@type') == 'ImageObject' or (isinstance(item.get('@type'), list) and 'ImageObject' in item.get('@type', [])):
+                        image_url = item.get('contentUrl') or item.get('url')
+                        if image_url:
+                            title = item.get('name', item.get('title', 'Threads Post'))
+                            logger.info(f"🧵 Threads: Found image URL in JSON-LD")
+                            break
+                if video_url or image_url:
+                    break
+            except Exception:
+                continue
+        
+        # ═══ Method 2: og:video meta tag ═══
         if not video_url:
-            # Threads stores media URLs in script tags or JSON
-            video_matches = re.findall(r'"(?:video_url|videoUrl|playable_url|playableUrl)"\s*:\s*"([^"]+\.(?:mp4|mov)[^"]*)"', html, re.IGNORECASE)
-            if video_matches:
-                video_url = video_matches[0].replace('\\u0026', '&')
-                logger.info(f"🧵 Threads: Found video URL in JSON data")
+            og_video = re.search(r'<meta\s+property="og:video(?:_url)?"\s+content="([^"]+)"', html, re.IGNORECASE)
+            if not og_video:
+                og_video = re.search(r'<meta\s+content="([^"]+)"\s+property="og:video(?:_url)?"', html, re.IGNORECASE)
+            if og_video:
+                video_url = og_video.group(1)
+                logger.info(f"🧵 Threads: Found og:video URL")
         
-        # Method 3: Search for any .mp4 URL
+        # ═══ Method 3: Twitter player:stream meta tag ═══
+        if not video_url:
+            player_stream = re.search(r'<meta\s+(?:name|property)="twitter:player:stream"\s+content="([^"]+)"', html, re.IGNORECASE)
+            if not player_stream:
+                player_stream = re.search(r'<meta\s+content="([^"]+)"\s+(?:name|property)="twitter:player:stream"', html, re.IGNORECASE)
+            if player_stream:
+                video_url = player_stream.group(1)
+                logger.info(f"🧵 Threads: Found twitter:player:stream URL")
+        
+        # ═══ Method 4: Search in embedded JSON data ═══
+        if not video_url:
+            # Threads بيحط بيانات الـ post في script tag كبير اسمه __NEXT_DATA__ أو عرض بيانات
+            # بنبحث عن video_url في أي JSON موجود في الصفحة
+            video_matches = re.findall(
+                r'"(?:video_url|videoUrl|playable_url|playableUrl|contentUrl)"\s*:\s*"(https?://[^"]+)"',
+                html, re.IGNORECASE
+            )
+            for vm in video_matches:
+                # بنتأكد إنه رابط CDN حقيقي (مش tracking pixel)
+                if any(domain in vm for domain in ['scontent', 'cdninstagram', 'fbcdn', 'cdn']):
+                    video_url = vm.replace('\\u0026', '&').replace('\\/', '/')
+                    logger.info(f"🧵 Threads: Found video URL in embedded JSON")
+                    break
+        
+        # ═══ Method 5: Search for any .mp4 URL ═══
         if not video_url:
             mp4_matches = re.findall(r'(https?://[^"\s<>]+\.(?:mp4|mov)[^"\s<>]*)', html, re.IGNORECASE)
-            # Filter out small/tracking videos
             for mp4 in mp4_matches:
                 if 'scontent' in mp4 or 'cdninstagram' in mp4 or 'fbcdn' in mp4:
-                    video_url = mp4.replace('\\u0026', '&')
+                    video_url = mp4.replace('\\u0026', '&').replace('\\/', '/')
                     logger.info(f"🧵 Threads: Found .mp4 URL in page source")
                     break
         
-        # 🔴 البحث عن image URL (fallback لو مفيش فيديو)
-        og_image = re.search(r'<meta\s+property="og:image(?:_url)?"\s+content="([^"]+)"', html, re.IGNORECASE)
-        if not og_image:
-            og_image = re.search(r'<meta\s+content="([^"]+)"\s+property="og:image(?:_url)?"', html, re.IGNORECASE)
-        if og_image:
-            image_url = og_image.group(1)
+        # ═══ البحث عن image URL (fallback لو مفيش فيديو) ═══
+        if not video_url:
+            og_image = re.search(r'<meta\s+property="og:image(?:_url)?"\s+content="([^"]+)"', html, re.IGNORECASE)
+            if not og_image:
+                og_image = re.search(r'<meta\s+content="([^"]+)"\s+property="og:image(?:_url)?"', html, re.IGNORECASE)
+            if og_image:
+                image_url = og_image.group(1)
         
         # Extract title
         og_title = re.search(r'<meta\s+property="og:title"\s+content="([^"]+)"', html, re.IGNORECASE)
@@ -235,70 +517,71 @@ async def _download_threads_media(url: str, tmpdir: str) -> dict | None:
         if og_title:
             title = og_title.group(1)[:200]
         
-        # 🔴 تحميل الملف
+        # تحميل الملف
         if video_url:
-            logger.info(f"🧵 Threads: Downloading video from {video_url[:80]}...")
+            return await _download_threads_file(video_url, tmpdir, headers, is_video=True, title=title)
+        elif image_url:
+            return await _download_threads_file(image_url, tmpdir, headers, is_video=False, title=title)
+        
+        logger.warning("🧵 Threads HTML: No video or image URL found in page source")
+        return None
+    
+    except Exception as e:
+        logger.warning(f"🧵 Threads HTML extraction error: {e}")
+        return None
+
+
+async def _download_threads_file(media_url: str, tmpdir: str, headers: dict, is_video: bool = True, title: str = "Threads Post") -> dict | None:
+    """تحميل ملف فيديو/صورة من URL — مشترك بين كل طرق الـ scraping"""
+    import aiohttp
+    
+    try:
+        if is_video:
+            logger.info(f"🧵 Threads: Downloading video from {media_url[:80]}...")
             ext = "mp4"
             file_path = os.path.join(tmpdir, f"threads_video.{ext}")
-            
-            async with aiohttp.ClientSession() as session:
-                async with session.get(video_url, headers=headers, timeout=aiohttp.ClientTimeout(total=120)) as resp:
-                    if resp.status != 200:
-                        logger.warning(f"🧵 Threads: Video download failed with status {resp.status}")
-                        return None
-                    file_size = 0
-                    with open(file_path, 'wb') as f:
-                        async for chunk in resp.content.iter_chunked(8192):
-                            f.write(chunk)
-                            file_size += len(chunk)
-                    
-                    if file_size < 1000:
-                        logger.warning(f"🧵 Threads: Video file too small ({file_size} bytes)")
-                        try: os.remove(file_path)
-                        except: pass
-                        return None
-            
-            return {
-                "success": True,
-                "file_path": file_path,
-                "file_size": file_size,
-                "title": title,
-                "is_video": True,
-            }
-        
-        elif image_url:
-            logger.info(f"🧵 Threads: Downloading image from {image_url[:80]}...")
+            timeout = 120
+        else:
+            logger.info(f"🧵 Threads: Downloading image from {media_url[:80]}...")
             ext = "jpg"
             file_path = os.path.join(tmpdir, f"threads_image.{ext}")
-            
-            async with aiohttp.ClientSession() as session:
-                async with session.get(image_url, headers=headers, timeout=aiohttp.ClientTimeout(total=60)) as resp:
-                    if resp.status != 200:
-                        logger.warning(f"🧵 Threads: Image download failed with status {resp.status}")
-                        return None
-                    file_size = 0
-                    with open(file_path, 'wb') as f:
-                        async for chunk in resp.content.iter_chunked(8192):
-                            f.write(chunk)
-                            file_size += len(chunk)
-            
-            return {
-                "success": True,
-                "file_path": file_path,
-                "file_size": file_size,
-                "title": title,
-                "is_video": False,
-            }
+            timeout = 60
         
-        else:
-            logger.warning("🧵 Threads: No video or image URL found in page source")
-            return None
+        # نستخدم headers مع User-Agent عشان Meta مش تبلوكنا
+        dl_headers = dict(headers)
+        dl_headers['Referer'] = 'https://www.threads.net/'
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.get(media_url, headers=dl_headers, timeout=aiohttp.ClientTimeout(total=timeout)) as resp:
+                if resp.status != 200:
+                    logger.warning(f"🧵 Threads: Download failed with status {resp.status}")
+                    return None
+                file_size = 0
+                with open(file_path, 'wb') as f:
+                    async for chunk in resp.content.iter_chunked(8192):
+                        f.write(chunk)
+                        file_size += len(chunk)
+                
+                if file_size < 1000:
+                    logger.warning(f"🧵 Threads: File too small ({file_size} bytes)")
+                    try: os.remove(file_path)
+                    except: pass
+                    return None
+        
+        return {
+            "success": True,
+            "file_path": file_path,
+            "file_size": file_size,
+            "title": title,
+            "is_video": is_video,
+            "method": "scraping",
+        }
     
     except asyncio.TimeoutError:
-        logger.warning("🧵 Threads: Request timed out")
+        logger.warning("🧵 Threads: Download timed out")
         return None
     except Exception as e:
-        logger.warning(f"🧵 Threads: Error: {e}")
+        logger.warning(f"🧵 Threads: Download error: {e}")
         return None
 
 
@@ -1397,7 +1680,7 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
             except:
                 pass
             
-            threads_result = await _download_threads_media(url, tmpdir)
+            threads_result = await _download_threads_media(url, tmpdir, quality)
             
             if threads_result and threads_result.get("success"):
                 file_path = threads_result["file_path"]
