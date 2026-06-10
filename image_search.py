@@ -3,13 +3,14 @@ Image Search Module 🔍🖼️
 بحث عن صور وتحميلها
 
 🔴 كيف بيشتغل:
-1. بيستخدم web search APIs عشان يلاقي صور
-2. بيرجع قائمة صور فيها: رابط، صورة مصغرة، حجم، مصدر
-3. بيقدر يحمّل الصور ويبعتها
+1. بيستخدم DuckDuckGo Images API كبحث أساسي (مجاني وموثوق)
+2. Fallback لـ Unsplash / Pexels / Pixabay لو متاحين
+3. بيرجع قائمة صور فيها: رابط، صورة مصغرة، حجم، مصدر
+4. بيقدر يحمّل الصور ويبعتها
 
 🔴 الميزات:
 - بحث صور بالكلمات المفتاحية
-- تحديد عدد الصور المطلوبة (1-10)
+- تحديد عدد الصور المطلوبة (1-15)
 - تحميل الصور وإرسالها مباشرة
 - Fallback بين محركات بحث متعددة
 """
@@ -19,6 +20,8 @@ import os
 import asyncio
 import re
 import tempfile
+import hashlib
+import base64
 from typing import Dict, Optional, List
 from urllib.parse import quote_plus, urlparse
 
@@ -36,11 +39,63 @@ MIN_IMAGE_COUNT = 1
 _USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
 
+# ═══════════════════════════════════════
+# DuckDuckGo Image Search (الأساسي — مجاني وموثوق)
+# ═══════════════════════════════════════
+
+async def search_images_duckduckgo(query: str, count: int = 3) -> Optional[List[Dict]]:
+    """بحث صور باستخدام DuckDuckGo Images — لا يحتاج API key
+    
+    🔴 ده البحث الأساسي لأنه:
+    1. مجاني ومش محتاج API key
+    2. ddgs موجود في requirements.txt
+    3. بيرجع روابط صور مباشرة (مش صفحات ويب)
+    """
+    try:
+        from ddgs import DDGS
+        
+        def _sync_search():
+            results = []
+            with DDGS() as ddgs:
+                search_results = list(ddgs.images(query, max_results=min(count, 30)))
+                for item in search_results[:count]:
+                    results.append({
+                        "url": item.get("image", ""),
+                        "thumbnail": item.get("thumbnail", ""),
+                        "full_url": item.get("image", ""),
+                        "width": item.get("width", 0),
+                        "height": item.get("height", 0),
+                        "description": item.get("title", ""),
+                        "author": "",
+                        "source": "DuckDuckGo",
+                        "download_url": item.get("image", ""),
+                    })
+            return results
+        
+        loop = asyncio.get_event_loop()
+        results = await loop.run_in_executor(None, _sync_search)
+        
+        if results:
+            logger.info(f"🖼️ DuckDuckGo image search: {len(results)} results for '{query}'")
+            return results
+        return None
+        
+    except ImportError:
+        logger.warning("ddgs not installed — DuckDuckGo image search unavailable")
+        return None
+    except Exception as e:
+        logger.warning(f"DuckDuckGo image search error: {e}")
+        return None
+
+
+# ═══════════════════════════════════════
+# Unsplash API (Fallback — محتاج API key)
+# ═══════════════════════════════════════
+
 async def search_images_unsplash(query: str, count: int = 3) -> Optional[List[Dict]]:
     """بحث صور باستخدام Unsplash API
     
-    🔴 Unsplash بيقدم API مجاني للبحث عن صور عالية الجودة
-    محتاج UNSPLASH_ACCESS_KEY في الـ env vars
+    🔴 محتاج UNSPLASH_ACCESS_KEY في الـ env vars
     """
     unsplash_key = os.environ.get("UNSPLASH_ACCESS_KEY", "")
     if not unsplash_key:
@@ -90,11 +145,14 @@ async def search_images_unsplash(query: str, count: int = 3) -> Optional[List[Di
         return None
 
 
+# ═══════════════════════════════════════
+# Pexels API (Fallback — محتاج API key)
+# ═══════════════════════════════════════
+
 async def search_images_pexels(query: str, count: int = 3) -> Optional[List[Dict]]:
     """بحث صور باستخدام Pexels API
     
-    🔴 Pexels بيقدم API مجاني للبحث عن صور
-    محتاج PEXELS_API_KEY في الـ env vars
+    🔴 محتاج PEXELS_API_KEY في الـ env vars
     """
     pexels_key = os.environ.get("PEXELS_API_KEY", "")
     if not pexels_key:
@@ -143,11 +201,14 @@ async def search_images_pexels(query: str, count: int = 3) -> Optional[List[Dict
         return None
 
 
+# ═══════════════════════════════════════
+# Pixabay API (Fallback — محتاج API key)
+# ═══════════════════════════════════════
+
 async def search_images_pixabay(query: str, count: int = 3) -> Optional[List[Dict]]:
     """بحث صور باستخدام Pixabay API
     
-    🔴 Pixabay بيقدم API مجاني للبحث عن صور
-    محتاج PIXABAY_API_KEY في الـ env vars
+    🔴 محتاج PIXABAY_API_KEY في الـ env vars
     """
     pixabay_key = os.environ.get("PIXABAY_API_KEY", "")
     if not pixabay_key:
@@ -198,82 +259,53 @@ async def search_images_pixabay(query: str, count: int = 3) -> Optional[List[Dic
         return None
 
 
-async def search_images_web(query: str, count: int = 3) -> Optional[List[Dict]]:
-    """بحث صور باستخدام web search (Fallback نهائي)
-    
-    🔴 ده آخر حل لو كل الـ APIs مش متاحة
-    بيستخدم DuckDuckGo أو Bing image search
-    """
-    try:
-        from web_search import search_web
-        
-        # بنستخدم web search عشان نلاقي صفحات فيها صور
-        web_results = await search_web(f"{query} image", max_results=count, language="en")
-        
-        if not web_results:
-            return None
-        
-        results = []
-        for item in web_results[:count]:
-            link = item.get("link", "")
-            title = item.get("title", "")
-            snippet = item.get("snippet", "")
-            
-            results.append({
-                "url": link,
-                "thumbnail": "",
-                "full_url": link,
-                "width": 0,
-                "height": 0,
-                "description": f"{title}\n{snippet}",
-                "author": "",
-                "source": "Web Search",
-                "download_url": link,
-            })
-        
-        return results
-        
-    except Exception as e:
-        logger.warning(f"Web image search error: {e}")
-        return None
-
+# ═══════════════════════════════════════
+# بحث صور — Fallback chain
+# ═══════════════════════════════════════
 
 async def search_images(query: str, count: int = 3) -> Optional[List[Dict]]:
     """بحث صور — Fallback chain بين محركات بحث متعددة
     
     🔴 الأولوية:
-    1. Unsplash API (صور عالية الجودة)
-    2. Pexels API (صور مجانية)
-    3. Pixabay API (صور مجانية)
-    4. Web Search (fallback نهائي)
+    1. DuckDuckGo Images (مجاني — لا يحتاج API key)
+    2. Unsplash API (صور عالية الجودة)
+    3. Pexels API (صور مجانية)
+    4. Pixabay API (صور مجانية)
     
     Args:
         query: كلمة البحث
-        count: عدد الصور المطلوبة (1-10)
+        count: عدد الصور المطلوبة (1-15)
     
     Returns:
         قائمة نتائج أو None لو فشل البحث كله
     """
     count = max(MIN_IMAGE_COUNT, min(count, MAX_IMAGE_COUNT))
     
-    # Fallback chain
+    # Fallback chain — DuckDuckGo الأول لأنه مجاني وموثوق
     search_methods = [
+        ("DuckDuckGo", search_images_duckduckgo),
         ("Unsplash", search_images_unsplash),
         ("Pexels", search_images_pexels),
         ("Pixabay", search_images_pixabay),
-        ("Web Search", search_images_web),
     ]
     
     for name, method in search_methods:
-        results = await method(query, count)
-        if results and len(results) > 0:
-            logger.info(f"🖼️ Image search ({name}): {len(results)} results for '{query}'")
-            return results
+        try:
+            results = await method(query, count)
+            if results and len(results) > 0:
+                logger.info(f"🖼️ Image search ({name}): {len(results)} results for '{query}'")
+                return results
+        except Exception as e:
+            logger.warning(f"🖼️ Image search ({name}) error: {e}")
         logger.debug(f"🖼️ Image search ({name}): no results, trying next...")
     
     logger.warning(f"🖼️ All image search methods failed for '{query}'")
     return None
 
+
+# ═══════════════════════════════════════
+# تحميل الصور
+# ═══════════════════════════════════════
 
 async def download_image(url: str, output_dir: str = "/tmp") -> Optional[str]:
     """تحميل صورة من رابط وحفظها محلياً
@@ -293,10 +325,16 @@ async def download_image(url: str, output_dir: str = "/tmp") -> Optional[str]:
                 },
             ) as resp:
                 if resp.status != 200:
+                    logger.warning(f"🖼️ Image download failed: HTTP {resp.status} for {url[:80]}")
+                    return None
+                
+                # 🔴 تحقق إن الـ Content-Type فعلاً صورة
+                content_type = resp.headers.get("Content-Type", "")
+                if content_type and "text/html" in content_type:
+                    logger.warning(f"🖼️ Got HTML instead of image for {url[:80]}")
                     return None
                 
                 # تحديد الامتداد من Content-Type
-                content_type = resp.headers.get("Content-Type", "")
                 if "png" in content_type:
                     ext = "png"
                 elif "webp" in content_type:
@@ -307,18 +345,18 @@ async def download_image(url: str, output_dir: str = "/tmp") -> Optional[str]:
                     ext = "jpg"
                 
                 # إنشاء اسم ملف فريد
-                import hashlib
                 file_hash = hashlib.md5(url.encode()).hexdigest()[:8]
                 file_path = os.path.join(output_dir, f"img_{file_hash}.{ext}")
                 
-                with open(file_path, 'wb') as f:
-                    data = await resp.read()
-                    f.write(data)
+                data = await resp.read()
                 
-                # التحقق إن الملف مش فاضي
-                if os.path.getsize(file_path) < 100:
-                    os.remove(file_path)
+                # 🔴 تحقق إن البيانات مش صغيرة أوي (أقل من 500 بايت = مش صورة حقيقية)
+                if len(data) < 500:
+                    logger.warning(f"🖼️ Image too small ({len(data)} bytes) — probably not a real image: {url[:80]}")
                     return None
+                
+                with open(file_path, 'wb') as f:
+                    f.write(data)
                 
                 return file_path
         
@@ -327,8 +365,51 @@ async def download_image(url: str, output_dir: str = "/tmp") -> Optional[str]:
         return None
 
 
+async def download_image_bytes(url: str) -> Optional[bytes]:
+    """تحميل صورة من رابط والرجوع بالبيانات الخام (bytes)
+    
+    🔴 ده مخصص لواتساب — لأن واتساب بيبعت الصور كـ base64
+    Returns: bytes أو None لو فشل التحميل
+    """
+    try:
+        import aiohttp
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                url,
+                timeout=aiohttp.ClientTimeout(total=30),
+                headers={
+                    "User-Agent": _USER_AGENT,
+                    "Accept": "image/*,*/*",
+                },
+            ) as resp:
+                if resp.status != 200:
+                    return None
+                
+                # تحقق إن الـ Content-Type فعلاً صورة
+                content_type = resp.headers.get("Content-Type", "")
+                if content_type and "text/html" in content_type:
+                    return None
+                
+                data = await resp.read()
+                
+                # تحقق إن البيانات مش صغيرة أوي
+                if len(data) < 500:
+                    return None
+                
+                return data
+        
+    except Exception as e:
+        logger.warning(f"🖼️ Image download bytes error: {e}")
+        return None
+
+
 async def download_images(results: List[Dict], output_dir: str = "/tmp") -> List[str]:
-    """تحميل عدة صور من نتائج البحث
+    """تحميل عدة صور من نتائج البحث — يرجع مسارات ملفات
+    
+    Args:
+        results: قائمة نتائج البحث (Dict objects فيها url/full_url/thumbnail)
+        output_dir: مجلد الحفظ
     
     Returns: قائمة مسارات الملفات المحملة
     """
@@ -348,6 +429,33 @@ async def download_images(results: List[Dict], output_dir: str = "/tmp") -> List
             file_paths.append(path)
     
     return file_paths
+
+
+async def download_images_bytes(results: List[Dict]) -> List[bytes]:
+    """تحميل عدة صور من نتائج البحث — يرجع bytes لكل صورة
+    
+    🔴 ده مخصص لواتساب — لأن واتساب بيبعت الصور كـ base64
+    Args:
+        results: قائمة نتائج البحث (Dict objects فيها url/full_url/thumbnail)
+    
+    Returns: قائمة bytes لكل صورة اتحملت بنجاح
+    """
+    if not results:
+        return []
+    
+    images_bytes = []
+    
+    for r in results:
+        # بنفضل الـ URL الكامل، بعدين الـ regular، بعدين الـ thumbnail
+        url = r.get("full_url") or r.get("url") or r.get("thumbnail", "")
+        if not url:
+            continue
+        
+        data = await download_image_bytes(url)
+        if data:
+            images_bytes.append(data)
+    
+    return images_bytes
 
 
 def format_image_results(results: List[Dict], lang: str = "ar") -> str:

@@ -4800,11 +4800,15 @@ async def _handle_wa_photo_search(wa_id: str, query: str, wa_user_id: int,
 async def _execute_photo_search(wa_id: str, query: str, count: int, wa_user_id: int,
                                  contact_name: str, message_id: str, is_admin: bool,
                                  cache_key: str = ""):
-    """تنفيذ بحث الصور بعد ما المستخدم حدد العدد"""
+    """تنفيذ بحث الصور بعد ما المستخدم حدد العدد
+    
+    🔴 FIX: بنستخدم download_images_bytes() اللي بترجع bytes مباشرة
+    بدل download_images() اللي بترجع file paths — لأن واتساب محتاج base64
+    """
     await _send_whatsapp_message(wa_id, f"🖼️ جاري البحث عن {count} صور لـ: {query}...")
     
     try:
-        from image_search import search_images, download_images
+        from image_search import search_images, download_images_bytes
         
         results = await search_images(query, count=count)
         
@@ -4812,8 +4816,10 @@ async def _execute_photo_search(wa_id: str, query: str, count: int, wa_user_id: 
             await _send_whatsapp_message(wa_id, "❌ مفيش صور! جرب كلمات بحث تانية.")
             return
         
-        image_urls = [r["url"] for r in results[:count]]
-        images = await download_images(image_urls)
+        actual_count = min(count, len(results))
+        
+        # 🔴 FIX: بنمرر results (list of dicts) مش URLs — عشان download_images_bytes يعرف يختار أفضل URL
+        images = await download_images_bytes(results[:actual_count])
         
         if not images:
             await _send_whatsapp_message(wa_id, "❌ فشل تحميل الصور. جرب تاني!")
@@ -4824,7 +4830,7 @@ async def _execute_photo_search(wa_id: str, query: str, count: int, wa_user_id: 
         for i, img_bytes in enumerate(images):
             try:
                 img_b64 = base64.b64encode(img_bytes).decode('utf-8')
-                caption = ""
+                caption = f"🖼️ صورة {i+1}/{len(images)}"
                 if i == 0:
                     caption = f"🖼️ صور لـ: {query}\n📸 {i+1}/{len(images)}"
                 
@@ -4838,7 +4844,7 @@ async def _execute_photo_search(wa_id: str, query: str, count: int, wa_user_id: 
         await _send_whatsapp_message(wa_id, f"✅ تم إرسال {sent}/{len(images)} صورة!")
         
     except Exception as e:
-        logger.error(f"WA photo search error: {e}")
+        logger.error(f"WA photo search error: {e}", exc_info=True)
         await _send_whatsapp_message(wa_id, "❌ حصل خطأ. جرب تاني!")
 
 
@@ -4906,45 +4912,10 @@ async def _handle_wa_search_callback(wa_id: str, callback_id: str, wa_user_id: i
             return
         
         query = cached["query"]
-        await _send_whatsapp_message(wa_id, f"🖼️ جاري البحث عن {count} صور لـ: {query}...")
-        
-        try:
-            from image_search import search_images, download_images
-            
-            results = await search_images(query, count=count)
-            
-            if not results:
-                await _send_whatsapp_message(wa_id, "❌ مفيش صور! جرب كلمات بحث تانية.")
-                return
-            
-            image_urls = [r["url"] for r in results[:count]]
-            images = await download_images(image_urls)
-            
-            if not images:
-                await _send_whatsapp_message(wa_id, "❌ فشل تحميل الصور. جرب تاني!")
-                return
-            
-            # إرسال الصور واحدة واحدة
-            sent = 0
-            for i, img_bytes in enumerate(images):
-                try:
-                    img_b64 = base64.b64encode(img_bytes).decode('utf-8')
-                    caption = ""
-                    if i == 0:
-                        caption = f"🖼️ صور لـ: {query}\n📸 {i+1}/{len(images)}"
-                    
-                    await _send_whatsapp_image(wa_id, img_b64, caption)
-                    sent += 1
-                    if i < len(images) - 1:
-                        await asyncio.sleep(0.5)
-                except Exception as e:
-                    logger.warning(f"Failed to send image {i}: {e}")
-            
-            await _send_whatsapp_message(wa_id, f"✅ تم إرسال {sent}/{len(images)} صورة!")
-            
-        except Exception as e:
-            logger.error(f"WA photo search error: {e}")
-            await _send_whatsapp_message(wa_id, "❌ حصل خطأ. جرب تاني!")
+
+        # 🔴 FIX: بنستخدم _execute_photo_search بدل تكرار الكود
+        # _execute_photo_search بيدي أخطاء بنفسه — مش محتاجين try/except هنا
+        await _execute_photo_search(wa_id, query, count, wa_user_id, contact_name, message_id, is_admin, cache_key)
 
 
 # ═══════════════════════════════════════

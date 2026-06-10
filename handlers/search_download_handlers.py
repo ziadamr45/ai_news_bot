@@ -432,7 +432,7 @@ async def _execute_photo_search(query_obj, query_text: str, count: int, lang: st
         else:
             await query_obj.edit_message_text("❌ Image search feature is currently unavailable.")
     except Exception as e:
-        logger.error(f"❌ Photo search error: {e}")
+        logger.error(f"❌ Photo search error: {e}", exc_info=True)
         try:
             if lang == "ar":
                 await query_obj.edit_message_text("❌ حصل خطأ في البحث. جرب تاني!")
