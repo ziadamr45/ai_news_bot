@@ -5498,6 +5498,16 @@ async def debug_whatsapp_activity(request: web.Request):
         "total_events": len(_webhook_activity_log),
         "events": _webhook_activity_log[-20:],
         "summary": {
+            "webhook_posts": sum(1 for e in _webhook_activity_log if e["event_type"] == "webhook_post"),
+            "messages_received": sum(1 for e in _webhook_activity_log if e["event_type"] == "webhook_post" and e.get("data", {}).get("has_messages")),
+            "status_updates": sum(1 for e in _webhook_activity_log if e["event_type"] == "webhook_post" and e.get("data", {}).get("has_statuses")),
+            "signature_failures": sum(1 for e in _webhook_activity_log if e["event_type"] == "signature_failed"),
+            "ai_responses_sent": sum(1 for e in _webhook_activity_log if e["event_type"] == "ai_response_sent"),
+            "ai_errors": sum(1 for e in _webhook_activity_log if e["event_type"] == "ai_error"),
+            "messages_skipped": sum(1 for e in _webhook_activity_log if e["event_type"] == "message_skipped"),
+        },
+    }, status=200)
+
 
 async def debug_rapidapi(request: web.Request):
     """GET /debug/rapidapi — Test RapidAPI YouTube download from Railway"""
@@ -5637,24 +5647,6 @@ async def debug_rapidapi(request: web.Request):
         }
     
     return web.json_response(results, status=200)
-
-
-async def debug_whatsapp_activity(request: web.Request):
-    """GET /debug/whatsapp/activity — Recent webhook activity."""
-    return web.json_response({
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "total_events": len(_webhook_activity_log),
-        "events": _webhook_activity_log[-20:],
-        "summary": {
-            "webhook_posts": sum(1 for e in _webhook_activity_log if e["event_type"] == "webhook_post"),
-            "messages_received": sum(1 for e in _webhook_activity_log if e["event_type"] == "webhook_post" and e.get("data", {}).get("has_messages")),
-            "status_updates": sum(1 for e in _webhook_activity_log if e["event_type"] == "webhook_post" and e.get("data", {}).get("has_statuses")),
-            "signature_failures": sum(1 for e in _webhook_activity_log if e["event_type"] == "signature_failed"),
-            "ai_responses_sent": sum(1 for e in _webhook_activity_log if e["event_type"] == "ai_response_sent"),
-            "ai_errors": sum(1 for e in _webhook_activity_log if e["event_type"] == "ai_error"),
-            "messages_skipped": sum(1 for e in _webhook_activity_log if e["event_type"] == "message_skipped"),
-        },
-    }, status=200)
 
 
 # ═══════════════════════════════════════
