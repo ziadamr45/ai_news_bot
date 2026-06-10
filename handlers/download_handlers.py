@@ -907,6 +907,9 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
     
     logger.info(f"📥 Download request: platform={platform}, quality={quality}, ffmpeg={ffmpeg_ok}, cookies={cookies_available}, url={url[:80]}")
     
+    # 🔴 كشف يوتيوب — هنستخدم RapidAPI كأولوية
+    is_youtube = platform.lower() == "youtube"
+    
     tmpdir = tempfile.mkdtemp(prefix="mybro_dl_")
     
     try:
@@ -931,8 +934,150 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
         except Exception:
             pass
         
-        # ═══ المرحلة 0: Cobalt Self-Hosted (أول طبقة!) ═══
-        # 🔵 أقوى وأسرع طريقة — بيشتغل على سيرفر منفصل ومش بيتأثر بـ bot detection
+        # ═══ المرحلة -1: YouTube RapidAPI (الأولوية القصوى لليوتيوب!) ═══
+        # 🟢 أسرع وأضمن طريقة لليوتيوب — مش بتتأثر بـ bot detection خالص
+        rapidapi_result = None
+        if is_youtube:
+            try:
+                from youtube_rapidapi import download_youtube_file_async, is_youtube_url as _is_yt_url, get_error_message
+                
+                # تحويل جودة التليجرام لفورمات RapidAPI
+                yt_format_map = {
+                    "best": "1080",
+                    "medium": "720",
+                    "low": "360",
+                    "audio": "mp3",
+                }
+                yt_format = yt_format_map.get(quality, "720")
+                
+                logger.info(f"🟢 YouTube RapidAPI: Attempting download format={yt_format} for {url[:80]}")
+                
+                try:
+                    await status_msg.edit_text(
+                        "🟢 جاري التحميل عبر خدمة سريعة..." if lang == "ar"
+                        else "🟢 Downloading via fast service..."
+                    )
+                except:
+                    pass
+                
+                rapidapi_result = await download_youtube_file_async(url, format=yt_format, output_dir=tmpdir)
+                
+                if rapidapi_result and rapidapi_result.get("success") and rapidapi_result.get("file_path"):
+                    logger.info(f"🟢 YouTube RapidAPI succeeded! File: {rapidapi_result['file_path']}")
+                    
+                    file_path = rapidapi_result["file_path"]
+                    file_size = rapidapi_result.get("file_size", os.path.getsize(file_path))
+                    real_title = rapidapi_result.get("title", "YouTube Video")
+                    real_duration = rapidapi_result.get("duration", "")
+                    
+                    # تحديد الجودة الحقيقية
+                    if yt_format == "mp3":
+                        quality_label = "MP3"
+                    elif yt_format == "4k":
+                        quality_label = "4K"
+                    elif yt_format == "1440":
+                        quality_label = "1440p"
+                    else:
+                        quality_label = f"{yt_format}p"
+                    
+                    size_mb = file_size / (1024 * 1024)
+                    size_str = f"{size_mb:.1f}MB"
+                    
+                    # تتبع الاستخدام
+                    increment_usage(user_id, "youtube_summaries")
+                    try: track_event("media_downloads")
+                    except: pass
+                    
+                    await status_msg.delete()
+                    
+                    # إرسال الملف
+                    if quality == "audio":
+                        try:
+                            with open(file_path, 'rb') as f:
+                                caption = f"📥 {'تم تحميل الصوت!' if lang == 'ar' else 'Audio downloaded!'}\n🎵 {real_title[:200]}\n📁 {size_str}"
+                                await message.reply_audio(
+                                    audio=f, filename=f"{real_title[:50]}.mp3",
+                                    caption=caption,
+                                    parse_mode="HTML",
+                                )
+                        except Exception as send_err:
+                            logger.warning(f"⚠️ RapidAPI audio send failed: {send_err}")
+                            await message.reply_text(
+                                f"❌ فشل إرسال الصوت ({size_str}). جرب تاني!" if lang == "ar"
+                                else f"❌ Failed to send audio ({size_str}). Try again!"
+                            )
+                    else:
+                        try:
+                            with open(file_path, 'rb') as f:
+                                tech_info = f"{quality_label} | {size_str}"
+                                caption = f"📥 {'تم تحميل الفيديو!' if lang == 'ar' else 'Video downloaded!'}\n🎬 {real_title[:200]}\n📊 {tech_info}"
+                                await message.reply_video(
+                                    video=f, filename=f"{real_title[:50]}.mp4",
+                                    caption=caption,
+                                    parse_mode="HTML",
+                                    supports_streaming=True,
+                                )
+                        except Exception as send_err:
+                            logger.warning(f"⚠️ RapidAPI video send failed (likely too large): {send_err}")
+                            # لو الفيديو كبير، نجرب جودة أقل
+                            if quality != "low" and quality != "audio":
+                                if lang == "ar":
+                                    await message.reply_text(f"⚠️ الملف كبير ({size_str}). جاري تحميل جودة أقل...")
+                                else:
+                                    await message.reply_text(f"⚠️ File too large ({size_str}). Trying lower quality...")
+                                lower_quality = {"best": "medium", "medium": "low", "low": "audio"}.get(quality, "medium")
+                                # نقع RapidAPI مره تانيه بجودة أقل
+                                lower_format = yt_format_map.get(lower_quality, "360")
+                                try:
+                                    lower_result = await download_youtube_file_async(url, format=lower_format, output_dir=tmpdir)
+                                    if lower_result and lower_result.get("success") and lower_result.get("file_path"):
+                                        lf_path = lower_result["file_path"]
+                                        lf_size = os.path.getsize(lf_path)
+                                        lf_title = lower_result.get("title", "YouTube Video")
+                                        lf_mb = lf_size / (1024 * 1024)
+                                        
+                                        with open(lf_path, 'rb') as f:
+                                            tech_info = f"{lower_format}p | {lf_mb:.1f}MB"
+                                            caption = f"📥 {'تم تحميل الفيديو!' if lang == 'ar' else 'Video downloaded!'}\n🎬 {lf_title[:200]}\n📊 {tech_info}"
+                                            await message.reply_video(
+                                                video=f, filename=f"{lf_title[:50]}.mp4",
+                                                caption=caption,
+                                                parse_mode="HTML",
+                                                supports_streaming=True,
+                                            )
+                                        try: os.remove(lf_path)
+                                        except: pass
+                                    else:
+                                        # حتى الجودة الأقل فشلت — نكمل بـ yt-dlp كـ fallback
+                                        raise send_err
+                                except:
+                                    # الرابيد فشلت للجودة الأقل — نكمل بـ yt-dlp
+                                    pass
+                            else:
+                                await message.reply_text(
+                                    f"❌ فشل إرسال الفيديو ({size_str}). جرب جودة أقل!" if lang == "ar"
+                                    else f"❌ Failed to send video ({size_str}). Try a lower quality!"
+                                )
+                    
+                    # تنظيف الملف
+                    try: os.remove(file_path)
+                    except: pass
+                    
+                    return  # ✅ RapidAPI نجح وخلاص!
+                
+                else:
+                    # RapidAPI فشلت — نكمل بالطرق العادية
+                    error_code = rapidapi_result.get("error", "unknown") if rapidapi_result else "unknown"
+                    logger.warning(f"⚠️ YouTube RapidAPI failed ({error_code}), falling back to yt-dlp...")
+                    rapidapi_result = None
+                    
+            except ImportError:
+                logger.warning("⚠️ youtube_rapidapi module not available, skipping RapidAPI")
+            except Exception as rap_err:
+                logger.warning(f"⚠️ YouTube RapidAPI error: {rap_err}, falling back to yt-dlp...")
+        
+        # ═══ المرحلة 0: Cobalt Self-Hosted ═══
+        # 🔵 طريقة تانية — بيشتغل على سيرفر منفصل ومش بيتأثر بـ bot detection
         cobalt_result = await _try_cobalt_download(url, quality, tmpdir)
         if cobalt_result:
             logger.info(f"🔵 Cobalt succeeded! Skipping yt-dlp, sending file directly...")

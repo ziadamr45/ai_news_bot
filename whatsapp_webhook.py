@@ -76,6 +76,26 @@ DEVELOPER_WHATSAPP = "01203551789"
 DEVELOPER_WHATSAPP_URL = "https://wa.me/201203551789"
 
 
+def _wa_phone_to_user_id(phone: str) -> int:
+    """تحويل رقم واتساب (موبايل) لـ user_id داخلي
+    
+    الواتساب بيتعامل برقم الموبايل (زي 201203551789)
+    بس الدوال الداخلية بتستخدم hashed user_id
+    الدالة دي بتاخد الرقم وترجع الـ user_id الصح
+    """
+    # إزالة + من البداية لو موجود
+    clean = phone.lstrip('+')
+    # إزالة مسافات
+    clean = clean.strip()
+    return -abs(hash(f"wa_{clean}")) % (2**31)
+
+
+def _wa_phone_to_display(phone: str) -> str:
+    """تنسيق رقم الموبايل للعرض"""
+    clean = phone.lstrip('+').strip()
+    return f"+{clean}"
+
+
 def _is_wa_admin(wa_id: str) -> bool:
     """Check if WhatsApp ID belongs to the admin (Ziad Amr)"""
     if wa_id == ADMIN_WA_ID:
@@ -876,7 +896,7 @@ async def _generate_and_send_image(wa_id: str, prompt: str, wa_user_id: int,
         # Try track event
         try:
             from dashboard import track_event
-            track_event("image_generations")
+            track_event("image_generations", platform="whatsapp")
         except Exception:
             pass
         
@@ -1070,13 +1090,17 @@ async def _show_quality_selection(wa_id: str, url: str, wa_user_id: int,
 
 async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                      contact_name: str, message_id: str = "", is_admin: bool = False,
-                                     quality: str = "best"):
+                                     quality: str = "best", force_audio: bool = False):
     """Download a video using yt-dlp and send it via WhatsApp — like Telegram's /download command
     
     WhatsApp has a 100MB media size limit. For larger files, we send the download link instead.
     
     quality: "best" (1080p), "medium" (720p), "low" (480p), "audio" (MP3)
+    force_audio: if True, force audio-only download regardless of quality param
     """
+    # If force_audio, override quality
+    if force_audio:
+        quality = "audio"
     # Start thinking feedback
     feedback = ThinkingFeedback(wa_id, message_id, context_type="download")
     await feedback.start()
@@ -1135,7 +1159,7 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                         await _send_whatsapp_document(wa_id, file_data, cobalt_filename, caption=f"📥 {cobalt_filename}", content_type=content_type)
                 
                 await feedback.complete()
-                try: track_event("whatsapp_media_downloads")
+                try: track_event("whatsapp_media_downloads", platform="whatsapp")
                 except: pass
                 return
                 
@@ -1750,11 +1774,13 @@ async def _send_ai_response(wa_id: str, user_message: str, wa_user_id: int, cont
                 pass  # If premium system fails, allow the message
 
         # Get AI response
+        # 🔴 لو المستخدم هو الأدمن (المطور)، نمرر username=ziadamr عشان البوت يتعرف عليه
+        smart_chat_username = "ziadamr" if is_admin else (contact_name if contact_name != "Unknown" else None)
         ai_response = await smart_chat(
             user_message=user_message,
             language="ar",
             user_id=wa_user_id,
-            username=contact_name if contact_name != "Unknown" else None,
+            username=smart_chat_username,
         )
         ai_response = clean_ai_response(ai_response)
         wa_response = _strip_html_for_whatsapp(ai_response)
@@ -1886,6 +1912,11 @@ _COMMAND_TRIGGERS = {
     "/settings": "settings", "settings": "settings", "اعدادات": "settings", "الإعدادات": "settings", "ضبط": "settings",
     # Download
     "/download": "download", "download": "download", "تحميل": "download", "حمّل": "download",
+    # Video/Audio Search
+    "/video": "video_search", "فيديو بالبحث": "video_search", "فيديو بحث": "video_search",
+    "/audio": "audio_search", "صوت بالبحث": "audio_search", "صوت بحث": "audio_search",
+    # Photo Search
+    "/photo": "photo_search", "بحث صور": "photo_search", "صور": "photo_search",
     # Study Mode
     "/study": "study", "study": "study", "دراسة": "study", "ادرس": "study",
     "/quiz": "quiz", "quiz": "quiz", "كويز": "quiz",
@@ -1906,14 +1937,21 @@ _COMMAND_TRIGGERS = {
     "/forget": "forget", "نسي": "forget", "امسح ذاكرة": "forget",
     # Admin commands
     "/admin": "admin", "ادمن": "admin", "لوحة التحكم": "admin",
+    "/dashboard": "admin", "لوحة": "admin",
     "/stats": "admin_stats", "احصائيات": "admin_stats",
+    "/botstats": "admin_stats",
     "/grant": "admin_grant", "تفعيل بروميوم": "admin_grant",
     "/revoke": "admin_revoke", "شيل بروميوم": "admin_revoke",
     "/resetlimit": "admin_resetlimit", "ريست حد": "admin_resetlimit",
     "/ban": "admin_ban", "حظر": "admin_ban",
     "/unban": "admin_unban", "الغاء حظر": "admin_unban",
+    "/warn": "admin_warn", "تحذير": "admin_warn",
     "/userinfo": "admin_userinfo", "معلومات يوزر": "admin_userinfo",
     "/broadcast": "admin_broadcast", "بث": "admin_broadcast",
+    "/allusers": "admin_allusers", "كل المستخدمين": "admin_allusers",
+    "/addadmin": "admin_addadmin", "اضافة ادمن": "admin_addadmin",
+    "/removeadmin": "admin_removeadmin", "شيل ادمن": "admin_removeadmin",
+    "/listadmins": "admin_listadmins", "الادمنز": "admin_listadmins",
 }
 
 
@@ -1940,9 +1978,9 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
             from premium import get_all_premium_users
             from memory import get_all_subscribers, get_user
 
-            dashboard = format_dashboard("ar")
-            total_subs = len(get_all_subscribers())
-            total_prem = len(get_all_premium_users())
+            dashboard = format_dashboard("ar", platform="whatsapp")
+            total_subs = len(get_all_subscribers(platform="whatsapp"))
+            total_prem = len(get_all_premium_users(platform="whatsapp"))
 
             admin_text = (
                 f"👑 *لوحة تحكم الأدمن*\n"
@@ -2044,6 +2082,64 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
             "مثال: /broadcast تحديث جديد في البوت!")
         return True
 
+    elif command == "admin_stats":
+        if not is_admin:
+            await _send_whatsapp_message(wa_id, "❌ هذا الأمر للمطور فقط.")
+            return True
+        await _send_whatsapp_message(wa_id,
+            "📊 *إحصائيات البوت*\n\n"
+            "الاستخدام: /botstats أو /stats")
+        return True
+
+    elif command == "admin_allusers":
+        if not is_admin:
+            await _send_whatsapp_message(wa_id, "❌ هذا الأمر للمطور فقط.")
+            return True
+        await _send_whatsapp_message(wa_id,
+            "👥 *كل المستخدمين*\n\n"
+            "الاستخدام: /allusers")
+        return True
+
+    elif command == "admin_warn":
+        if not is_admin:
+            await _send_whatsapp_message(wa_id, "❌ هذا الأمر للمطور فقط.")
+            return True
+        await _send_whatsapp_message(wa_id,
+            "⚠️ *تحذير مستخدم*\n\n"
+            "الاستخدام: /warn user_id [سبب]\n"
+            "3 تحذيرات = حظر تلقائي\n"
+            "مثال: /warn 123456789 سبام")
+        return True
+
+    elif command == "admin_addadmin":
+        if not is_admin:
+            await _send_whatsapp_message(wa_id, "❌ هذا الأمر للمطور فقط.")
+            return True
+        await _send_whatsapp_message(wa_id,
+            "👑 *إضافة أدمن*\n\n"
+            "الاستخدام: /addadmin user_id\n"
+            "مثال: /addadmin 123456789")
+        return True
+
+    elif command == "admin_removeadmin":
+        if not is_admin:
+            await _send_whatsapp_message(wa_id, "❌ هذا الأمر للمطور فقط.")
+            return True
+        await _send_whatsapp_message(wa_id,
+            "👑 *شيل أدمن*\n\n"
+            "الاستخدام: /removeadmin user_id\n"
+            "مثال: /removeadmin 123456789")
+        return True
+
+    elif command == "admin_listadmins":
+        if not is_admin:
+            await _send_whatsapp_message(wa_id, "❌ هذا الأمر للمطور فقط.")
+            return True
+        await _send_whatsapp_message(wa_id,
+            "👑 *قائمة الأدمنز*\n\n"
+            "الاستخدام: /listadmins")
+        return True
+
     # ══════════════════════════════════════
     # START — Enhanced Multi-Page Menu
     # ══════════════════════════════════════
@@ -2070,6 +2166,9 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
                     {"id": "cmd_chat", "title": "🤖 المحادثة", "description": "تحدث مع AI"},
                     {"id": "cmd_news", "title": "📰 الأخبار", "description": "أخبار AI لحظة بلحظة"},
                     {"id": "cmd_download", "title": "📥 تحميل فيديو", "description": "تحميل من يوتيوب"},
+                    {"id": "video_search", "title": "🎬 فيديو بالبحث", "description": "ابحث وحمّل فيديو"},
+                    {"id": "audio_search", "title": "🎵 صوت بالبحث", "description": "ابحث وحمّل صوت"},
+                    {"id": "photo_search", "title": "🖼️ بحث صور", "description": "ابحث عن صور"},
                     {"id": "cmd_search", "title": "🔍 بحث الويب", "description": "ابحث في الإنترنت"},
                     {"id": "cmd_study", "title": "📚 وضع الدراسة", "description": "ادرس واختبر نفسك"},
                     {"id": "cmd_memory", "title": "🧠 ذاكرتي", "description": "عرض وإدارة الذاكرة"},
@@ -2104,6 +2203,9 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
                     {"id": "cmd_news", "title": "📰 أخبار AI", "description": "آخر أخبار الذكاء الاصطناعي"},
                     {"id": "cmd_youtube", "title": "🎬 ملخص يوتيوب", "description": "لخص أي فيديو يوتيوب"},
                     {"id": "cmd_download", "title": "📥 تحميل فيديو", "description": "حمّل من يوتيوب"},
+                    {"id": "video_search", "title": "🎬 فيديو بالبحث", "description": "ابحث وحمّل فيديو"},
+                    {"id": "audio_search", "title": "🎵 صوت بالبحث", "description": "ابحث وحمّل صوت"},
+                    {"id": "photo_search", "title": "🖼️ بحث صور", "description": "ابحث عن صور"},
                     {"id": "cmd_memory", "title": "🧠 ذاكرتي", "description": "عرض وإدارة الذاكرة"},
                 ],
             }],
@@ -2451,6 +2553,12 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
             reset_all_memories(wa_user_id)
             # Also clear PDF context
             _wa_user_pdf_context.pop(wa_user_id, None)
+            # ⚡ مسح الكاش عشان السياق يتحدث
+            try:
+                from memory_context import invalidate_context_cache
+                invalidate_context_cache(wa_user_id)
+            except Exception:
+                pass
             await _send_whatsapp_message(wa_id, "🗑️ تم مسح كل الذاكرة.\n\nهبدأ أعرفك من الأول!")
         except Exception as e:
             logger.error(f"❌ Memory reset error: {e}")
@@ -2476,11 +2584,13 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
             from ai_engine import smart_chat
             from formatters import clean_ai_response
             # Get last conversation topic
+            # 🔴 لو المستخدم هو الأدمن، نمرر username=ziadamr
+            _fav_is_admin = _is_wa_admin(wa_id)
             ai_response = await smart_chat(
                 user_message="ما هو آخر موضوع تحدثنا عنه؟ اذكره باختصار",
                 language="ar",
                 user_id=wa_user_id,
-                username=contact_name if contact_name != "Unknown" else None,
+                username="ziadamr" if _fav_is_admin else (contact_name if contact_name != "Unknown" else None),
             )
             ai_response = clean_ai_response(ai_response)
             topic = _strip_html_for_whatsapp(ai_response)[:100]
@@ -2671,6 +2781,37 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
             "• Twitter/X\n"
             "• Instagram\n"
             "• TikTok")
+
+    # ══════════════════════════════════════
+    # VIDEO SEARCH / AUDIO SEARCH / PHOTO SEARCH
+    # ══════════════════════════════════════
+
+    elif command == "video_search":
+        await _send_whatsapp_message(wa_id,
+            "🎬 *تحميل فيديو بالبحث*\n\n"
+            "اكتب اللي عايز تبحث عنه:\n"
+            "/video كلمات البحث\n\n"
+            "مثال: /video اغاني رمضان\n\n"
+            "هبحثلك في YouTube وهعرضلك 5 نتائج تختار منهم!")
+        return True
+
+    elif command == "audio_search":
+        await _send_whatsapp_message(wa_id,
+            "🎵 *تحميل صوت بالبحث*\n\n"
+            "اكتب اللي عايز تبحث عنه:\n"
+            "/audio كلمات البحث\n\n"
+            "مثال: /audio قرآن عبد الباسط\n\n"
+            "هبحثلك في YouTube وهعرضلك 5 نتائج وهحمللك الصوت بس!")
+        return True
+
+    elif command == "photo_search":
+        await _send_whatsapp_message(wa_id,
+            "🖼️ *بحث عن صور*\n\n"
+            "اكتب اللي عايز تبحث عنه:\n"
+            "/photo كلمات البحث\n\n"
+            "مثال: /photo محمد صلاح\n\n"
+            "هبحثلك عن صور وهسيبك تختار عددهم!")
+        return True
 
     # ══════════════════════════════════════
     # STUDY MODE
@@ -3082,6 +3223,70 @@ async def webhook_receiver(request: web.Request):
         return web.Response(text="OK", status=200)
 
 
+def process_webhook_body(body: dict):
+    """Synchronous entry point for processing WhatsApp webhook bodies.
+    
+    Called from bot.py's simple HTTP server when a POST /whatsapp/webhook
+    is received. Processes the webhook body synchronously using the same
+    logic as webhook_receiver but without the aiohttp request/response.
+    
+    Note: This skips signature verification since the simple HTTP server
+    handles that separately. The WhatsApp webhook aiohttp server (if running)
+    still does full signature verification.
+    """
+    try:
+        has_messages = False
+        has_statuses = False
+        try:
+            has_messages = bool(body.get("entry", [{}])[0].get("changes", [{}])[0].get("value", {}).get("messages"))
+            has_statuses = bool(body.get("entry", [{}])[0].get("changes", [{}])[0].get("value", {}).get("statuses"))
+        except (IndexError, KeyError, TypeError):
+            pass
+
+        _log_event("IN", "webhook_event_simple", {
+            "object": body.get("object"),
+            "has_messages": has_messages,
+            "has_statuses": has_statuses,
+        })
+
+        if body.get("object") == "whatsapp_business_account":
+            for entry in body.get("entry", []):
+                for change in entry.get("changes", []):
+                    value = change.get("value", {})
+
+                    messages = value.get("messages", [])
+                    if messages:
+                        for message in messages:
+                            # Schedule the async handler to run in the existing event loop
+                            try:
+                                loop = asyncio.get_event_loop()
+                                if loop.is_running():
+                                    asyncio.ensure_future(_handle_incoming_message(message, value), loop=loop)
+                                else:
+                                    loop.run_until_complete(_handle_incoming_message(message, value))
+                            except RuntimeError:
+                                # No event loop — create a new one
+                                asyncio.run(_handle_incoming_message(message, value))
+
+                    statuses = value.get("statuses", [])
+                    if statuses:
+                        for status in statuses:
+                            _log_event("IN", "status_update", {
+                                "message_id": status.get("id"),
+                                "status": status.get("status"),
+                                "timestamp": status.get("timestamp"),
+                                "recipient_id": status.get("recipient_id"),
+                            })
+
+                    errors = value.get("errors", [])
+                    if errors:
+                        for error in errors:
+                            logger.error(f"❌ WhatsApp API Error: {error}")
+                            _log_event("IN", "api_error", error)
+    except Exception as e:
+        logger.error(f"❌ process_webhook_body error: {e}", exc_info=True)
+
+
 # ═══════════════════════════════════════
 # Message Handler — Full AI Integration
 # ═══════════════════════════════════════
@@ -3136,7 +3341,7 @@ async def _handle_incoming_message(message: dict, value: dict):
         # Ensure user exists in DB
         try:
             from memory import _ensure_user_in_db
-            _ensure_user_in_db(wa_user_id)
+            _ensure_user_in_db(wa_user_id, platform="whatsapp")
             # Save name from WhatsApp profile
             if contact_name and contact_name != "Unknown":
                 try:
@@ -3231,7 +3436,22 @@ async def _handle_incoming_message(message: dict, value: dict):
                         cached_url = _get_url(url_key)
                         if cached_url:
                             logger.info(f"📥 Quality selection: {q} for URL key {url_key}")
-                            await _download_and_send_video(wa_id, cached_url, wa_user_id, contact_name, message_id, is_admin, quality=q)
+                            # 🔴 YouTube: استخدم RapidAPI بدل yt-dlp
+                            from youtube_rapidapi import is_youtube_url as _is_yt_url
+                            if _is_yt_url(cached_url):
+                                # تحويل الجودة لفورمات RapidAPI
+                                yt_format_map = {
+                                    "best": "1080",
+                                    "medium": "720",
+                                    "low": "360",
+                                    "audio": "mp3",
+                                }
+                                yt_format = yt_format_map.get(q, "720")
+                                logger.info(f"🎬 YouTube URL detected → RapidAPI format={yt_format}")
+                                await _wa_download_youtube(wa_id, cached_url, wa_user_id, contact_name, message_id, is_admin, format=yt_format)
+                            else:
+                                # مش يوتيوب — yt-dlp عادي
+                                await _download_and_send_video(wa_id, cached_url, wa_user_id, contact_name, message_id, is_admin, quality=q)
                         else:
                             await _send_whatsapp_message(wa_id, "⚠️ انتهت صلاحية الرابط. ابعت الرابط تاني! 📥")
                         return
@@ -3323,6 +3543,11 @@ async def _handle_incoming_message(message: dict, value: dict):
             if cmd:
                 await _handle_command(wa_id, cmd, wa_user_id, contact_name, message_id)
                 return
+            
+            # 🔍 Handle search callbacks (video/audio/photo selections)
+            if interactive_id.startswith("wa_vs_") or interactive_id.startswith("wa_as_") or interactive_id.startswith("wa_ph_"):
+                await _handle_wa_search_callback(wa_id, interactive_id, wa_user_id, contact_name, message_id, is_admin)
+                return
 
         # ═══ Handle Text Commands ═══
         if message_type == "text" and content.strip():
@@ -3346,6 +3571,9 @@ async def _handle_incoming_message(message: dict, value: dict):
                 "/exam": "exam",
                 "/study": "study",
                 "/search": "search",
+                "/video": "video_search_query",
+                "/audio": "audio_search_query",
+                "/photo": "photo_search_query",
             }
             for prefix, cmd_name in prefix_commands.items():
                 if content_lower.startswith(prefix + " "):
@@ -3364,6 +3592,11 @@ async def _handle_incoming_message(message: dict, value: dict):
                 "امتحان": "exam",
                 "دراسة": "study",
                 "بحث": "search",
+                "فيديو بالبحث": "video_search_query",
+                "فيديو بحث": "video_search_query",
+                "صوت بالبحث": "audio_search_query",
+                "صوت بحث": "audio_search_query",
+                "بحث صور": "photo_search_query",
             }
             for arabic_prefix, cmd_name in arabic_prefix_map.items():
                 if content_lower.startswith(arabic_prefix):
@@ -3416,11 +3649,13 @@ async def _handle_incoming_message(message: dict, value: dict):
 
 السؤال: {content}"""
                         
+                        # 🔴 لو المستخدم هو الأدمن، نمرر username=ziadamr
+                        _pdf_is_admin = _is_wa_admin(wa_id)
                         ai_response = await smart_chat(
                             user_message=pdf_question_prompt,
                             language="ar",
                             user_id=wa_user_id,
-                            username=contact_name if contact_name != "Unknown" else None,
+                            username="ziadamr" if _pdf_is_admin else (contact_name if contact_name != "Unknown" else None),
                         )
                         ai_response = clean_ai_response(ai_response)
                         wa_response = _strip_html_for_whatsapp(ai_response)
@@ -3578,7 +3813,7 @@ async def _handle_incoming_message(message: dict, value: dict):
                     try:
                         from memory import detect_interests, save_conversation
                         detect_interests(wa_user_id, f"[PDF: {content[:100]}]", "ar")
-                        save_conversation(wa_user_id, "user", f"[PDF: {content[:50]}]")
+                        save_conversation(wa_user_id, "user", f"[PDF: {content[:50]}]", platform="whatsapp")
                     except Exception:
                         pass
 
@@ -3657,23 +3892,25 @@ async def _handle_admin_with_args(wa_id: str, content: str, wa_user_id: int, con
     try:
         if cmd in ("/grant",):
             if not args:
-                await _send_whatsapp_message(wa_id, "⭐ الاستخدام: /grant [أيام] user_id\nمثال: /grant 123456789")
+                await _send_whatsapp_message(wa_id, "⭐ الاستخدام: /grant [أيام] رقم_الواتساب\nمثال: /grant 201203551789\nمثال: /grant 30 201203551789")
                 return
 
             from premium import grant_premium
             from memory import _ensure_user_in_db
 
             if len(args) == 1:
-                target_id = int(args[0])
+                phone = args[0]
+                target_id = _wa_phone_to_user_id(phone)
                 days = 0
             elif len(args) == 2:
                 days = int(args[0])
-                target_id = int(args[1])
+                phone = args[1]
+                target_id = _wa_phone_to_user_id(phone)
             else:
-                await _send_whatsapp_message(wa_id, "❌ كترت الأرقام. /grant [أيام] user_id")
+                await _send_whatsapp_message(wa_id, "❌ كترت الأرقام. /grant [أيام] رقم_الواتساب")
                 return
 
-            _ensure_user_in_db(target_id)
+            _ensure_user_in_db(target_id, platform="whatsapp")
 
             expires = None
             expires_display = "مدى الحياة 🔓"
@@ -3685,53 +3922,58 @@ async def _handle_admin_with_args(wa_id: str, content: str, wa_user_id: int, con
                 expires_display = f"{days} يوم 🔒"
 
             grant_premium(target_id, granted_by=f"admin_{wa_user_id}", expires=expires)
-            await _send_whatsapp_message(wa_id, f"✅ تم تفعيل Premium!\n\n👤 المستخدم: {target_id}\n⭐ الخطة: Premium\n⏰ المدة: {expires_display}")
+            await _send_whatsapp_message(wa_id, f"✅ تم تفعيل Premium!\n\n📱 المستخدم: {_wa_phone_to_display(phone)}\n⭐ الخطة: Premium\n⏰ المدة: {expires_display}")
 
         elif cmd in ("/revoke",):
             if not args:
-                await _send_whatsapp_message(wa_id, "❌ الاستخدام: /revoke user_id")
+                await _send_whatsapp_message(wa_id, "❌ الاستخدام: /revoke رقم_الواتساب\nمثال: /revoke 201203551789")
                 return
-            target_id = int(args[0])
+            phone = args[0]
+            target_id = _wa_phone_to_user_id(phone)
             from premium import revoke_premium
             revoke_premium(target_id)
-            await _send_whatsapp_message(wa_id, f"✅ تم شيل Premium من {target_id}")
+            await _send_whatsapp_message(wa_id, f"✅ تم شيل Premium من {_wa_phone_to_display(phone)}")
 
         elif cmd in ("/resetlimit",):
             if not args:
-                await _send_whatsapp_message(wa_id, "🔄 الاستخدام: /resetlimit user_id")
+                await _send_whatsapp_message(wa_id, "🔄 الاستخدام: /resetlimit رقم_الواتساب\nمثال: /resetlimit 201203551789")
                 return
-            target_id = int(args[0])
+            phone = args[0]
+            target_id = _wa_phone_to_user_id(phone)
             from premium import reset_user_usage
             success = reset_user_usage(target_id)
             if success:
-                await _send_whatsapp_message(wa_id, f"✅ تم إعادة تعيين حدود {target_id}")
+                await _send_whatsapp_message(wa_id, f"✅ تم إعادة تعيين حدود {_wa_phone_to_display(phone)}")
             else:
                 await _send_whatsapp_message(wa_id, f"❌ فشل في إعادة التعيين")
 
         elif cmd in ("/ban",):
             if not args:
-                await _send_whatsapp_message(wa_id, "🚫 الاستخدام: /ban user_id [سبب]")
+                await _send_whatsapp_message(wa_id, "🚫 الاستخدام: /ban رقم_الواتساب [سبب]\nمثال: /ban 201203551789 سبام")
                 return
-            target_id = int(args[0])
+            phone = args[0]
+            target_id = _wa_phone_to_user_id(phone)
             reason = " ".join(args[1:]) if len(args) > 1 else "حظر من الأدمن"
             from memory import ban_user
             ban_user(target_id, reason=reason, banned_by=f"admin_{wa_user_id}")
-            await _send_whatsapp_message(wa_id, f"🚫 تم حظر {target_id}\n📝 السبب: {reason}")
+            await _send_whatsapp_message(wa_id, f"🚫 تم حظر {_wa_phone_to_display(phone)}\n📝 السبب: {reason}")
 
         elif cmd in ("/unban",):
             if not args:
-                await _send_whatsapp_message(wa_id, "✅ الاستخدام: /unban user_id")
+                await _send_whatsapp_message(wa_id, "✅ الاستخدام: /unban رقم_الواتساب\nمثال: /unban 201203551789")
                 return
-            target_id = int(args[0])
+            phone = args[0]
+            target_id = _wa_phone_to_user_id(phone)
             from memory import unban_user
             unban_user(target_id)
-            await _send_whatsapp_message(wa_id, f"✅ تم إلغاء حظر {target_id}")
+            await _send_whatsapp_message(wa_id, f"✅ تم إلغاء حظر {_wa_phone_to_display(phone)}")
 
         elif cmd in ("/userinfo",):
             if not args:
-                await _send_whatsapp_message(wa_id, "👤 الاستخدام: /userinfo user_id")
+                await _send_whatsapp_message(wa_id, "👤 الاستخدام: /userinfo رقم_الواتساب\nمثال: /userinfo 201203551789")
                 return
-            target_id = int(args[0])
+            phone = args[0]
+            target_id = _wa_phone_to_user_id(phone)
             from memory import get_user, get_interests, get_favorite_companies
             from premium import get_user_plan, get_usage
             user_data = get_user(target_id)
@@ -3742,7 +3984,7 @@ async def _handle_admin_with_args(wa_id: str, content: str, wa_user_id: int, con
             info = (
                 f"👤 *معلومات المستخدم*\n"
                 f"━━━━━━━━━━━━━━━━━\n\n"
-                f"🆔 ID: {target_id}\n"
+                f"📱 الرقم: {_wa_phone_to_display(phone)}\n"
                 f"📝 الاسم: {user_data.get('name', 'مش محدد')}\n"
                 f"🌐 اللغة: {'العربية' if user_data.get('language') == 'ar' else 'English'}\n"
                 f"⭐ الخطة: {plan.upper()}\n"
@@ -3763,7 +4005,7 @@ async def _handle_admin_with_args(wa_id: str, content: str, wa_user_id: int, con
                 return
             broadcast_msg = " ".join(args)
             from memory import get_all_subscribers
-            subscribers = get_all_subscribers()
+            subscribers = get_all_subscribers(platform="whatsapp")
 
             await _send_whatsapp_message(wa_id, f"📢 جاري البث لـ {len(subscribers)} مشترك...")
 
@@ -3781,8 +4023,134 @@ async def _handle_admin_with_args(wa_id: str, content: str, wa_user_id: int, con
             await _send_whatsapp_message(wa_id,
                 f"📢 *تم البث!*\n\n👥 المجموع: {len(subscribers)}\n✅ نجح: {success}\n❌ فشل: {fail}\n\n⚠️ ملاحظة: البث على WA محدود — يتبعت بس على تليجرام")
 
+        # ═══ أوامر أدمن إضافية — زي التليجرام ═══
+
+        elif cmd in ("/botstats", "/stats"):
+            from dashboard import get_today_stats, get_total_users, get_total_subscribers, get_total_premium
+            stats = get_today_stats(platform="whatsapp")
+            total_users = get_total_users(platform="whatsapp")
+            total_subs = get_total_subscribers(platform="whatsapp")
+            total_prem = get_total_premium(platform="whatsapp")
+            sub_rate = f"{(total_subs/total_users*100):.1f}%" if total_users > 0 else "0%"
+            prem_rate = f"{(total_prem/total_users*100):.1f}%" if total_users > 0 else "0%"
+            await _send_whatsapp_message(wa_id,
+                f"📊 *إحصائيات بوت الواتساب*\n"
+                f"━━━━━━━━━━━━━━━━━\n\n"
+                f"👥 *المستخدمين*\n"
+                f"→ الإجمالي: {total_users}\n"
+                f"→ مشتركين أخبار: {total_subs} ({sub_rate})\n"
+                f"→ Premium: {total_prem} ({prem_rate})\n\n"
+                f"📈 *إحصائيات اليوم*\n"
+                f"→ الرسائل: {stats['total_messages']}\n"
+                f"→ الأوامر: {stats['total_commands']}\n"
+                f"→ طلبات AI: {stats['ai_requests']}\n"
+                f"→ عمليات البحث: {stats['search_requests']}\n"
+                f"→ تحليلات PDF: {stats['pdf_analyses']}\n"
+                f"→ تحليلات صور: {stats['image_analyses']}\n"
+                f"→ أخطاء: {stats['total_errors']}\n"
+                f"→ مستخدمين جدد: {stats['new_users']}"
+            )
+
+        elif cmd in ("/allusers",):
+            from memory import _execute, _is_postgres
+            ph = "%s" if _is_postgres() else "?"
+            rows = _execute(
+                f"SELECT user_id, name, platform FROM user_profiles WHERE platform = {ph} ORDER BY created_at DESC LIMIT 30",
+                ("whatsapp",), fetch=True
+            )
+            if rows:
+                text = "👥 *كل مستخدمين الواتساب*\n━━━━━━━━━━━━━━━━━\n\n"
+                for r in rows:
+                    name = r[1] or "مش محدد"
+                    uid = r[0]
+                    # لو الـ user_id سالب (واتساب hashed)، نعرضه كـ ID داخلي
+                    if uid < 0:
+                        text += f"📱 {name}\n"
+                    else:
+                        text += f"👤 {uid} — {name}\n"
+                if len(rows) >= 30:
+                    text += f"\n... وأكتر"
+                await _send_whatsapp_message(wa_id, text)
+            else:
+                await _send_whatsapp_message(wa_id, "👥 مفيش مستخدمين واتساب حالياً")
+
+        elif cmd in ("/warn",):
+            if not args:
+                await _send_whatsapp_message(wa_id, "⚠️ الاستخدام: /warn رقم_الواتساب [السبب]\nمثال: /warn 201203551789 سبام")
+                return
+            try:
+                phone = args[0]
+                target_id = _wa_phone_to_user_id(phone)
+                reason = " ".join(args[1:]) if len(args) > 1 else "تحذير من الأدمن"
+                from memory import _execute, _is_postgres, _ensure_user_in_db
+                _ensure_user_in_db(target_id, platform="whatsapp")
+                ph1, ph2, ph3, ph4 = ("%s", "%s", "%s", "%s") if _is_postgres() else ("?", "?", "?", "?")
+                # Check current warning count
+                row = _execute(f"SELECT warning_count FROM banned_users WHERE user_id = {ph1}", (target_id,), fetchone=True)
+                if row:
+                    new_count = (row[0] or 0) + 1
+                    _execute(f"UPDATE banned_users SET warning_count = {ph1}, reason = {ph2} WHERE user_id = {ph3}", (new_count, reason, target_id))
+                else:
+                    new_count = 1
+                    _execute(f"INSERT INTO banned_users (user_id, reason, banned_by, warning_count) VALUES ({ph1}, {ph2}, 'admin', {ph3})", (target_id, reason, new_count))
+                
+                if new_count >= 3:
+                    # Auto-ban after 3 warnings
+                    _execute(f"UPDATE banned_users SET reason = {ph1}, banned_by = 'auto_ban' WHERE user_id = {ph2}", (f"حظر تلقائي بعد {new_count} تحذيرات", target_id))
+                    await _send_whatsapp_message(wa_id, f"🚫 *حظر تلقائي!* المستخدم {_wa_phone_to_display(phone)} حصل على 3 تحذيرات واتحظر تلقائياً.")
+                else:
+                    await _send_whatsapp_message(wa_id, f"⚠️ *تحذير ({new_count}/3)*\n📱 المستخدم: {_wa_phone_to_display(phone)}\n📝 السبب: {reason}")
+            except ValueError:
+                await _send_whatsapp_message(wa_id, "❌ رقم الواتساب مش صحيح.")
+
+        elif cmd in ("/addadmin",):
+            if not args:
+                await _send_whatsapp_message(wa_id, "👑 الاستخدام: /addadmin رقم_الواتساب\nمثال: /addadmin 201203551789")
+                return
+            try:
+                phone = args[0]
+                target_id = _wa_phone_to_user_id(phone)
+                from admin import _save_admin_to_db, ADMIN_USER_IDS
+                _save_admin_to_db(target_id, role="admin", added_by=f"admin_{wa_user_id}")
+                await _send_whatsapp_message(wa_id, f"👑 *تم إضافة أدمن جديد!*\n📱 {_wa_phone_to_display(phone)}")
+            except ValueError:
+                await _send_whatsapp_message(wa_id, "❌ رقم الواتساب مش صحيح.")
+
+        elif cmd in ("/removeadmin",):
+            if not args:
+                await _send_whatsapp_message(wa_id, "👑 الاستخدام: /removeadmin رقم_الواتساب\nمثال: /removeadmin 201203551789")
+                return
+            try:
+                phone = args[0]
+                target_id = _wa_phone_to_user_id(phone)
+                from admin import _remove_admin_from_db, is_admin as check_admin
+                if check_admin(target_id) and target_id in [8674141938, 8313119944]:
+                    await _send_whatsapp_message(wa_id, "👑 مينفعش تشيل الـ Owner!")
+                    return
+                _remove_admin_from_db(target_id)
+                await _send_whatsapp_message(wa_id, f"👑 *تم شيل أدمن*\n📱 {_wa_phone_to_display(phone)}")
+            except ValueError:
+                await _send_whatsapp_message(wa_id, "❌ رقم الواتساب مش صحيح.")
+
+        elif cmd in ("/listadmins",):
+            from admin import ADMIN_USER_IDS
+            from memory import _execute, _is_postgres
+            rows = _execute("SELECT user_id, username, role FROM admin_users", fetch=True)
+            if rows:
+                text = "👑 *قائمة الأدمنز*\n━━━━━━━━━━━━━━━━━\n\n"
+                for r in rows:
+                    uid = r[0]
+                    # لو الـ user_id سالب (واتساب)، نعرض إنه واتساب
+                    if uid < 0:
+                        text += f"📱 واتساب — {r[1] or 'مش محدد'} ({r[2]})\n"
+                    else:
+                        text += f"👤 تليجرام {uid} — {r[1] or 'مش محدد'} ({r[2]})\n"
+                await _send_whatsapp_message(wa_id, text)
+            else:
+                await _send_whatsapp_message(wa_id, "👑 مفيش أدمنز مسجلين")
+
     except ValueError:
-        await _send_whatsapp_message(wa_id, "❌ الأرقام مش صحيحة. اكتب user_id رقمي.")
+        await _send_whatsapp_message(wa_id, "❌ رقم الواتساب مش صحيح. اكتب الرقم زي: 201203551789")
     except Exception as e:
         logger.error(f"❌ Admin command error: {e}")
         await _send_whatsapp_message(wa_id, f"❌ حصل خطأ: {e}")
@@ -3910,6 +4278,357 @@ async def _handle_command_with_arg(wa_id: str, cmd_name: str, arg: str, wa_user_
         await _send_ai_response(wa_id, f"ابحث لي عن: {arg}",
             wa_user_id, contact_name, message_id, context_type="search",
             increment_feature="searches")
+
+    # ══════════════════════════════════════
+    # VIDEO SEARCH / AUDIO SEARCH / PHOTO SEARCH (with args)
+    # ══════════════════════════════════════
+
+    elif cmd_name == "video_search_query":
+        # /video <query> — بحث يوتيوب + عرض نتائج + تحميل فيديو
+        await _handle_wa_video_search(wa_id, arg, wa_user_id, contact_name, message_id, is_admin)
+
+    elif cmd_name == "audio_search_query":
+        # /audio <query> — بحث يوتيوب + عرض نتائج + تحميل صوت
+        await _handle_wa_audio_search(wa_id, arg, wa_user_id, contact_name, message_id, is_admin)
+
+    elif cmd_name == "photo_search_query":
+        # /photo <query> — بحث صور
+        await _handle_wa_photo_search(wa_id, arg, wa_user_id, contact_name, message_id, is_admin)
+
+
+# ═══════════════════════════════════════
+# WhatsApp Video/Audio/Photo Search Handlers
+# ═══════════════════════════════════════
+
+# Cache لنتائج بحث الواتساب
+_wa_search_cache = {}  # {wa_id: {"results": [...], "query": str, "type": str, "created_at": float}}
+_WA_SEARCH_CACHE_TTL = 300
+
+
+async def _wa_download_youtube(wa_id: str, url: str, wa_user_id: int,
+                                 contact_name: str, message_id: str, is_admin: bool,
+                                 format: str = "720"):
+    """تحميل فيديو/صوت YouTube عبر RapidAPI للواتساب
+    
+    format: "720" لفيديو 720p, "mp3" لصوت, الخ
+    لو مش يوتيوب، بيستخدم yt-dlp عادي
+    """
+    from youtube_rapidapi import is_youtube_url, download_youtube_file_async, get_error_message
+    
+    # لو مش يوتيوب، نستخدم الطريقة العادية (yt-dlp)
+    if not is_youtube_url(url):
+        force_audio = (format == "mp3")
+        await _download_and_send_video(wa_id, url, wa_user_id, contact_name, message_id, is_admin, force_audio=force_audio)
+        return
+    
+    # ═══ YouTube: استخدم RapidAPI ═══
+    is_audio = (format == "mp3")
+    
+    try:
+        await _send_whatsapp_message(wa_id, 
+            f"{'🎵' if is_audio else '🎬'} جاري التحميل عبر الخدمة الخارجية..."
+        )
+        
+        result = await download_youtube_file_async(url, format=format, output_dir="/tmp")
+        
+        if result and result.get("success") and result.get("file_path"):
+            file_path = result["file_path"]
+            file_size = result.get("file_size", 0)
+            real_title = result.get("title", "فيديو YouTube")
+            
+            # لو الملف كبير، نجرب جودة أقل للفيديو
+            if not is_audio and file_size > 64 * 1024 * 1024:
+                _cleanup_wa_file(file_path)
+                await _send_whatsapp_message(wa_id, "🎬 الملف كبير، بجرب جودة أقل...")
+                result = await download_youtube_file_async(url, format="360", output_dir="/tmp")
+                if result and result.get("success") and result.get("file_path"):
+                    file_path = result["file_path"]
+                    file_size = result.get("file_size", 0)
+                    real_title = result.get("title", "فيديو YouTube")
+                else:
+                    error_code = result.get("error", "unknown") if result else "unknown"
+                    error_msg = get_error_message(error_code, "ar")
+                    await _send_whatsapp_message(wa_id, error_msg)
+                    return
+            
+            # إرسال الملف عبر WhatsApp
+            try:
+                with open(file_path, 'rb') as f:
+                    file_data = f.read()
+                
+                if is_audio:
+                    # إرسال كصوت
+                    await _send_whatsapp_audio(wa_id, file_data, title=real_title[:64])
+                else:
+                    # إرسال كفيديو/مستند
+                    ext = "mp4"
+                    filename = f"{real_title[:50]}.{ext}"
+                    await _send_whatsapp_document(wa_id, file_data, filename, caption=f"🎬 {real_title}", content_type="video/mp4")
+                
+                await _send_whatsapp_message(wa_id, 
+                    f"✅ تم إرسال ال{'صوت' if is_audio else 'فيديو'}!"
+                )
+                
+                # تحديث الاستخدام
+                try:
+                    increment_usage(wa_user_id, "youtube_summaries")
+                except Exception:
+                    pass
+                
+            except Exception as e:
+                logger.error(f"WA send YouTube media error: {e}")
+                
+                # لو فشل الإرسال، نبعت الرابط كبديل
+                download_url = result.get("download_url", "")
+                if download_url:
+                    await _send_whatsapp_message(wa_id, 
+                        f"⚠️ حجم الملف كبير عشان نبعتو على واتساب.\n\n"
+                        f"🔗 رابط التحميل المباشر:\n{download_url}\n\n"
+                        f"🎬 {real_title}"
+                    )
+                else:
+                    await _send_whatsapp_message(wa_id, 
+                        f"❌ فشل إرسال ال{'صوت' if is_audio else 'فيديو'}. جرب تاني!"
+                    )
+            finally:
+                _cleanup_wa_file(file_path)
+            
+            return
+        
+        else:
+            # RapidAPI فشلت
+            error_code = result.get("error", "unknown") if result else "unknown"
+            error_msg = get_error_message(error_code, "ar")
+            await _send_whatsapp_message(wa_id, error_msg)
+            return
+    
+    except Exception as e:
+        logger.error(f"WA YouTube RapidAPI error: {e}")
+        await _send_whatsapp_message(wa_id, "❌ حصل خطأ في التحميل. جرب تاني!")
+
+
+def _cleanup_wa_file(file_path: str):
+    """حذف ملف مؤقت"""
+    try:
+        if file_path and os.path.exists(file_path):
+            os.remove(file_path)
+    except Exception:
+        pass
+
+
+async def _handle_wa_video_search(wa_id: str, query: str, wa_user_id: int, 
+                                   contact_name: str, message_id: str, is_admin: bool):
+    """بحث يوتيوب + عرض نتائج + تحميل فيديو عبر WhatsApp"""
+    await _send_whatsapp_message(wa_id, f"🔍 جاري البحث في YouTube عن: {query}...")
+    
+    try:
+        from youtube_search import search_youtube, format_search_results
+        
+        results = await search_youtube(query, max_results=5)
+        
+        if not results:
+            await _send_whatsapp_message(wa_id, "❌ مفيش نتائج. جرب كلمات بحث تانية!")
+            return
+        
+        # حفظ النتائج في cache
+        cache_key = hashlib.md5(f"wa_{wa_id}_{query}".encode()).hexdigest()[:12]
+        _wa_search_cache[cache_key] = {
+            "results": results,
+            "query": query,
+            "type": "video",
+            "created_at": time.time(),
+        }
+        
+        # عرض النتائج كـ interactive list
+        text = format_search_results(results, lang="ar")
+        
+        sections = [{
+            "title": "🎬 نتائج YouTube",
+            "rows": []
+        }]
+        
+        for i, r in enumerate(results):
+            title = r['title'][:24]
+            desc = f"⏱ {r['duration']} | 📺 {r['channel'][:15]}"
+            sections[0]["rows"].append({
+                "id": f"wa_vs_{cache_key}_{i}",
+                "title": f"{i+1}. {title}",
+                "description": desc,
+            })
+        
+        await _send_interactive_list(wa_id, text, "🎬 اختر فيديو", sections)
+        
+    except Exception as e:
+        logger.error(f"WA video search error: {e}")
+        await _send_whatsapp_message(wa_id, "❌ حصل خطأ في البحث. جرب تاني!")
+
+
+async def _handle_wa_audio_search(wa_id: str, query: str, wa_user_id: int,
+                                   contact_name: str, message_id: str, is_admin: bool):
+    """بحث يوتيوب + عرض نتائج + تحميل صوت عبر WhatsApp"""
+    await _send_whatsapp_message(wa_id, f"🔍 جاري البحث في YouTube عن: {query}...")
+    
+    try:
+        from youtube_search import search_youtube, format_search_results
+        
+        results = await search_youtube(query, max_results=5)
+        
+        if not results:
+            await _send_whatsapp_message(wa_id, "❌ مفيش نتائج. جرب كلمات بحث تانية!")
+            return
+        
+        cache_key = hashlib.md5(f"wa_{wa_id}_{query}".encode()).hexdigest()[:12]
+        _wa_search_cache[cache_key] = {
+            "results": results,
+            "query": query,
+            "type": "audio",
+            "created_at": time.time(),
+        }
+        
+        text = format_search_results(results, lang="ar")
+        
+        sections = [{
+            "title": "🎵 نتائج YouTube - صوت",
+            "rows": []
+        }]
+        
+        for i, r in enumerate(results):
+            title = r['title'][:24]
+            desc = f"⏱ {r['duration']} | 📺 {r['channel'][:15]}"
+            sections[0]["rows"].append({
+                "id": f"wa_as_{cache_key}_{i}",
+                "title": f"{i+1}. {title}",
+                "description": desc,
+            })
+        
+        await _send_interactive_list(wa_id, text, "🎵 اختر صوت", sections)
+        
+    except Exception as e:
+        logger.error(f"WA audio search error: {e}")
+        await _send_whatsapp_message(wa_id, "❌ حصل خطأ في البحث. جرب تاني!")
+
+
+async def _handle_wa_photo_search(wa_id: str, query: str, wa_user_id: int,
+                                   contact_name: str, message_id: str, is_admin: bool):
+    """بحث صور + اختيار عدد + إرسال عبر WhatsApp"""
+    # سؤال المستخدم عن عدد الصور
+    cache_key = hashlib.md5(f"wa_ph_{wa_id}_{query}".encode()).hexdigest()[:12]
+    _wa_search_cache[cache_key] = {
+        "query": query,
+        "type": "photo",
+        "results": [],
+        "created_at": time.time(),
+    }
+    
+    text = f"🖼️ *بحث عن صور: {query}*\n━━━━━━━━━━━━━━━━━\n\nكم صورة تريد؟"
+    
+    await _send_interactive_buttons(wa_id, text, [
+        {"id": f"wa_ph_{cache_key}_3", "title": "3 صور"},
+        {"id": f"wa_ph_{cache_key}_5", "title": "5 صور"},
+        {"id": f"wa_ph_{cache_key}_10", "title": "10 صور"},
+    ])
+
+
+async def _handle_wa_search_callback(wa_id: str, callback_id: str, wa_user_id: int,
+                                      contact_name: str, message_id: str, is_admin: bool):
+    """معالجة اختيارات البحث من الواتساب (list/button callbacks)"""
+    
+    # فيديو بالبحث: wa_vs_{cache_key}_{index}
+    if callback_id.startswith("wa_vs_"):
+        parts = callback_id.split("_", 3)
+        if len(parts) < 4:
+            return
+        cache_key = parts[2]
+        try:
+            idx = int(parts[3])
+        except ValueError:
+            return
+        
+        cached = _wa_search_cache.get(cache_key)
+        if not cached or idx >= len(cached["results"]):
+            await _send_whatsapp_message(wa_id, "❌ النتائج انتهت! ابحث تاني.")
+            return
+        
+        r = cached["results"][idx]
+        await _send_whatsapp_message(wa_id, f"🎬 جاري تحميل الفيديو...\n\n📺 {r['title']}")
+        await _wa_download_youtube(wa_id, r['url'], wa_user_id, contact_name, message_id, is_admin, format="720")
+    
+    # صوت بالبحث: wa_as_{cache_key}_{index}
+    elif callback_id.startswith("wa_as_"):
+        parts = callback_id.split("_", 3)
+        if len(parts) < 4:
+            return
+        cache_key = parts[2]
+        try:
+            idx = int(parts[3])
+        except ValueError:
+            return
+        
+        cached = _wa_search_cache.get(cache_key)
+        if not cached or idx >= len(cached["results"]):
+            await _send_whatsapp_message(wa_id, "❌ النتائج انتهت! ابحث تاني.")
+            return
+        
+        r = cached["results"][idx]
+        await _send_whatsapp_message(wa_id, f"🎵 جاري تحميل الصوت...\n\n📺 {r['title']}")
+        await _wa_download_youtube(wa_id, r['url'], wa_user_id, contact_name, message_id, is_admin, format="mp3")
+    
+    # صور: wa_ph_{cache_key}_{count}
+    elif callback_id.startswith("wa_ph_"):
+        parts = callback_id.split("_", 3)
+        if len(parts) < 4:
+            return
+        cache_key = parts[2]
+        try:
+            count = int(parts[3])
+        except ValueError:
+            return
+        
+        cached = _wa_search_cache.get(cache_key)
+        if not cached or not cached.get("query"):
+            await _send_whatsapp_message(wa_id, "❌ انتهت الجلسة! ابحث تاني.")
+            return
+        
+        query = cached["query"]
+        await _send_whatsapp_message(wa_id, f"🖼️ جاري البحث عن {count} صور لـ: {query}...")
+        
+        try:
+            from image_search import search_images, download_images
+            
+            results = await search_images(query, count=count)
+            
+            if not results:
+                await _send_whatsapp_message(wa_id, "❌ مفيش صور! جرب كلمات بحث تانية.")
+                return
+            
+            image_urls = [r["url"] for r in results[:count]]
+            images = await download_images(image_urls)
+            
+            if not images:
+                await _send_whatsapp_message(wa_id, "❌ فشل تحميل الصور. جرب تاني!")
+                return
+            
+            # إرسال الصور واحدة واحدة
+            sent = 0
+            for i, img_bytes in enumerate(images):
+                try:
+                    img_b64 = base64.b64encode(img_bytes).decode('utf-8')
+                    caption = ""
+                    if i == 0:
+                        caption = f"🖼️ صور لـ: {query}\n📸 {i+1}/{len(images)}"
+                    
+                    await _send_whatsapp_image(wa_id, img_b64, caption)
+                    sent += 1
+                    if i < len(images) - 1:
+                        await asyncio.sleep(0.5)
+                except Exception as e:
+                    logger.warning(f"Failed to send image {i}: {e}")
+            
+            await _send_whatsapp_message(wa_id, f"✅ تم إرسال {sent}/{len(images)} صورة!")
+            
+        except Exception as e:
+            logger.error(f"WA photo search error: {e}")
+            await _send_whatsapp_message(wa_id, "❌ حصل خطأ. جرب تاني!")
 
 
 # ═══════════════════════════════════════
@@ -4233,7 +4952,7 @@ async def _analyze_document(media_id: str, caption: str = "", wa_user_id: int = 
 # ═══════════════════════════════════════
 
 async def health_check(request: web.Request):
-    """Health check endpoint for Railway"""
+    """Health check endpoint for Railway — includes DB diagnostics"""
     whatsapp_ok = bool(WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID)
     ai_ok = True
     try:
@@ -4241,10 +4960,88 @@ async def health_check(request: web.Request):
     except Exception:
         ai_ok = False
 
+    # ═══ Database Diagnostics ═══
+    db_info = {
+        "connected": False,
+        "type": "none",
+        "persistent": False,
+        "tables": {},
+        "user_count": 0,
+        "error": None,
+    }
+    try:
+        from memory import _is_postgres, _db_type, _pg_pool, _execute
+        db_info["type"] = _db_type or "none"
+        db_info["connected"] = _db_type is not None
+        db_info["persistent"] = _db_type == "postgresql"
+
+        if _db_type == "postgresql":
+            db_info["pool_size"] = f"1-3 (maxconn)" if _pg_pool else "N/A"
+            # Quick connectivity test
+            try:
+                result = _execute("SELECT 1 as test", fetchone=True)
+                db_info["query_test"] = "ok" if result else "no_result"
+            except Exception as e:
+                db_info["query_test"] = f"error: {str(e)[:100]}"
+
+        # Count users and table sizes
+        if _db_type:
+            try:
+                user_count = _execute("SELECT COUNT(*) FROM user_profiles", fetchone=True)
+                db_info["user_count"] = user_count[0] if user_count else 0
+            except Exception:
+                pass
+
+            # Table row counts
+            for table_name in ['user_profiles', 'conversations', 'user_memories',
+                               'learning_progress', 'favorites', 'banned_users']:
+                try:
+                    count = _execute(f"SELECT COUNT(*) FROM {table_name}", fetchone=True)
+                    db_info["tables"][table_name] = count[0] if count else 0
+                except Exception:
+                    db_info["tables"][table_name] = "error"
+
+            # Premium tables
+            try:
+                from premium import _is_postgres as _prem_is_pg
+                for table_name in ['premium_users', 'usage_tracking', 'workspace_items', 'smart_alerts']:
+                    try:
+                        count = _execute(f"SELECT COUNT(*) FROM {table_name}", fetchone=True)
+                        db_info["tables"][table_name] = count[0] if count else 0
+                    except Exception:
+                        db_info["tables"][table_name] = "error"
+            except Exception:
+                pass
+
+        # Check DATABASE_URL availability (masked)
+        import os
+        db_url = os.environ.get("DATABASE_URL", "")
+        if db_url:
+            if "neon.tech" in db_url:
+                db_info["url_type"] = "neon_postgresql"
+            elif db_url.startswith("file:"):
+                db_info["url_type"] = "sqlite_local"
+            elif "postgresql" in db_url or "postgres://" in db_url:
+                db_info["url_type"] = "postgresql_other"
+            else:
+                db_info["url_type"] = "unknown"
+            db_info["url_masked"] = db_url[:25] + "***" + db_url[-15:] if len(db_url) > 40 else "***"
+        else:
+            db_info["url_type"] = "not_set"
+            db_info["error"] = "DATABASE_URL environment variable is not set!"
+
+    except Exception as e:
+        db_info["error"] = f"Diagnostic error: {str(e)[:200]}"
+
+    overall_status = "ok" if (whatsapp_ok and ai_ok and db_info["connected"]) else "degraded"
+    if not db_info["connected"]:
+        overall_status = "critical"
+
     return web.json_response({
-        "status": "ok" if (whatsapp_ok and ai_ok) else "degraded",
+        "status": overall_status,
         "whatsapp": whatsapp_ok,
         "ai": ai_ok,
+        "database": db_info,
         "service": "my-bro-whatsapp-webhook",
         "version": "4.0",
         "features": [
