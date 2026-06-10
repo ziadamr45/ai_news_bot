@@ -495,70 +495,23 @@ async def _send_typing_indicator(wa_id: str):
 
 
 class ThinkingFeedback:
-    """Smart thinking feedback for WhatsApp — SPEED FIRST + user patience
+    """Simple reaction-only feedback for WhatsApp — no text messages during processing
     
-    🟢 v9.19: رسالة "بفكر" الذكية — بتبعت بس لما الرد بياخد وقت
-    
-    - Fast responses (<5s general / <10s documents): Just 💭 → ✅ reaction (zero text overhead)
-    - Slow responses (>5s general / >10s documents): 💭 reaction + "بفكر 🤔" text, then ✅ reaction
-    - Background timer task auto-cancels when complete() is called
-    - Maximum speed for fast responses, user patience for slow ones
+    🟢 v9.20: شيلنا رسائل "بفكر" — بس reactions صامتة
+    - 💭 reaction عند بداية المعالجة
+    - ✅ reaction عند الانتهاء
+    - ❌ reaction عند الخطأ
+    - مفيش أي رسائل نصية أثناء التحميل أو التفكير
     """
-    
-    # Thresholds in seconds
-    THRESHOLD_GENERAL = 5      # Normal chat: 5 seconds before "بفكر"
-    THRESHOLD_DOCUMENT = 10    # PDF/Image analysis: 10 seconds before "بفكر"
-    THRESHOLD_DOWNLOAD = 10    # Video downloads: 10 seconds before "بفكر"
-    THRESHOLD_IMAGE = 8        # Image generation: 8 seconds before "بفكر"
-    
-    # Thinking messages by context
-    THINKING_MESSAGES = {
-        "general": "بفكر 🤔",
-        "document": "بفكر في الملف 📄🤔",
-        "image": "بفكر في الصورة 🖼️🤔",
-        "download": "بفكر في التحميل 📥🤔",
-        "voice": "بفكر في الصوت 🎤🤔",
-    }
     
     def __init__(self, wa_id: str, message_id: str, context_type: str = "general"):
         self.wa_id = wa_id
         self.message_id = message_id
         self.context_type = context_type
         self._start_time = None
-        self._timer_task = None
-        self._thinking_sent = False  # Track if we already sent the thinking text
-    
-    def _get_threshold(self) -> float:
-        """Get the delay threshold based on context type"""
-        thresholds = {
-            "document": self.THRESHOLD_DOCUMENT,
-            "download": self.THRESHOLD_DOWNLOAD,
-            "image": self.THRESHOLD_IMAGE,
-            "voice": self.THRESHOLD_DOCUMENT,
-        }
-        return thresholds.get(self.context_type, self.THRESHOLD_GENERAL)
-    
-    def _get_thinking_message(self) -> str:
-        """Get the thinking message for current context"""
-        return self.THINKING_MESSAGES.get(self.context_type, self.THINKING_MESSAGES["general"])
-    
-    async def _delayed_thinking_message(self):
-        """Background task: wait for threshold, then send thinking message if still processing"""
-        threshold = self._get_threshold()
-        await asyncio.sleep(threshold)
-        
-        # If we're still processing (complete() not called yet)
-        if not self._thinking_sent:
-            self._thinking_sent = True
-            try:
-                msg = self._get_thinking_message()
-                await _send_whatsapp_message(self.wa_id, msg)
-                logger.info(f"💭 Sent thinking message to {self.wa_id} after {threshold}s ({self.context_type})")
-            except Exception as e:
-                logger.warning(f"⚠️ Failed to send thinking message: {e}")
     
     async def start(self):
-        """Start thinking feedback — send 💭 reaction + start background timer"""
+        """Start — send 💭 reaction only"""
         self._start_time = time.time()
         
         if self.message_id:
@@ -566,25 +519,9 @@ class ThinkingFeedback:
                 await _send_whatsapp_reaction(self.wa_id, self.message_id, "💭")
             except Exception:
                 pass
-        
-        # Start background timer for "بفكر" message
-        if self.wa_id:
-            try:
-                self._timer_task = asyncio.create_task(self._delayed_thinking_message())
-            except Exception:
-                pass
     
     async def complete(self):
-        """Complete — cancel timer if still pending, change reaction to ✅"""
-        # Cancel the timer task if it hasn't fired yet
-        if self._timer_task and not self._timer_task.done():
-            self._timer_task.cancel()
-            try:
-                await self._timer_task
-            except asyncio.CancelledError:
-                pass
-            self._timer_task = None
-        
+        """Complete — change reaction to ✅"""
         if self.message_id:
             try:
                 await _send_whatsapp_reaction(self.wa_id, self.message_id, "✅")
@@ -592,16 +529,7 @@ class ThinkingFeedback:
                 pass
     
     async def error(self):
-        """Error — cancel timer, change reaction to ❌"""
-        # Cancel the timer task
-        if self._timer_task and not self._timer_task.done():
-            self._timer_task.cancel()
-            try:
-                await self._timer_task
-            except asyncio.CancelledError:
-                pass
-            self._timer_task = None
-        
+        """Error — change reaction to ❌"""
         if self.message_id:
             try:
                 await _send_whatsapp_reaction(self.wa_id, self.message_id, "❌")
@@ -4463,7 +4391,7 @@ def create_webhook_app() -> web.Application:
     logger.info(f"   📄 PDF: Document analysis")
     logger.info(f"   🔘 Interactive: Buttons & Lists (like Telegram keyboards)")
     logger.info(f"   📋 Commands: {len(_COMMAND_TRIGGERS)} triggers — full Telegram parity")
-    logger.info(f"   💭 Thinking: Reactions (💭 → 🤔 بفكر → ✅)")
+    logger.info(f"   💭 Thinking: Reactions only (💭 → ✅)")
     logger.info(f"   📰 News: daily, breaking, weekly, trending, company")
     logger.info(f"   📚 Learning: learn, roadmap, ask, search, study, quiz, exam")
     logger.info(f"   ⚙️ Settings: language, subscribe, memory, premium, plan")
