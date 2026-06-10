@@ -961,16 +961,18 @@ def _get_ydl_opts(quality: str, output_template: str, platform: str = "",
 
 
 async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: str, user_id: int, status_msg=None):
-    """تحميل فيديو أو صوت — مُحسّن v6 مع Cobalt كطبقة أولى
+    """تحميل فيديو أو صوت — مُحسّن v7 مع Invidious + Cobalt
     
-    🔴 FIX v6: Fallback chain جديدة مع Cobalt:
-    0. 🔵 Cobalt Self-Hosted (أول طبقة — الأقوى والأسرع)
-    1. yt-dlp default + deno + remote_components
-    2. yt-dlp player_client fallback chain (android → ios → mweb → tv → web)
-    3. yt-dlp بدون كوكيز
-    4. Cloudflare Worker
-    5. تنسيق أبسط (best)
-    6. صوت بس لو كل حاجة فشلت
+    🔴 FIX v7: Fallback chain جديدة مع Invidious:
+    -1. 🟢 YouTube RapidAPI (الأولوية القصوى لليوتيوب)
+    0. 🟣 Invidious API (طبقة جديدة — مجانية ومش بتتأثر بـ bot detection)
+    1. 🔵 Cobalt Self-Hosted
+    2. yt-dlp default + deno + remote_components
+    3. yt-dlp player_client fallback chain (android → ios → mweb → tv → web)
+    4. yt-dlp بدون كوكيز
+    5. Cloudflare Worker
+    6. تنسيق أبسط (best)
+    7. صوت بس لو كل حاجة فشلت
     """
     # تحديد الرسالة
     if hasattr(update_or_query, 'message'):
@@ -1009,9 +1011,138 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
         except Exception:
             pass
         
+        # ═══ المرحلة -0.5: Invidious API Fallback (طبقة جديدة!) ═══
+        # 🟣 Invidious: واجهة بديلة لليوتيوب — مجانية ومفتوحة
+        # الميزة الرئيسية: مش بتتأثر بـ YouTube bot detection خالص
+        # الطلبات بتروح لسيرفرات Invidious مش من الـ IP بتاعك
+        # بنستخدمه لليوتيوب بس — المنصات التانية شغالة مع yt-dlp عادي
+        invidious_result = None
+        is_youtube = platform.lower() == "youtube"
+        
+        if is_youtube:
+            try:
+                from invidious_api import download_youtube_invidious_file
+                
+                # تحويل جودة التليجرام لجودة Invidious
+                inv_quality_map = {
+                    "best": "best",
+                    "medium": "medium",
+                    "low": "low",
+                    "audio": "audio",
+                }
+                inv_quality = inv_quality_map.get(quality, "best")
+                
+                logger.info(f"🟣 Invidious: Attempting download quality={inv_quality} for {url[:80]}")
+                
+                try:
+                    await status_msg.edit_text(
+                        "🟣 جاري التحميل عبر Invidious..." if lang == "ar"
+                        else "🟣 Downloading via Invidious..."
+                    )
+                except:
+                    pass
+                
+                # 🔴 timeout 60 ثانية — لو Invidious بطيء نروح Cobalt/yt-dlp
+                try:
+                    invidious_result = await asyncio.wait_for(
+                        download_youtube_invidious_file(url, quality=inv_quality, output_dir=tmpdir),
+                        timeout=60
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning(f"⚠️ Invidious timed out after 60s, falling back to Cobalt/yt-dlp")
+                    invidious_result = None
+                
+                if invidious_result and invidious_result.get("success") and invidious_result.get("file_path"):
+                    logger.info(f"🟣 Invidious succeeded! File: {invidious_result['file_path']}")
+                    
+                    file_path = invidious_result["file_path"]
+                    file_size = invidious_result.get("file_size", os.path.getsize(file_path))
+                    real_title = invidious_result.get("title", "YouTube Video")
+                    real_duration = invidious_result.get("duration", 0)
+                    format_info = invidious_result.get("format_info", {})
+                    
+                    # تحديد الجودة الحقيقية
+                    quality_label = format_info.get("quality_label", "") or format_info.get("resolution", "")
+                    if not quality_label:
+                        if quality == "audio":
+                            quality_label = "MP3"
+                        else:
+                            quality_label = f"{inv_quality} quality"
+                    
+                    size_mb = file_size / (1024 * 1024)
+                    size_str = f"{size_mb:.1f}MB"
+                    
+                    # تتبع الاستخدام
+                    increment_usage(user_id, "youtube_summaries")
+                    try: track_event("media_downloads")
+                    except: pass
+                    
+                    await status_msg.delete()
+                    
+                    # إرسال الملف
+                    if quality == "audio":
+                        try:
+                            with open(file_path, 'rb') as f:
+                                caption = f"📥 {'تم تحميل الصوت!' if lang == 'ar' else 'Audio downloaded!'}\n🎵 {real_title[:200]}\n📁 {size_str} | Invidious"
+                                await message.reply_audio(
+                                    audio=f, filename=f"{real_title[:50]}.mp3",
+                                    caption=caption,
+                                    parse_mode="HTML",
+                                )
+                        except Exception as send_err:
+                            logger.warning(f"⚠️ Invidious audio send failed: {send_err}")
+                            await message.reply_text(
+                                f"❌ فشل إرسال الصوت ({size_str}). جرب تاني!" if lang == "ar"
+                                else f"❌ Failed to send audio ({size_str}). Try again!"
+                            )
+                    else:
+                        try:
+                            with open(file_path, 'rb') as f:
+                                tech_info = f"{quality_label} | {size_str} | Invidious"
+                                caption = f"📥 {'تم تحميل الفيديو!' if lang == 'ar' else 'Video downloaded!'}\n🎬 {real_title[:200]}\n📊 {tech_info}"
+                                await message.reply_video(
+                                    video=f, filename=f"{real_title[:50]}.mp4",
+                                    caption=caption,
+                                    parse_mode="HTML",
+                                    supports_streaming=True,
+                                )
+                        except Exception as send_err:
+                            logger.warning(f"⚠️ Invidious video send failed (likely too large): {send_err}")
+                            if quality != "low" and quality != "audio":
+                                if lang == "ar":
+                                    await message.reply_text(f"⚠️ الملف كبير ({size_str}). جرب جودة أقل!")
+                                else:
+                                    await message.reply_text(f"⚠️ File too large ({size_str}). Try a lower quality!")
+                            else:
+                                await message.reply_text(
+                                    f"❌ فشل إرسال الفيديو ({size_str}). جرب تاني!" if lang == "ar"
+                                    else f"❌ Failed to send video ({size_str}). Try again!"
+                                )
+                    
+                    # تنظيف الملف
+                    try: os.remove(file_path)
+                    except: pass
+                    
+                    return  # ✅ Invidious نجح وخلاص!
+                
+                else:
+                    # Invidious فشل — نكمل بالطرق العادية
+                    error_code = invidious_result.get("error", "unknown") if invidious_result else "unknown"
+                    logger.warning(f"⚠️ Invidious failed ({error_code}), falling back to Cobalt/yt-dlp...")
+                    invidious_result = None
+                    
+            except ImportError:
+                logger.warning("⚠️ invidious_api module not available, skipping Invidious")
+            except Exception as inv_err:
+                logger.warning(f"⚠️ Invidious error: {inv_err}, falling back to Cobalt/yt-dlp...")
+        
         # ═══ المرحلة 0: Cobalt Self-Hosted ═══
         # 🔵 طريقة تانية — بيشتغل على سيرفر منفصل ومش بيتأثر بـ bot detection
-        cobalt_result = await _try_cobalt_download(url, quality, tmpdir)
+        # 🔴 لو Invidious نجح — مش محتاجين Cobalt
+        if not invidious_result:
+            cobalt_result = await _try_cobalt_download(url, quality, tmpdir)
+        else:
+            cobalt_result = None
         if cobalt_result:
             logger.info(f"🔵 Cobalt succeeded! Skipping yt-dlp, sending file directly...")
             # Cobalt نجح — نجهز الملف ونرسله مباشرة بدون yt-dlp

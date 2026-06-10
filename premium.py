@@ -335,14 +335,23 @@ def revoke_premium(user_id: int):
     logger.info(f"❌ Premium revoked for user {user_id}")
 
 
-def get_all_premium_users():
-    """الحصول على كل مشتركي Premium"""
-    ph = "%s" if _is_postgres() else "?"
+def get_all_premium_users(platform: str = None):
+    """الحصول على كل مشتركي Premium، اختياري فلترة حسب المنصة"""
     try:
-        rows = _execute(
-            f"SELECT user_id, plan, premium_since, premium_expires, granted_by FROM premium_users WHERE plan != {ph}",
-            ("free",), fetch=True
-        )
+        if platform:
+            ph1, ph2 = ("%s", "%s") if _is_postgres() else ("?", "?")
+            rows = _execute(
+                f"SELECT pu.user_id, pu.plan, pu.premium_since, pu.premium_expires, pu.granted_by "
+                f"FROM premium_users pu JOIN user_profiles up ON pu.user_id = up.user_id "
+                f"WHERE pu.plan != {ph1} AND up.platform = {ph2}",
+                ("free", platform), fetch=True
+            )
+        else:
+            ph = "%s" if _is_postgres() else "?"
+            rows = _execute(
+                f"SELECT user_id, plan, premium_since, premium_expires, granted_by FROM premium_users WHERE plan != {ph}",
+                ("free",), fetch=True
+            )
         if rows:
             return [
                 {

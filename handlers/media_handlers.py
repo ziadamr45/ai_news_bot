@@ -628,6 +628,42 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Error processing voice message.")
 
 
+async def exit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """أمر /exit — الخروج من وضع الدراسة أو أي workflow نشط"""
+    user_id = update.effective_user.id
+    lang = get_language(user_id)
+
+    # محاولة مسح الـ workflow عبر workflow_manager
+    workflow_cleared = False
+    try:
+        from workflow_manager import get_workflow, clear_workflow
+        workflow = get_workflow(user_id)
+        if workflow:
+            clear_workflow(user_id)
+            workflow_cleared = True
+    except ImportError:
+        pass
+    except Exception:
+        pass
+
+    # محاولة مسح user_states القديم
+    from handlers.callbacks import user_states
+    if user_id in user_states:
+        user_states.pop(user_id, None)
+        workflow_cleared = True
+
+    if workflow_cleared:
+        if lang == "ar":
+            await update.message.reply_text("✅ خرجت من الوضع النشط. اكتب أي حاجة وهرد عليك عادي! 🤖")
+        else:
+            await update.message.reply_text("✅ Exited active mode. Type anything and I'll respond normally! 🤖")
+    else:
+        if lang == "ar":
+            await update.message.reply_text("ℹ️ مش في أي وضع نشط دلوقتي. اكتب أي حاجة وهرد عليك! 🤖")
+        else:
+            await update.message.reply_text("ℹ️ You're not in any active mode right now. Type anything and I'll respond! 🤖")
+
+
 async def study_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """أمر /study <topic> - وضع الدراسة (Premium)"""
     from premium import check_limit, premium_required_message, get_premium_keyboard

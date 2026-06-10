@@ -31,6 +31,7 @@ from handlers.media_handlers import (
     pdf_command, youtube_command,
     handle_document, handle_photo, handle_voice,
     study_command, quiz_command, exam_command, studyplan_command,
+    exit_command,
 )
 from handlers.image_handlers import (
     image_command, edit_command,
@@ -115,6 +116,7 @@ def register_handlers(app):
     app.add_handler(CommandHandler("quiz", quiz_command))
     app.add_handler(CommandHandler("exam", exam_command))
     app.add_handler(CommandHandler("studyplan", studyplan_command))
+    app.add_handler(CommandHandler("exit", exit_command))  # الخروج من وضع الدراسة أو أي workflow
 
     # YouTube أمر
     app.add_handler(CommandHandler("youtube", youtube_command))

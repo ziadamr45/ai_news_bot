@@ -622,22 +622,43 @@ def _save_all_users(data: Dict):
         logger.error(f"Error saving users data: {e}")
 
 
-def _ensure_user_in_db(user_id: int):
-    """التأكد إن المستخدم موجود في قاعدة البيانات"""
+def _ensure_user_in_db(user_id: int, platform: str = "telegram"):
+    """التأكد إن المستخدم موجود في قاعدة البيانات
+    
+    Args:
+        user_id: معرف المستخدم
+        platform: المنصة ("telegram" أو "whatsapp") — يتم تخزينها عند إنشاء المستخدم
+    """
+    # Migration: إضافة عمود platform لو مش موجود
+    try:
+        if _is_postgres():
+            _execute("ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS platform TEXT DEFAULT 'telegram'")
+        else:
+            # SQLite: نتأكد إن العمود موجود
+            try:
+                _execute("SELECT platform FROM user_profiles LIMIT 1", fetchone=True)
+            except Exception:
+                _execute("ALTER TABLE user_profiles ADD COLUMN platform TEXT DEFAULT 'telegram'")
+    except Exception:
+        pass  # العمود موجود بالفعل
+
     row = _execute("SELECT user_id FROM user_profiles WHERE user_id = %s" if _is_postgres() else "SELECT user_id FROM user_profiles WHERE user_id = ?", (user_id,), fetchone=True)
     if not row:
         now = datetime.now().isoformat()
         _execute(
             """INSERT INTO user_profiles
             (user_id, name, language, news_time, sources, subscribed, interests,
-             favorite_companies, created_at, last_interaction, commands_used, chat_count)
-            VALUES (%s, %s, 'ar', '09:00', '[]', 0, '[]', '[]', %s, %s, 0, 0)""" if _is_postgres() else
+             favorite_companies, created_at, last_interaction, commands_used, chat_count, platform)
+            VALUES (%s, %s, 'ar', '09:00', '[]', 0, '[]', '[]', %s, %s, 0, 0, %s)""" if _is_postgres() else
             """INSERT OR IGNORE INTO user_profiles
             (user_id, name, language, news_time, sources, subscribed, interests,
-             favorite_companies, created_at, last_interaction, commands_used, chat_count)
-            VALUES (?, ?, 'ar', '09:00', '[]', 0, '[]', '[]', ?, ?, 0, 0)""",
-            (user_id, '', now, now)
+             favorite_companies, created_at, last_interaction, commands_used, chat_count, platform)
+            VALUES (?, ?, 'ar', '09:00', '[]', 0, '[]', '[]', ?, ?, 0, 0, ?)""",
+            (user_id, '', now, now, platform)
         )
+    elif _is_postgres():
+        # تحديث platform لو مش مضبوط
+        _execute("UPDATE user_profiles SET platform = %s WHERE user_id = %s AND (platform IS NULL OR platform = '')", (platform, user_id))
 
 
 # ═══════════════════════════════════════
@@ -834,9 +855,17 @@ def is_subscribed(user_id: int) -> bool:
     user = get_user(user_id)
     return user.get("subscribed", False)
 
-def get_all_subscribers() -> List[Dict]:
-    ph = "%s" if _is_postgres() else "?"
-    rows = _execute(f"SELECT user_id, language, news_time, name FROM user_profiles WHERE subscribed = {ph}", (1,), fetch=True)
+def get_all_subscribers(platform: str = None) -> List[Dict]:
+    """Get all news subscribers, optionally filtered by platform"""
+    if platform:
+        ph1, ph2 = ("%s", "%s") if _is_postgres() else ("?", "?")
+        rows = _execute(
+            f"SELECT user_id, language, news_time, name FROM user_profiles WHERE subscribed = {ph1} AND platform = {ph2}",
+            (1, platform), fetch=True
+        )
+    else:
+        ph = "%s" if _is_postgres() else "?"
+        rows = _execute(f"SELECT user_id, language, news_time, name FROM user_profiles WHERE subscribed = {ph}", (1,), fetch=True)
     if rows:
         if _is_postgres():
             result = []
@@ -849,6 +878,8 @@ def get_all_subscribers() -> List[Dict]:
     subscribers = []
     for uid, data in all_users.items():
         if data.get("subscribed", False):
+            if platform and data.get("platform") != platform:
+                continue
             subscribers.append({
                 "user_id": int(uid), "language": data.get("language", "ar"),
                 "news_time": data.get("news_time", "09:00"), "name": data.get("name", ""),

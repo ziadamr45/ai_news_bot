@@ -530,6 +530,12 @@ CLOUDFLARE_WORKER_URL = os.environ.get("CLOUDFLARE_WORKER_URL", "https://holy-fo
 COBALT_API_URL = os.environ.get("COBALT_API_URL", "")  # مثال: https://cobalt.up.railway.app
 COBALT_API_KEY = os.environ.get("COBALT_API_KEY", "")   # API Key من keys.json
 
+# Invidious API — واجهة بديلة لليوتيوب (fallback بين RapidAPI و yt-dlp)
+# 🟣 الميزة: مجاني ومفتوح — مش بيتأثر بـ YouTube bot detection خالص
+# الطلبات بتروح لسيرفرات Invidious مش من الـ IP بتاعك
+# لو عندك سيرفر Invidious خاص (أضمن وأسرع) — ضع الرابط هنا
+INVIDIOUS_INSTANCE = os.environ.get("INVIDIOUS_INSTANCE", "")  # مثال: https://inv.nadeko.net
+
 # ═══════════════════════════════════════
 # معلومات المؤسس - Creator Info
 # ═══════════════════════════════════════

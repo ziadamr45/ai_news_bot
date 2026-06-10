@@ -1975,6 +1975,8 @@ _COMMAND_TRIGGERS = {
     "/study": "study", "study": "study", "دراسة": "study", "ادرس": "study",
     "/quiz": "quiz", "quiz": "quiz", "كويز": "quiz",
     "/exam": "exam", "exam": "exam", "امتحان": "exam",
+    # Exit
+    "/exit": "exit", "exit": "exit", "خروج": "exit", "الغاء": "exit", "إلغاء": "exit",
     # YouTube
     "/youtube": "youtube", "youtube": "youtube", "يوتيوب": "youtube",
     # PDF
@@ -2886,6 +2888,30 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
             "اكتب اللي عايز تبحث عنه وأنا هجيبلوك صور!\n\n"
             "مثال: محمد صلاح\n\n"
             "💡 أو استخدم: /photo كلمات البحث")
+        return True
+
+    # ══════════════════════════════════════
+    # EXIT (الخروج من وضع الدراسة أو أي workflow)
+    # ══════════════════════════════════════
+
+    elif command == "exit":
+        workflow_cleared = False
+        try:
+            from workflow_manager import get_workflow, clear_workflow
+            workflow = get_workflow(wa_user_id)
+            if workflow:
+                clear_workflow(wa_user_id)
+                workflow_cleared = True
+        except Exception:
+            pass
+        # مسح user_states القديم
+        if wa_user_id in _wa_user_state:
+            _wa_user_state.pop(wa_user_id, None)
+            workflow_cleared = True
+        if workflow_cleared:
+            await _send_whatsapp_message(wa_id, "✅ خرجت من الوضع النشط. اكتب أي حاجة وهرد عليك عادي! 🤖")
+        else:
+            await _send_whatsapp_message(wa_id, "ℹ️ مش في أي وضع نشط دلوقتي. اكتب أي حاجة وهرد عليك! 🤖")
         return True
 
     # ══════════════════════════════════════
