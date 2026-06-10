@@ -15,6 +15,6 @@ youtube-transcript-api>=0.6.0
 python-docx>=1.1.0
 SpeechRecognition>=3.10.0
 pydub>=0.25.1
-yt-dlp>=2025.1.0
+yt-dlp>=2026.6.0
 # deno (JS runtime) - required by yt-dlp for YouTube challenge solving
 # Install separately: curl -fsSL https://deno.land/install.sh | sh

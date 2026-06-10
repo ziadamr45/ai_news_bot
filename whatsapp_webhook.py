@@ -1355,6 +1355,15 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
             except Exception as e:
                 last_error = e
                 logger.warning(f"⚠️ yt-dlp direct download failed: {e}")
+                # 🔴 لو YouTube حجبنا — حدث yt-dlp فوراً
+                err_str = str(e).lower()
+                if any(kw in err_str for kw in ["sign in", "bot", "captcha", "confirm", "login", "403"]):
+                    logger.warning("🔴 YouTube bot detection in WA! Triggering yt-dlp update...")
+                    try:
+                        from handlers.download_handlers import trigger_ytdlp_update
+                        trigger_ytdlp_update()
+                    except Exception:
+                        pass
             
             # ═══ المرحلة 2: yt-dlp مع خيارات مختلفة (بدون كوكيز) ═══
             if info is None:
@@ -1379,6 +1388,14 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                 except Exception as e2:
                     last_error = e2
                     logger.warning(f"⚠️ yt-dlp android client also failed: {e2}")
+                    # 🔴 لو bot detection — حدث yt-dlp فوراً
+                    err_str2 = str(e2).lower()
+                    if any(kw in err_str2 for kw in ["sign in", "bot", "captcha", "confirm", "login", "403"]):
+                        try:
+                            from handlers.download_handlers import trigger_ytdlp_update
+                            trigger_ytdlp_update()
+                        except Exception:
+                            pass
             
             # ═══ المرحلة 3: Cloudflare Worker Proxy Fallback ═══
             # لو yt-dlp فشل على Railway (IPs محجوبة)، نجرب عبر Cloudflare Worker
