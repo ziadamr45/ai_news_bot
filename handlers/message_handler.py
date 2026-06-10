@@ -32,15 +32,29 @@ logger = logging.getLogger(__name__)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """معالجة الرسائل العادية - محادثة حرة مع AI + كشف ذكي"""
-    # 🔴 FIX: استيراد أساسي — لو فشل أي موديول من دول البوت مش هيشتغل خالص
+    # 🔴 FIX v2: هذه الموديولات تم تحميلها بالفعل في handlers/__init__.py
+    # مش محتاجين نعملهم import تاني — لو فشل الـ import ده مش معناه إن الموديول مش موجود
+    # معناه إن في مشكلة في الـ dependency chain — والمفروض نكمل بدل ما نوقف كل الرسائل
+    # بنستخدم الـ functions اللي اتسجلت بالفعل في الـ package
     try:
         from handlers.memory_handlers import memory_command
+    except ImportError:
+        memory_command = None
+        logger.warning("⚠️ memory_command import failed (non-critical)")
+
+    try:
         from handlers.news_handlers import news_command, trending_command
+    except ImportError:
+        news_command = None
+        trending_command = None
+        logger.warning("⚠️ news_handlers import failed (non-critical)")
+
+    try:
         from handlers.basic_handlers import help_command, premium_command
-    except ImportError as ie:
-        logger.error(f"❌ Critical import error in handle_message: {ie}")
-        await update.message.reply_text("❌ حصل خطأ في تحميل المكونات. جرب تاني!")
-        return
+    except ImportError:
+        help_command = None
+        premium_command = None
+        logger.warning("⚠️ basic_handlers import failed (non-critical)")
 
     # 🔴 FIX: استيراد اختياري — الوكلاء (agents) مش لازم للمحادثة العادية
     # بنستورهم لوحدهم عشان لو فشل الاستيراد البوت يفضل يشتغل
@@ -254,13 +268,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text(msg, parse_mode="HTML", reply_markup=keyboard)
                 return
             elif cmd == "/premium":
-                await premium_command(update, context)
+                if premium_command:
+                    await premium_command(update, context)
                 return
             elif cmd == "/help":
-                await help_command(update, context)
+                if help_command:
+                    await help_command(update, context)
                 return
             elif cmd == "/memory":
-                await memory_command(update, context)
+                if memory_command:
+                    await memory_command(update, context)
                 return
 
         # 🔴 FIX: الأزرار اللي محتاجة كوتا — نفحص الكوتا الأول
@@ -351,9 +368,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             context.args = []
             if cmd == "/news":
-                await news_command(update, context)
+                if news_command:
+                    await news_command(update, context)
             elif cmd == "/trending":
-                await trending_command(update, context)
+                if trending_command:
+                    await trending_command(update, context)
             return
 
     # ═══ فحص الكوتا — لو المستخدم خلص حد الرسائل ═══
@@ -380,8 +399,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text_lower = user_text.lower()
     is_memory_question = any(kw in text_lower for kw in memory_keywords_ar + memory_keywords_en)
     if is_memory_question:
-        await memory_command(update, context)
-        return
+        if memory_command:
+            await memory_command(update, context)
+            return
+        # لو memory_command مش متاح، كمّل كمحادثة عادية
 
     # ═══ Smart Intent: Any Media URL → Auto Download 📥 ═══
     # أي رابط فيديو/صورة/صوت (حتى YouTube) → تحميل تلقائي

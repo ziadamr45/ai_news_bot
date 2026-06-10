@@ -55,6 +55,10 @@ GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 # OpenAI (ASR fallback - تحويل الصوت لنص)
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 
+# OpenRouter (ASR fallback layer 3 - تحويل الصوت لنص)
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
+OPENROUTER_BASE_URL = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+
 # ═══════════════════════════════════════
 # مسارات النماذج - Model Routes (الخطه الشامله)
 # كل نموذج NVIDIA ليه مفتاح api_key خاص
