@@ -993,6 +993,10 @@ def _get_ydl_opts(quality: str, output_template: str, platform: str = "",
     - بنكشف ffmpeg تلقائي وبنعدل التنسيقات حسب التوفر
     """
     ffmpeg_ok = use_ffmpeg and _is_ffmpeg_available()
+    platform_lower = platform.lower() if platform else ""
+    # 🔴 FIX: لازم نعرّف is_youtube و platform_lower جوه الدالة
+    # platform بتتباصى من _detect_platform() — لو فاضي بنعامل كأنه YouTube
+    is_youtube = platform_lower == "youtube" or platform_lower == ""
     
     # 🔴 الكوكيز الوهمية اتشالت نهائياً!
     # الكوكيز الوهمية (visitor cookies) بتضر أكتر مما تنفع لأن:
@@ -1034,7 +1038,7 @@ def _get_ydl_opts(quality: str, output_template: str, platform: str = "",
     # ده بيدي 37 تنسيق لحد 1080p بدون ما YouTube يعتبرنا bot
     # player_client بنستخدمه كـ fallback بس
     
-    if is_youtube or platform_lower == "":
+    if is_youtube:
         # 🔴 إضافة deno للـ PATH
         _ensure_deno_in_path()
         
