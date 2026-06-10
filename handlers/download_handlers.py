@@ -1196,8 +1196,9 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
     3. yt-dlp بدون كوكيز
     4. Cobalt Public API (fallback)
     5. Invidious API (fallback)
-    6. Cobalt Self-Hosted (fallback)
-    7. Cloudflare Worker (آخر محاولة)
+    6. Piped API (fallback — زي Invidious بس سيرفرات مختلفة)
+    7. Cobalt Self-Hosted (fallback)
+    8. Cloudflare Worker (آخر محاولة)
     """
     # تحديد الرسالة
     if hasattr(update_or_query, 'message'):
@@ -1550,9 +1551,115 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
             except ImportError:
                 logger.warning("⚠️ invidious_api module not available, skipping Invidious")
             except Exception as inv_err:
-                logger.warning(f"⚠️ Invidious error: {inv_err}, trying Cobalt Self-Hosted...")
+                logger.warning(f"⚠️ Invidious error: {inv_err}, trying Piped...")
         
-        # ═══ المحاولة 6: Cobalt Self-Hosted (fallback) ═══
+        # ═══ المحاولة 6: Piped API (fallback — زي Invidious بس سيرفرات مختلفة) ═══
+        if info is None and is_youtube:
+            try:
+                from piped_api import download_youtube_piped_file
+                
+                piped_quality_map = {"best": "best", "medium": "medium", "low": "low", "audio": "audio"}
+                piped_quality = piped_quality_map.get(quality, "best")
+                
+                logger.info(f"🟢 Piped: Attempting download quality={piped_quality} for {url[:80]}")
+                
+                try:
+                    await status_msg.edit_text(
+                        "🟢 جاري التحميل عبر Piped..." if lang == "ar"
+                        else "🟢 Downloading via Piped..."
+                    )
+                except:
+                    pass
+                
+                try:
+                    piped_result = await asyncio.wait_for(
+                        download_youtube_piped_file(url, quality=piped_quality, output_dir=tmpdir),
+                        timeout=90
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning(f"⚠️ Piped timed out after 90s")
+                    piped_result = None
+                
+                if piped_result and piped_result.get("success") and piped_result.get("file_path"):
+                    logger.info(f"🟢 Piped succeeded! File: {piped_result['file_path']}")
+                    
+                    file_path = piped_result["file_path"]
+                    file_size = piped_result.get("file_size", os.path.getsize(file_path))
+                    real_title = piped_result.get("title", "YouTube Video")
+                    real_duration = piped_result.get("duration", 0)
+                    format_info = piped_result.get("format_info", {})
+                    
+                    quality_label = format_info.get("quality_label", "")
+                    if not quality_label:
+                        if quality == "audio":
+                            quality_label = "MP3"
+                        else:
+                            quality_label = f"{piped_quality} quality"
+                    
+                    size_mb = file_size / (1024 * 1024)
+                    size_str = f"{size_mb:.1f}MB"
+                    
+                    increment_usage(user_id, "youtube_summaries")
+                    try: track_event("media_downloads")
+                    except: pass
+                    
+                    await status_msg.delete()
+                    
+                    if quality == "audio":
+                        try:
+                            with open(file_path, 'rb') as f:
+                                caption = f"📥 {'تم تحميل الصوت!' if lang == 'ar' else 'Audio downloaded!'}\n🎵 {real_title[:200]}\n📁 {size_str} | Piped"
+                                await message.reply_audio(
+                                    audio=f, filename=f"{real_title[:50]}.mp3",
+                                    caption=caption,
+                                    duration=int(real_duration) if real_duration else None,
+                                )
+                        except Exception as send_err:
+                            if "too large" in str(send_err).lower() or "file is too big" in str(send_err).lower():
+                                await message.reply_text(
+                                    f"❌ الملف كبير على التليجرام ({size_str})" if lang == "ar"
+                                    else f"❌ File too large for Telegram ({size_str})"
+                                )
+                            else:
+                                await message.reply_text(
+                                    f"❌ فشل إرسال الصوت ({size_str}). جرب تاني!" if lang == "ar"
+                                    else f"❌ Failed to send audio ({size_str}). Try again!"
+                                )
+                    else:
+                        try:
+                            with open(file_path, 'rb') as f:
+                                caption = f"📥 {'تم تحميل الفيديو!' if lang == 'ar' else 'Video downloaded!'}\n🎬 {real_title[:200]}\n📁 {size_str} | {quality_label} | Piped"
+                                await message.reply_video(
+                                    video=f,
+                                    caption=caption,
+                                    duration=int(real_duration) if real_duration else None,
+                                    supports_streaming=True,
+                                )
+                        except Exception as send_err:
+                            if "too large" in str(send_err).lower() or "file is too big" in str(send_err).lower():
+                                await message.reply_text(
+                                    f"❌ الملف كبير على التليجرام ({size_str})" if lang == "ar"
+                                    else f"❌ File too large for Telegram ({size_str})"
+                                )
+                            else:
+                                await message.reply_text(
+                                    f"❌ فشل إرسال الفيديو ({size_str}). جرب تالي!" if lang == "ar"
+                                    else f"❌ Failed to send video ({size_str}). Try again!"
+                                )
+                    
+                    try: os.remove(file_path)
+                    except: pass
+                    return  # ✅ Piped نجح!
+                
+                error_code = piped_result.get("error", "unknown") if piped_result else "unknown"
+                logger.warning(f"⚠️ Piped failed ({error_code}), trying Cobalt Self-Hosted...")
+                    
+            except ImportError:
+                logger.warning("⚠️ piped_api module not available, skipping Piped")
+            except Exception as piped_err:
+                logger.warning(f"⚠️ Piped error: {piped_err}, trying Cobalt Self-Hosted...")
+        
+        # ═══ المحاولة 7: Cobalt Self-Hosted (fallback) ═══
         cobalt_result = None
         if info is None:
             cobalt_result = await _try_cobalt_download(url, quality, tmpdir)
@@ -1576,7 +1683,7 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                 "requested_downloads": [{"height": video_height, "vcodec": "h264", "acodec": "aac"}],
             }
         
-        # ═══ المحاولة 7: Cloudflare Worker (آخر محاولة) ═══
+        # ═══ المحاولة 8: Cloudflare Worker (آخر محاولة) ═══
         if info is None and is_youtube:
             from config import CLOUDFLARE_WORKER_URL
             if CLOUDFLARE_WORKER_URL:
