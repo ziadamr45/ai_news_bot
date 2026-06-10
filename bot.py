@@ -328,6 +328,16 @@ def main():
         except Exception as e:
             logger.warning(f"⚠️ WhatsApp webhook server failed to start: {e}")
 
+        # ═══ تشغيل Cookie Auto-Rotation ═══
+        # 🍪 تدوير كوكيز YouTube تلقائياً كل 1-2 دقيقة
+        try:
+            from cookie_rotator import start_cookie_rotation, get_cookie_rotation_status
+            start_cookie_rotation()
+            status = get_cookie_rotation_status()
+            logger.info(f"✅ Cookie auto-rotation started — {status['total_cookies']} cookies loaded")
+        except Exception as e:
+            logger.warning(f"⚠️ Cookie auto-rotation failed to start: {e}")
+
         try:
             from telegram import BotCommand
             await application.bot.set_my_commands([

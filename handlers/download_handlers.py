@@ -1792,6 +1792,24 @@ async def cookies_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # عرض الحالة الحالية
     status = _cookies_status()
     
+    # 🔴 حالة نظام تدوير الكوكيز التلقائي
+    auto_rotation_status = ""
+    try:
+        from cookie_rotator import is_rotation_running, get_cookie_rotation_status
+        rot_status = get_cookie_rotation_status()
+        if is_rotation_running():
+            auto_rotation_status = (
+                f"\n\n🔄 <b>Auto-Rotation:</b> ✅ شغال (كل {rot_status.get('rotation_interval', '?')})"
+                f"\n🤖 كوكيز تلقائية: {rot_status.get('auto_cookies', 0)}"
+                f"\n⏰ آخر تحديث: {rot_status.get('last_modified', 'غير معروف')}"
+            )
+        else:
+            auto_rotation_status = "\n\n🔄 <b>Auto-Rotation:</b> ❌ مش شغال"
+    except ImportError:
+        auto_rotation_status = "\n\n🔄 <b>Auto-Rotation:</b> ❌ مش متاح"
+    except Exception:
+        auto_rotation_status = ""
+    
     if status.get("exists"):
         msg = f"""🍪 <b>حالة ملف الكوكيز</b>
 
@@ -1800,7 +1818,7 @@ async def cookies_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 🔢 عدد الكوكيز: {status.get('total_cookies', 0)}
 ▶️ كوكيز YouTube: {status.get('youtube_cookies', 0)}
 
-✅ الملف موجود وشغال!
+✅ الملف موجود وشغال!{auto_rotation_status}
 
 💡 <b>لتجديد الملف:</b>
 1️⃣ افتح Chrome على الكمبيوتر
@@ -1813,7 +1831,7 @@ async def cookies_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         msg = f"""🍪 <b>ملف الكوكيز مش موجود</b>
 
-⚠️ بدون ملف كوكيز، YouTube ممكن يطلب sign in ويمنع التحميل.
+⚠️ بدون ملف كوكيز، YouTube ممكن يطلب sign in ويمنع التحميل.{auto_rotation_status}
 
 💡 <b>إزاي ترفع ملف cookies.txt:</b>
 1️⃣ افتح Chrome على الكمبيوتر
@@ -1823,6 +1841,7 @@ async def cookies_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 5️⃣ ابعت الملف هنا كـ document (ملف)
 
 ⚡ بعد رفع الملف، التحميل من YouTube هيشتغل بشكل أفضل بكثير!
+🔄 الكوكيز التلقائية بتتولد كل 1-2 دقيقة كمان!
 
 📁 أو ارفع الملف يدوياً: <code>{_COOKIES_FILE}</code>"""
     
