@@ -40,6 +40,10 @@ from handlers.download_handlers import (
     download_command, handle_download_callback,
     cookies_command, handle_cookies_file,
 )
+from handlers.search_download_handlers import (
+    video_search_command, audio_search_command,
+    photo_search_command, handle_search_callback,
+)
 from handlers.callbacks import button_callback
 from handlers.message_handler import handle_message
 
@@ -152,6 +156,12 @@ def register_handlers(app):
     # 📥 تحميل الوسائط (فيديو/صور/صوت)
     app.add_handler(CommandHandler("download", download_command))
     app.add_handler(CallbackQueryHandler(handle_download_callback, pattern="^dl_"))
+    
+    # 🔍 تحميل بالبحث (فيديو/صوت/صور)
+    app.add_handler(CommandHandler("video", video_search_command))
+    app.add_handler(CommandHandler("audio", audio_search_command))
+    app.add_handler(CommandHandler("photo", photo_search_command))
+    app.add_handler(CallbackQueryHandler(handle_search_callback, pattern="^(sv|sa)_"))
 
     # 🍪 أمر الكوكيز (أدمن بس) — عشان يرفع ملف cookies.txt لـ YouTube
     app.add_handler(CommandHandler("cookies", cookies_command))

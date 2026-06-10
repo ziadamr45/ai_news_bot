@@ -725,6 +725,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🖌️ تعديل": "edit_prompt", "🖌️ Edit": "edit_prompt",
         "📥 تحميل فيديو": "download_prompt", "📥 Download Video": "download_prompt",
         "📥 تحميل": "download_prompt", "📥 Download": "download_prompt",
+        "🎬 فيديو بالبحث": "video_search_prompt", "🎬 Video Search": "video_search_prompt",
+        "🎵 صوت بالبحث": "audio_search_prompt", "🎵 Audio Search": "audio_search_prompt",
+        "🖼️ بحث صور": "photo_search_prompt", "🖼️ Image Search": "photo_search_prompt",
     }
 
     quota_free_commands = {"settings", "/premium", "/help", "/memory"}
@@ -846,6 +849,27 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 msg = "📥 <b>تحميل وسائط من أي منصة</b>\n\n💡 <b>طريقتين:</b>\n1️⃣ ابعت الرابط لوحده وهيحملهولك تلقائي!\n2️⃣ أو استخدم: <code>/download الرابط</code>\n\n<b>المنصات المدعومة:</b>\n→ YouTube, Facebook, Instagram\n→ TikTok, Twitter/X, Telegram\n→ Threads, Reddit, Vimeo\n\n⭐ الميزة دي Premium بس"
             else:
                 msg = "📥 <b>Download Media from Any Platform</b>\n\n💡 <b>Two ways:</b>\n1️⃣ Just paste the URL and it will auto-download!\n2️⃣ Or use: <code>/download URL</code>\n\n<b>Supported Platforms:</b>\n→ YouTube, Facebook, Instagram\n→ TikTok, Twitter/X, Telegram\n→ Threads, Reddit, Vimeo\n\n⭐ Premium only feature"
+            await update.message.reply_text(msg, parse_mode="HTML")
+            return
+        elif cmd == "video_search_prompt":
+            if lang == "ar":
+                msg = "🎬 <b>بحث فيديو YouTube</b>\n\nاكتب كلمة البحث بعد الأمر\nمثال: <code>/video اغنية سعاد ماسي</code>\n\n💡 هندور في YouTube ونعرضلك نتائج تختار منها!"
+            else:
+                msg = "🎬 <b>YouTube Video Search</b>\n\nType your search query after the command\nExample: <code>/video music video</code>\n\n💡 We'll search YouTube and show results to choose from!"
+            await update.message.reply_text(msg, parse_mode="HTML")
+            return
+        elif cmd == "audio_search_prompt":
+            if lang == "ar":
+                msg = "🎵 <b>بحث صوت YouTube</b>\n\nاكتب كلمة البحث بعد الأمر\nمثال: <code>/audio اغنية سعاد ماسي</code>\n\n💡 هندور في YouTube ونعرضلك نتائج تختار منها ونحمّلها صوت MP3!"
+            else:
+                msg = "🎵 <b>YouTube Audio Search</b>\n\nType your search query after the command\nExample: <code>/audio song name</code>\n\n💡 We'll search YouTube and download as MP3 audio!"
+            await update.message.reply_text(msg, parse_mode="HTML")
+            return
+        elif cmd == "photo_search_prompt":
+            if lang == "ar":
+                msg = "🖼️ <b>بحث صور</b>\n\nاكتب كلمة البحث بعد الأمر\nمثال: <code>/photo قطط لطيفة</code>\n\n💡 هنرسللك 3 صور تلقائياً!"
+            else:
+                msg = "🖼️ <b>Image Search</b>\n\nType your search query after the command\nExample: <code>/photo cute cats</code>\n\n💡 We'll send you 3 images automatically!"
             await update.message.reply_text(msg, parse_mode="HTML")
             return
         else:

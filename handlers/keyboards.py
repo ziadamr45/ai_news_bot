@@ -14,8 +14,9 @@ def get_main_keyboard(language: str = "ar") -> ReplyKeyboardMarkup:
             ["📄 تحليل ملف", "🎬 ملخص يوتيوب"],
             ["🎨 إنشاء صورة", "🖌️ عدّل صورة"],
             ["📥 تحميل فيديو", "🔍 بحث الويب"],
-            ["📚 وضع الدراسة", "🧠 ذاكرتي"],
-            ["⚙️ الإعدادات", "📋 الخطة و حدود الإستخدام"],
+            ["🎬 فيديو بالبحث", "🎵 صوت بالبحث"],
+            ["🖼️ بحث صور", "📚 وضع الدراسة"],
+            ["🧠 ذاكرتي", "⚙️ الإعدادات"],
         ]
     else:
         keyboard = [
@@ -23,8 +24,9 @@ def get_main_keyboard(language: str = "ar") -> ReplyKeyboardMarkup:
             ["📄 Analyze File", "🎬 YouTube Summary"],
             ["🎨 Create Image", "🖌️ Edit Image"],
             ["📥 Download Video", "🔍 Web Search"],
-            ["📚 Study Mode", "🧠 My Memory"],
-            ["⚙️ Settings", "📋 Plan & Usage"],
+            ["🎬 Video Search", "🎵 Audio Search"],
+            ["🖼️ Image Search", "📚 Study Mode"],
+            ["🧠 My Memory", "⚙️ Settings"],
         ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
 
