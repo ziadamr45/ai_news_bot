@@ -1067,6 +1067,11 @@ def _detect_platform(url: str) -> str:
     return "unknown"
 
 
+def _is_youtube_url(url: str) -> bool:
+    """فحص هل الرابط يوتيوب — يشمل youtube.com, youtu.be, youtube.com/shorts"""
+    return bool(_URL_PATTERNS.get("youtube") and _URL_PATTERNS["youtube"].search(url))
+
+
 def _extract_url(text: str) -> str:
     """Extract first URL from text"""
     match = _GENERAL_URL_PATTERN.search(text)
@@ -1153,6 +1158,7 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
         import yt_dlp
         
         platform = _detect_platform(url)
+        is_youtube = _is_youtube_url(url)  # 🔴 FIX: لازم نعرّف is_youtube هنا عشان الكود اللي بعد كده يستخدمه
         platform_names = {
             "youtube": "YouTube", "facebook": "Facebook", "instagram": "Instagram",
             "tiktok": "TikTok", "twitter": "Twitter/X", "telegram": "Telegram",
@@ -4877,46 +4883,76 @@ async def _execute_photo_search(wa_id: str, query: str, count: int, wa_user_id: 
                                  cache_key: str = ""):
     """تنفيذ بحث الصور بعد ما المستخدم حدد العدد
     
-    🔴 FIX: بنستخدم download_images_bytes() اللي بترجع bytes مباشرة
-    بدل download_images() اللي بترجع file paths — لأن واتساب محتاج base64
+    🔴 FIX v2:
+    - بنبحث عن count * 3 نتائج عشان نعوض عن فشل تحميل بعض الصور
+    - بنكمل نحمل لحد ما نوصل للعدد المطلوب بالظبط
+    - بنستخدم safesearch=on عشان نمنع الصور غير المناسبة
+    - بنستخدم download_image_bytes() لكل صورة لوحدها عشان نوقف عند العدد المطلوب
     """
     await _send_whatsapp_message(wa_id, f"🖼️ جاري البحث عن {count} صور لـ: {query}...")
     
     try:
-        from image_search import search_images, download_images_bytes
+        from image_search import search_images, download_image_bytes
         
+        # 🔴 FIX: بنبحث عن عدد أكبر عشان نوفر بدائل لو فشل تحميل بعض الصور
+        # search_images داخلياً بيزود count * 3 في DuckDuckGo
         results = await search_images(query, count=count)
         
         if not results:
             await _send_whatsapp_message(wa_id, "❌ مفيش صور! جرب كلمات بحث تانية.")
             return
         
-        actual_count = min(count, len(results))
+        await _send_whatsapp_message(wa_id, f"📥 جاري تحميل {count} صور (وصلت {len(results)} نتيجة بحث)...")
         
-        # 🔴 FIX: بنمرر results (list of dicts) مش URLs — عشان download_images_bytes يعرف يختار أفضل URL
-        images = await download_images_bytes(results[:actual_count])
-        
-        if not images:
-            await _send_whatsapp_message(wa_id, "❌ فشل تحميل الصور. جرب تاني!")
-            return
-        
-        # إرسال الصور واحدة واحدة
+        # 🔴 FIX: بنحمل من كل النتائج لحد ما نوصل للعدد المطلوب
+        # مش بس أول count نتائج — لأن ممكن فشل تحميل بعض الصور
         sent = 0
-        for i, img_bytes in enumerate(images):
+        for i, r in enumerate(results):
+            # 🔴 وقفنا لما وصلنا للعدد المطلوب
+            if sent >= count:
+                break
+            
+            url = r.get("full_url") or r.get("url") or r.get("thumbnail", "")
+            if not url:
+                continue
+            
+            # 🔴 محاولة تحميل الصورة الكاملة أولاً
+            img_bytes = await download_image_bytes(url)
+            
+            # 🔴 FIX: لو الصورة الكاملة فشلت، جرب الـ thumbnail كبديل
+            if not img_bytes:
+                thumb_url = r.get("thumbnail", "")
+                if thumb_url and thumb_url != url:
+                    logger.info(f"🖼️ Full image failed, trying thumbnail for result {i+1}")
+                    img_bytes = await download_image_bytes(thumb_url)
+            
+            if not img_bytes:
+                continue
+            
             try:
                 img_b64 = base64.b64encode(img_bytes).decode('utf-8')
-                caption = f"🖼️ صورة {i+1}/{len(images)}"
-                if i == 0:
-                    caption = f"🖼️ صور لـ: {query}\n📸 {i+1}/{len(images)}"
+                desc = r.get('description', '')[:80]
+                source = r.get('source', '')
+                
+                caption = f"🖼️ صورة {sent + 1}/{count}"
+                if desc:
+                    caption += f"\n📝 {desc}"
+                if source:
+                    caption += f"\n📁 {source}"
                 
                 await _send_whatsapp_image(wa_id, img_b64, caption)
                 sent += 1
-                if i < len(images) - 1:
+                
+                # تأخير بسيط بين الصور عشان واتساب متبلوكناش
+                if sent < count:
                     await asyncio.sleep(0.5)
             except Exception as e:
                 logger.warning(f"Failed to send image {i}: {e}")
         
-        await _send_whatsapp_message(wa_id, f"✅ تم إرسال {sent}/{len(images)} صورة!")
+        if sent > 0:
+            await _send_whatsapp_message(wa_id, f"✅ تم إرسال {sent}/{count} صورة!")
+        else:
+            await _send_whatsapp_message(wa_id, "❌ فشل تحميل الصور. جرب تاني!")
         
     except Exception as e:
         logger.error(f"WA photo search error: {e}", exc_info=True)

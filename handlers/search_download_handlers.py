@@ -320,7 +320,10 @@ async def photo_search_command(update: Update, context: ContextTypes.DEFAULT_TYP
 async def _execute_photo_search(query_obj, query_text: str, count: int, lang: str, user_id: int):
     """تنفيذ بحث الصور بعد ما المستخدم حدد العدد
     
-    🔴 تم فصلها في دالة مستقلة عشان تتنفذ لما المستخدم يدوس على زرار العدد
+    🔴 FIX v2:
+    - بنبحث عن count * 3 نتائج عشان نعوض عن فشل تحميل بعض الصور
+    - بنكمل نحمل لحد ما نوصل للعدد المطلوب بالظبط
+    - بنستخدم safesearch=on عشان نمنع الصور غير المناسبة
     """
     message = query_obj.message
     
@@ -332,6 +335,8 @@ async def _execute_photo_search(query_obj, query_text: str, count: int, lang: st
         else:
             await query_obj.edit_message_text(f"🖼️ Searching for {count} images: {query_text}...")
         
+        # 🔴 FIX: بنبحث عن عدد أكبر عشان نوفر بدائل لو فشل تحميل بعض الصور
+        # search_images داخلياً بيزود count * 3 في DuckDuckGo
         results = await search_images(query_text, count=count)
         
         if not results:
@@ -341,24 +346,35 @@ async def _execute_photo_search(query_obj, query_text: str, count: int, lang: st
                 await query_obj.edit_message_text("❌ No images found. Try different keywords!")
             return
         
-        actual_count = min(count, len(results))
-        
         if lang == "ar":
-            await query_obj.edit_message_text(f"📥 جاري تحميل {actual_count} صور...")
+            await query_obj.edit_message_text(f"📥 جاري تحميل {count} صور (وصلت {len(results)} نتيجة بحث)...")
         else:
-            await query_obj.edit_message_text(f"📥 Downloading {actual_count} images...")
+            await query_obj.edit_message_text(f"📥 Downloading {count} images ({len(results)} results found)...")
         
-        # تحميل وإرسال كل صورة
+        # 🔴 FIX: بنحمل من كل النتائج لحد ما نوصل للعدد المطلوب
+        # مش بس أول count نتائج — لأن ممكن فشل تحميل بعض الصور
         sent_count = 0
         tmpdir = tempfile.mkdtemp(prefix="mybro_photo_")
         
         try:
-            for i, r in enumerate(results[:count]):
+            for i, r in enumerate(results):
+                # 🔴 وقفنا لما وصلنا للعدد المطلوب
+                if sent_count >= count:
+                    break
+                
                 url = r.get("full_url") or r.get("url") or r.get("thumbnail", "")
                 if not url:
                     continue
                 
+                # 🔴 محاولة تحميل الصورة الكاملة أولاً
                 file_path = await download_image(url, output_dir=tmpdir)
+                
+                # 🔴 FIX: لو الصورة الكاملة فشلت، جرب الـ thumbnail كبديل
+                if not file_path:
+                    thumb_url = r.get("thumbnail", "")
+                    if thumb_url and thumb_url != url:
+                        logger.info(f"🖼️ Full image failed, trying thumbnail for result {i+1}")
+                        file_path = await download_image(thumb_url, output_dir=tmpdir)
                 
                 if file_path and os.path.exists(file_path) and os.path.getsize(file_path) > 100:
                     desc = r.get('description', '')[:80]
@@ -366,7 +382,7 @@ async def _execute_photo_search(query_obj, query_text: str, count: int, lang: st
                     source = r.get('source', '')
                     
                     if lang == "ar":
-                        caption = f"🖼️ صورة {i+1}/{actual_count}"
+                        caption = f"🖼️ صورة {sent_count + 1}/{count}"
                         if desc:
                             caption += f"\n📝 {desc}"
                         if author:
@@ -374,7 +390,7 @@ async def _execute_photo_search(query_obj, query_text: str, count: int, lang: st
                         if source:
                             caption += f"\n📁 {source}"
                     else:
-                        caption = f"🖼️ Image {i+1}/{actual_count}"
+                        caption = f"🖼️ Image {sent_count + 1}/{count}"
                         if desc:
                             caption += f"\n📝 {desc}"
                         if author:
@@ -414,9 +430,9 @@ async def _execute_photo_search(query_obj, query_text: str, count: int, lang: st
             except:
                 try:
                     if lang == "ar":
-                        await query_obj.edit_message_text(f"✅ تم إرسال {sent_count}/{actual_count} صورة!")
+                        await query_obj.edit_message_text(f"✅ تم إرسال {sent_count}/{count} صورة!")
                     else:
-                        await query_obj.edit_message_text(f"✅ Sent {sent_count}/{actual_count} images!")
+                        await query_obj.edit_message_text(f"✅ Sent {sent_count}/{count} images!")
                 except:
                     pass
         else:

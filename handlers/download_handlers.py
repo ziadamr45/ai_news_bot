@@ -1230,6 +1230,7 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
     
     # كشف المنصة عشان نستخدم إعداداتها
     platform = _detect_platform(url)
+    is_youtube = _is_youtube_url(url)  # 🔴 FIX: لازم نعرّف is_youtube هنا عشان الكود اللي بعد كده يستخدمه
     ffmpeg_ok = _is_ffmpeg_available()
     cookies_available = bool(_get_cookies_file())
     

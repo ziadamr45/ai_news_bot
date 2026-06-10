@@ -50,15 +50,27 @@ async def search_images_duckduckgo(query: str, count: int = 3) -> Optional[List[
     1. مجاني ومش محتاج API key
     2. ddgs موجود في requirements.txt
     3. بيرجع روابط صور مباشرة (مش صفحات ويب)
+    
+    🔴 FIX v2:
+    - بنطلب count * 3 نتائج عشان لو فشل تحميل بعض الصور يفضل فيه بدائل
+    - بنفعل safesearch=on عشان نمنع الصور غير المناسبة
+    - بنرجع كل النتائج مش بس count عشان الهاندلر يكمل يحمل لحد ما يوصل للعدد المطلوب
     """
     try:
         from ddgs import DDGS
         
+        # 🔴 بنطلب عدد أكبر من النتائج عشان نوفر بدائل لو فشل التحميل
+        search_count = min(count * 3, 30)
+        
         def _sync_search():
             results = []
             with DDGS() as ddgs:
-                search_results = list(ddgs.images(query, max_results=min(count, 30)))
-                for item in search_results[:count]:
+                search_results = list(ddgs.images(
+                    query, 
+                    max_results=search_count,
+                    safesearch="on",  # 🔴 فلترة المحتوى غير المناسب
+                ))
+                for item in search_results:
                     results.append({
                         "url": item.get("image", ""),
                         "thumbnail": item.get("thumbnail", ""),
@@ -76,7 +88,7 @@ async def search_images_duckduckgo(query: str, count: int = 3) -> Optional[List[
         results = await loop.run_in_executor(None, _sync_search)
         
         if results:
-            logger.info(f"🖼️ DuckDuckGo image search: {len(results)} results for '{query}'")
+            logger.info(f"🖼️ DuckDuckGo image search: {len(results)} results for '{query}' (requested {search_count})")
             return results
         return None
         
