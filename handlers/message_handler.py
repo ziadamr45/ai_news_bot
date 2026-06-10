@@ -32,17 +32,37 @@ logger = logging.getLogger(__name__)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """معالجة الرسائل العادية - محادثة حرة مع AI + كشف ذكي"""
+    # 🔴 FIX: استيراد أساسي — لو فشل أي موديول من دول البوت مش هيشتغل خالص
     try:
         from handlers.memory_handlers import memory_command
         from handlers.news_handlers import news_command, trending_command
         from handlers.basic_handlers import help_command, premium_command
-        from handlers.media_handlers import _process_youtube_url
-        from agents.youtube_agent import YouTubeAgent
-        from agents.pdf_agent import PDFAgent
     except ImportError as ie:
-        logger.error(f"❌ Import error in handle_message: {ie}")
+        logger.error(f"❌ Critical import error in handle_message: {ie}")
         await update.message.reply_text("❌ حصل خطأ في تحميل المكونات. جرب تاني!")
         return
+
+    # 🔴 FIX: استيراد اختياري — الوكلاء (agents) مش لازم للمحادثة العادية
+    # بنستورهم لوحدهم عشان لو فشل الاستيراد البوت يفضل يشتغل
+    _YouTubeAgent = None
+    _PDFAgent = None
+    try:
+        from agents.youtube_agent import YouTubeAgent as _YT
+        _YouTubeAgent = _YT
+    except ImportError as ie:
+        logger.warning(f"⚠️ YouTubeAgent import failed (non-critical): {ie}")
+
+    try:
+        from agents.pdf_agent import PDFAgent as _PDF
+        _PDFAgent = _PDF
+    except ImportError as ie:
+        logger.warning(f"⚠️ PDFAgent import failed (non-critical): {ie}")
+
+    # استيراد اختياري — مش لازم يشتغل عشان المحادثة تفضل شغالة
+    try:
+        from handlers.media_handlers import _process_youtube_url
+    except ImportError:
+        _process_youtube_url = None
 
     if await _is_duplicate_update(update.update_id):
         return
@@ -80,8 +100,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_state.get("waiting_for") == "pdf_question":
         from handlers.callbacks import _get_pdf_context
         ctx = _get_pdf_context(user_id)
-        if ctx:
-            pdf_agent = PDFAgent()
+        if ctx and _PDFAgent:
+            pdf_agent = _PDFAgent()
             await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
             try:
                 result = await pdf_agent.answer_question(ctx["text"], user_text, lang, user_id=user_id)
