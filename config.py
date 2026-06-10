@@ -521,6 +521,11 @@ PDF_SUMMARY_TIMEOUT = 180  # 3 minutes for PDF summarization (increased from def
 YOUTUBE_MAX_TRANSCRIPT_CHARS = 12000
 CLOUDFLARE_WORKER_URL = os.environ.get("CLOUDFLARE_WORKER_URL", "https://holy-forest-335e.ziadamreltourcke7.workers.dev")
 
+# Cobalt Self-Hosted — أقوى بديل لتحميل الفيديوهات (أول طبقة في fallback chain)
+# بنشغله على Railway سيرفر منفصل ونربطه بالبوت
+COBALT_API_URL = os.environ.get("COBALT_API_URL", "")  # مثال: https://cobalt.up.railway.app
+COBALT_API_KEY = os.environ.get("COBALT_API_KEY", "")   # API Key من keys.json
+
 # ═══════════════════════════════════════
 # معلومات المؤسس - Creator Info
 # ═══════════════════════════════════════

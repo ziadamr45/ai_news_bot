@@ -1098,6 +1098,59 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
         tmpdir = tempfile.mkdtemp(prefix="mybro_wa_dl_")
         output_template = os.path.join(tmpdir, "%(title).80s.%(ext)s")
         
+        # ═══ المرحلة 0: Cobalt Self-Hosted (أول طبقة!) ═══
+        # 🔵 أقوى وأسرع طريقة — بيشتغل على سيرفر منفصل ومش بيتأثر بـ bot detection
+        cobalt_filepath = None
+        cobalt_filename = None
+        cobalt_filesize = 0
+        
+        try:
+            from handlers.download_handlers import _try_cobalt_download
+            cobalt_result = await _try_cobalt_download(url, quality, tmpdir)
+            if cobalt_result:
+                cobalt_filepath = cobalt_result["filepath"]
+                cobalt_filename = cobalt_result["filename"]
+                cobalt_filesize = cobalt_result["size"]
+                logger.info(f"🔵 Cobalt succeeded for WhatsApp! Size: {cobalt_filesize // (1024*1024)}MB")
+        except Exception as cobalt_err:
+            logger.warning(f"🔵 Cobalt failed for WhatsApp: {cobalt_err}")
+        
+        if cobalt_filepath and cobalt_filesize > 0:
+            # Cobalt نجح — نبعث الملف مباشرة بدون yt-dlp
+            try:
+                is_audio = (quality == "audio")
+                
+                # WhatsApp 100MB limit
+                if cobalt_filesize > 100 * 1024 * 1024:
+                    await _send_whatsapp_message(wa_id, f"⚠️ الملف كبير ({cobalt_filesize // (1024*1024)}MB) — أكبر من حد واتساب (100MB)")
+                else:
+                    # Send the media file via WhatsApp
+                    with open(cobalt_filepath, 'rb') as f:
+                        file_data = f.read()
+                    
+                    if is_audio:
+                        await _send_whatsapp_audio(wa_id, file_data, cobalt_filename)
+                    else:
+                        content_type = "video/mp4"
+                        await _send_whatsapp_document(wa_id, file_data, cobalt_filename, caption=f"📥 {cobalt_filename}", content_type=content_type)
+                
+                await feedback.complete()
+                try: track_event("whatsapp_media_downloads")
+                except: pass
+                return
+                
+            except Exception as send_err:
+                logger.warning(f"⚠️ Failed to send Cobalt file via WhatsApp: {send_err}")
+                # Fall through to yt-dlp
+            finally:
+                # Clean up
+                try:
+                    shutil.rmtree(tmpdir, ignore_errors=True)
+                except:
+                    pass
+        
+        # ═══ Cobalt فشل → نكمل بـ yt-dlp ═══
+        
         try:
             # yt-dlp options — with multi-quality support (like Telegram)
             # WhatsApp limit: ~100MB for media
