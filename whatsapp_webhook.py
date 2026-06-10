@@ -1078,6 +1078,135 @@ def _extract_url(text: str) -> str:
     return match.group(0) if match else ""
 
 
+# ═══════════════════════════════════════
+# تحميل Threads — طريقة مخصصة
+# ═══════════════════════════════════════
+
+_THREADS_URL_PATTERN = re.compile(r'(https?://)?(www\.)?threads\.(net|com)/', re.IGNORECASE)
+
+
+def _is_threads_url(url: str) -> bool:
+    """كشف هل الرابط من Threads"""
+    return bool(_THREADS_URL_PATTERN.search(url))
+
+
+async def _download_threads_media_wa(url: str, tmpdir: str) -> dict | None:
+    """تحميل فيديو/صورة من Threads عن طريق استخراج الـ media URL من الـ page source
+    
+    Returns: dict فيه {success, file_path, title, is_video} أو None
+    """
+    import aiohttp
+    
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-us,en;q=0.5',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+        }
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+                if resp.status != 200:
+                    logger.warning(f"🧵 Threads WA: Page returned status {resp.status}")
+                    return None
+                
+                html = await resp.text()
+        
+        if not html:
+            logger.warning("🧵 Threads WA: Empty page source")
+            return None
+        
+        video_url = None
+        image_url = None
+        title = "Threads Post"
+        
+        # Method 1: og:video meta tag
+        og_video = re.search(r'<meta\s+property="og:video(?:_url)?"\s+content="([^"]+)"', html, re.IGNORECASE)
+        if not og_video:
+            og_video = re.search(r'<meta\s+content="([^"]+)"\s+property="og:video(?:_url)?"', html, re.IGNORECASE)
+        if og_video:
+            video_url = og_video.group(1)
+            logger.info(f"🧵 Threads WA: Found og:video URL")
+        
+        # Method 2: Search for video URL in JSON data
+        if not video_url:
+            video_matches = re.findall(r'"(?:video_url|videoUrl|playable_url|playableUrl)"\s*:\s*"([^"]+\.(?:mp4|mov)[^"]*)"', html, re.IGNORECASE)
+            if video_matches:
+                video_url = video_matches[0].replace('\\u0026', '&')
+                logger.info(f"🧵 Threads WA: Found video URL in JSON data")
+        
+        # Method 3: Search for any .mp4 URL
+        if not video_url:
+            mp4_matches = re.findall(r'(https?://[^"\s<>]+\.(?:mp4|mov)[^"\s<>]*)', html, re.IGNORECASE)
+            for mp4 in mp4_matches:
+                if 'scontent' in mp4 or 'cdninstagram' in mp4 or 'fbcdn' in mp4:
+                    video_url = mp4.replace('\\u0026', '&')
+                    logger.info(f"🧵 Threads WA: Found .mp4 URL in page source")
+                    break
+        
+        # Image fallback
+        og_image = re.search(r'<meta\s+property="og:image(?:_url)?"\s+content="([^"]+)"', html, re.IGNORECASE)
+        if not og_image:
+            og_image = re.search(r'<meta\s+content="([^"]+)"\s+property="og:image(?:_url)?"', html, re.IGNORECASE)
+        if og_image:
+            image_url = og_image.group(1)
+        
+        # Title
+        og_title = re.search(r'<meta\s+property="og:title"\s+content="([^"]+)"', html, re.IGNORECASE)
+        if not og_title:
+            og_title = re.search(r'<meta\s+content="([^"]+)"\s+property="og:title"', html, re.IGNORECASE)
+        if og_title:
+            title = og_title.group(1)[:200]
+        
+        # Download
+        if video_url:
+            logger.info(f"🧵 Threads WA: Downloading video...")
+            file_path = os.path.join(tmpdir, "threads_video.mp4")
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(video_url, headers=headers, timeout=aiohttp.ClientTimeout(total=120)) as resp:
+                    if resp.status != 200:
+                        return None
+                    file_size = 0
+                    with open(file_path, 'wb') as f:
+                        async for chunk in resp.content.iter_chunked(8192):
+                            f.write(chunk)
+                            file_size += len(chunk)
+                    
+                    if file_size < 1000:
+                        try: os.remove(file_path)
+                        except: pass
+                        return None
+            
+            return {"success": True, "file_path": file_path, "file_size": file_size, "title": title, "is_video": True}
+        
+        elif image_url:
+            logger.info(f"🧵 Threads WA: Downloading image...")
+            file_path = os.path.join(tmpdir, "threads_image.jpg")
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(image_url, headers=headers, timeout=aiohttp.ClientTimeout(total=60)) as resp:
+                    if resp.status != 200:
+                        return None
+                    file_size = 0
+                    with open(file_path, 'wb') as f:
+                        async for chunk in resp.content.iter_chunked(8192):
+                            f.write(chunk)
+                            file_size += len(chunk)
+            
+            return {"success": True, "file_path": file_path, "file_size": file_size, "title": title, "is_video": False}
+        
+        else:
+            logger.warning("🧵 Threads WA: No media URL found in page source")
+            return None
+    
+    except Exception as e:
+        logger.warning(f"🧵 Threads WA: Error: {e}")
+        return None
+
+
 def _store_url(url: str) -> str:
     """Store URL in cache and return key (like Telegram's _store_url)"""
     key = _hashlib_mod.md5(url.encode()).hexdigest()[:10]
@@ -1159,6 +1288,7 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
         
         platform = _detect_platform(url)
         is_youtube = _is_youtube_url(url)  # 🔴 FIX: لازم نعرّف is_youtube هنا عشان الكود اللي بعد كده يستخدمه
+        is_threads = _is_threads_url(url)   # 🔴 FIX: Threads مش مدعوم من yt-dlp
         platform_names = {
             "youtube": "YouTube", "facebook": "Facebook", "instagram": "Instagram",
             "tiktok": "TikTok", "twitter": "Twitter/X", "telegram": "Telegram",
@@ -1171,6 +1301,71 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
         
         tmpdir = tempfile.mkdtemp(prefix="mybro_wa_dl_")
         output_template = os.path.join(tmpdir, "%(title).80s.%(ext)s")
+        
+        # 🔴 FIX: Threads — yt-dlp مش بيدعمه، نستخدم طريقة مخصصة
+        if is_threads:
+            logger.info(f"🧵 WhatsApp: Threads detected — using custom download method")
+            try:
+                await _send_whatsapp_message(wa_id, "🧵 جاري التحميل من Threads...")
+            except:
+                pass
+            
+            threads_result = await _download_threads_media_wa(url, tmpdir)
+            
+            if threads_result and threads_result.get("success"):
+                file_path = threads_result["file_path"]
+                file_size = threads_result.get("file_size", os.path.getsize(file_path))
+                real_title = threads_result.get("title", "Threads Post")
+                is_video = threads_result.get("is_video", True)
+                size_mb = file_size / (1024 * 1024)
+                
+                if is_video and size_mb <= 100:
+                    try:
+                        with open(file_path, 'rb') as vf:
+                            media_response = requests.post(
+                                f"{WHATSAPP_API_URL}/{WHATSAPP_PHONE_NUMBER_ID}/media",
+                                headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
+                                files={"file": (f"{real_title[:50]}.mp4", vf, "video/mp4")},
+                                data={"messaging_product": "whatsapp", "type": "video"},
+                                timeout=180
+                            )
+                            if media_response.status_code == 200:
+                                media_id = media_response.json().get("id")
+                                await _send_whatsapp_video(wa_id, media_id, caption=f"🧵 {real_title[:200]}\n📥 Threads")
+                                await feedback.success()
+                                try: os.remove(file_path)
+                                except: pass
+                                return
+                    except Exception as send_err:
+                        logger.warning(f"⚠️ Threads WA video send failed: {send_err}")
+                elif not is_video:
+                    try:
+                        with open(file_path, 'rb') as img_f:
+                            media_response = requests.post(
+                                f"{WHATSAPP_API_URL}/{WHATSAPP_PHONE_NUMBER_ID}/media",
+                                headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
+                                files={"file": (f"{real_title[:50]}.jpg", img_f, "image/jpeg")},
+                                data={"messaging_product": "whatsapp", "type": "image"},
+                                timeout=60
+                            )
+                            if media_response.status_code == 200:
+                                media_id = media_response.json().get("id")
+                                await _send_whatsapp_image(wa_id, media_id, caption=f"🧵 {real_title[:200]}\n📥 Threads")
+                                await feedback.success()
+                                try: os.remove(file_path)
+                                except: pass
+                                return
+                    except Exception as send_err:
+                        logger.warning(f"⚠️ Threads WA image send failed: {send_err}")
+                
+                # File too large or send failed
+                await _send_whatsapp_message(wa_id, f"❌ فشل إرسال الملف من Threads. جرب تاني!")
+                await feedback.error()
+                try: os.remove(file_path)
+                except: pass
+                return
+            else:
+                logger.warning("🧵 Threads WA custom method failed, trying yt-dlp...")
         
         # ═══════════════════════════════════════════════════════════════
         # 🔴 FIX v8: yt-dlp هو الأولوية الأولى!

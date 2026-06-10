@@ -141,6 +141,168 @@ def _extract_url(text: str) -> str:
 
 
 # ═══════════════════════════════════════
+# تحميل Threads — طريقة مخصصة
+# ═══════════════════════════════════════
+
+# 🔴 yt-dlp مش بيدعم threads.com/threads.net — مفيش extractor
+# الحل: نجيب الـ media URL من الـ page source أو نستخدم Instagram API
+# Threads بيخزن الفيديو/الصورة في meta tags أو JSON في الـ page source
+
+_THREADS_URL_PATTERN = re.compile(r'(https?://)?(www\.)?threads\.(net|com)/', re.IGNORECASE)
+
+
+def _is_threads_url(url: str) -> bool:
+    """كشف هل الرابط من Threads"""
+    return bool(_THREADS_URL_PATTERN.search(url))
+
+
+async def _download_threads_media(url: str, tmpdir: str) -> dict | None:
+    """تحميل فيديو/صورة من Threads عن طريق استخراج الـ media URL من الـ page source
+    
+    🔴 الطريقة:
+    1. نعمل GET request للصفحة
+    2. نبحث عن video URL أو image URL في الـ meta tags أو JSON
+    3. نحمّل الملف مباشرة
+    
+    Returns: dict فيه {success, file_path, title, is_video} أو None
+    """
+    import aiohttp
+    
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-us,en;q=0.5',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+        }
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+                if resp.status != 200:
+                    logger.warning(f"🧵 Threads: Page returned status {resp.status}")
+                    return None
+                
+                html = await resp.text()
+        
+        if not html:
+            logger.warning("🧵 Threads: Empty page source")
+            return None
+        
+        # 🔴 البحث عن video URL
+        # Threads بيحط الفيديو في og:video أو في JSON data
+        video_url = None
+        image_url = None
+        title = "Threads Post"
+        
+        # Method 1: og:video meta tag
+        og_video = re.search(r'<meta\s+property="og:video(?:_url)?"\s+content="([^"]+)"', html, re.IGNORECASE)
+        if not og_video:
+            og_video = re.search(r'<meta\s+content="([^"]+)"\s+property="og:video(?:_url)?"', html, re.IGNORECASE)
+        if og_video:
+            video_url = og_video.group(1)
+            logger.info(f"🧵 Threads: Found og:video URL")
+        
+        # Method 2: Search for video URL in JSON data
+        if not video_url:
+            # Threads stores media URLs in script tags or JSON
+            video_matches = re.findall(r'"(?:video_url|videoUrl|playable_url|playableUrl)"\s*:\s*"([^"]+\.(?:mp4|mov)[^"]*)"', html, re.IGNORECASE)
+            if video_matches:
+                video_url = video_matches[0].replace('\\u0026', '&')
+                logger.info(f"🧵 Threads: Found video URL in JSON data")
+        
+        # Method 3: Search for any .mp4 URL
+        if not video_url:
+            mp4_matches = re.findall(r'(https?://[^"\s<>]+\.(?:mp4|mov)[^"\s<>]*)', html, re.IGNORECASE)
+            # Filter out small/tracking videos
+            for mp4 in mp4_matches:
+                if 'scontent' in mp4 or 'cdninstagram' in mp4 or 'fbcdn' in mp4:
+                    video_url = mp4.replace('\\u0026', '&')
+                    logger.info(f"🧵 Threads: Found .mp4 URL in page source")
+                    break
+        
+        # 🔴 البحث عن image URL (fallback لو مفيش فيديو)
+        og_image = re.search(r'<meta\s+property="og:image(?:_url)?"\s+content="([^"]+)"', html, re.IGNORECASE)
+        if not og_image:
+            og_image = re.search(r'<meta\s+content="([^"]+)"\s+property="og:image(?:_url)?"', html, re.IGNORECASE)
+        if og_image:
+            image_url = og_image.group(1)
+        
+        # Extract title
+        og_title = re.search(r'<meta\s+property="og:title"\s+content="([^"]+)"', html, re.IGNORECASE)
+        if not og_title:
+            og_title = re.search(r'<meta\s+content="([^"]+)"\s+property="og:title"', html, re.IGNORECASE)
+        if og_title:
+            title = og_title.group(1)[:200]
+        
+        # 🔴 تحميل الملف
+        if video_url:
+            logger.info(f"🧵 Threads: Downloading video from {video_url[:80]}...")
+            ext = "mp4"
+            file_path = os.path.join(tmpdir, f"threads_video.{ext}")
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(video_url, headers=headers, timeout=aiohttp.ClientTimeout(total=120)) as resp:
+                    if resp.status != 200:
+                        logger.warning(f"🧵 Threads: Video download failed with status {resp.status}")
+                        return None
+                    file_size = 0
+                    with open(file_path, 'wb') as f:
+                        async for chunk in resp.content.iter_chunked(8192):
+                            f.write(chunk)
+                            file_size += len(chunk)
+                    
+                    if file_size < 1000:
+                        logger.warning(f"🧵 Threads: Video file too small ({file_size} bytes)")
+                        try: os.remove(file_path)
+                        except: pass
+                        return None
+            
+            return {
+                "success": True,
+                "file_path": file_path,
+                "file_size": file_size,
+                "title": title,
+                "is_video": True,
+            }
+        
+        elif image_url:
+            logger.info(f"🧵 Threads: Downloading image from {image_url[:80]}...")
+            ext = "jpg"
+            file_path = os.path.join(tmpdir, f"threads_image.{ext}")
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(image_url, headers=headers, timeout=aiohttp.ClientTimeout(total=60)) as resp:
+                    if resp.status != 200:
+                        logger.warning(f"🧵 Threads: Image download failed with status {resp.status}")
+                        return None
+                    file_size = 0
+                    with open(file_path, 'wb') as f:
+                        async for chunk in resp.content.iter_chunked(8192):
+                            f.write(chunk)
+                            file_size += len(chunk)
+            
+            return {
+                "success": True,
+                "file_path": file_path,
+                "file_size": file_size,
+                "title": title,
+                "is_video": False,
+            }
+        
+        else:
+            logger.warning("🧵 Threads: No video or image URL found in page source")
+            return None
+    
+    except asyncio.TimeoutError:
+        logger.warning("🧵 Threads: Request timed out")
+        return None
+    except Exception as e:
+        logger.warning(f"🧵 Threads: Error: {e}")
+        return None
+
+
+# ═══════════════════════════════════════
 # كشف ffmpeg - FFmpeg Availability Check
 # ═══════════════════════════════════════
 
@@ -1209,6 +1371,7 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
     # كشف المنصة عشان نستخدم إعداداتها
     platform = _detect_platform(url)
     is_youtube = _is_youtube_url(url)  # 🔴 FIX: لازم نعرّف is_youtube هنا عشان الكود اللي بعد كده يستخدمه
+    is_threads = _is_threads_url(url)   # 🔴 FIX: Threads مش مدعوم من yt-dlp — لازم طريقة مخصصة
     ffmpeg_ok = _is_ffmpeg_available()
     cookies_available = bool(_get_cookies_file())
     
@@ -1222,6 +1385,74 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                 status_msg = await message.reply_text("⏳ جاري التحميل...")
             else:
                 status_msg = await message.reply_text("⏳ Downloading...")
+        
+        # 🔴 FIX: Threads — yt-dlp مش بيدعمه، نستخدم طريقة مخصصة
+        if is_threads:
+            logger.info(f"🧵 Threads detected — using custom download method (yt-dlp doesn't support threads.com)")
+            try:
+                await status_msg.edit_text(
+                    "🧵 جاري التحميل من Threads..." if lang == "ar"
+                    else "🧵 Downloading from Threads..."
+                )
+            except:
+                pass
+            
+            threads_result = await _download_threads_media(url, tmpdir)
+            
+            if threads_result and threads_result.get("success"):
+                file_path = threads_result["file_path"]
+                file_size = threads_result.get("file_size", os.path.getsize(file_path))
+                real_title = threads_result.get("title", "Threads Post")
+                is_video = threads_result.get("is_video", True)
+                size_mb = file_size / (1024 * 1024)
+                size_str = f"{size_mb:.1f}MB"
+                
+                increment_usage(user_id, "youtube_summaries")
+                try: track_event("media_downloads")
+                except: pass
+                
+                await status_msg.delete()
+                
+                if is_video:
+                    try:
+                        with open(file_path, 'rb') as f:
+                            caption = f"📥 {'تم تحميل الفيديو!' if lang == 'ar' else 'Video downloaded!'}\n🧵 {real_title[:200]}\n📁 {size_str} | Threads"
+                            await message.reply_video(
+                                video=f,
+                                caption=caption,
+                                supports_streaming=True,
+                            )
+                    except Exception as send_err:
+                        if "too large" in str(send_err).lower() or "file is too big" in str(send_err).lower():
+                            await message.reply_text(
+                                f"❌ الملف كبير على التليجرام ({size_str})" if lang == "ar"
+                                else f"❌ File too large for Telegram ({size_str})"
+                            )
+                        else:
+                            await message.reply_text(
+                                f"❌ فشل إرسال الفيديو ({size_str}). جرب تاني!" if lang == "ar"
+                                else f"❌ Failed to send video ({size_str}). Try again!"
+                            )
+                else:
+                    try:
+                        with open(file_path, 'rb') as f:
+                            caption = f"📥 {'تم تحميل الصورة!' if lang == 'ar' else 'Image downloaded!'}\n🧵 {real_title[:200]}\n📁 {size_str} | Threads"
+                            await message.reply_photo(
+                                photo=f,
+                                caption=caption,
+                            )
+                    except Exception as send_err:
+                        await message.reply_text(
+                            f"❌ فشل إرسال الصورة. جرب تاني!" if lang == "ar"
+                            else f"❌ Failed to send image. Try again!"
+                        )
+                
+                try: os.remove(file_path)
+                except: pass
+                return  # ✅ Threads نجح!
+            else:
+                # Threads method failed — try yt-dlp as fallback anyway
+                logger.warning("🧵 Threads custom method failed, trying yt-dlp as fallback...")
         
         output_template = os.path.join(tmpdir, "%(title).100s.%(ext)s")
         
@@ -1954,22 +2185,47 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                     )
             except Exception as send_err:
                 send_failed = True
-                logger.warning(f"⚠️ Video send failed (likely too large for free bot): {send_err}")
+                # 🔴 FIX: نفرق بين "ملف كبير" و "خطأ تاني"
+                err_str = str(send_err).lower()
+                is_too_large = any(kw in err_str for kw in ["too large", "file is too big", "file too large", "exceeds", "413"])
+                logger.warning(f"⚠️ Video send failed: {send_err} | is_too_large={is_too_large}")
         
-        # 🔴 FIX: لو الإرسال فشل (ملف كبير على بوت مجاني)، نجرب جودة أقل
+        # 🔴 FIX: لو الإرسال فشل — نفرق بين "ملف كبير" و "خطأ تاني"
         if send_failed and quality != "audio":
-            if lang == "ar":
-                await message.reply_text(f"⚠️ الملف كبير ({size_str}) ومش قادر أبعته مباشرة. جاري تحميل جودة أقل...")
+            if is_too_large:
+                # فعلاً الملف كبير — نجرب جودة أقل
+                if lang == "ar":
+                    await message.reply_text(f"⚠️ الملف كبير ({size_str}) ومش قادر أبعته مباشرة. جاري تحميل جودة أقل...")
+                else:
+                    await message.reply_text(f"⚠️ File too large ({size_str}) for direct send. Trying lower quality...")
+                
+                try:
+                    os.remove(filepath)
+                except Exception:
+                    pass
+                
+                lower_quality = {"best": "medium", "medium": "low", "low": "audio"}.get(quality, "medium")
+                return await _download_with_ytdlp(update_or_query, url, lower_quality, lang, user_id, status_msg)
             else:
-                await message.reply_text(f"⚠️ File too large ({size_str}) for direct send. Trying lower quality...")
-            
-            try:
-                os.remove(filepath)
-            except Exception:
-                pass
-            
-            lower_quality = {"best": "medium", "medium": "low", "low": "audio"}.get(quality, "medium")
-            return await _download_with_ytdlp(update_or_query, url, lower_quality, lang, user_id, status_msg)
+                # مشكلة تانية (مش حجم) — نجرب نبعته كـ document
+                logger.info(f"⚠️ Video send failed (not size), trying send as document...")
+                try:
+                    with open(filepath, 'rb') as f:
+                        await message.reply_document(
+                            document=f, filename=filename,
+                            caption=f"📥 {title[:200]}\n📁 {size_str}",
+                        )
+                    # لو وصل كـ document — نعتبره نجاح
+                    try: os.remove(filepath)
+                    except: pass
+                    return
+                except Exception as doc_err:
+                    logger.warning(f"⚠️ Document send also failed: {doc_err}")
+                    if lang == "ar":
+                        await message.reply_text(f"❌ فشل إرسال الفيديو ({size_str}). جرب تاني!")
+                    else:
+                        await message.reply_text(f"❌ Failed to send video ({size_str}). Try again!")
+                    return
         elif send_failed and quality == "audio":
             if lang == "ar":
                 await message.reply_text(f"❌ فشل إرسال الملف الصوتي ({size_str}). جرب تاني!")
