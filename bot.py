@@ -234,6 +234,28 @@ def main():
     except Exception as e:
         logger.warning(f"Memory database init error: {e}")
 
+    # 🔴 FIX: ابدأ الـ WhatsApp Webhook Server الأول عشان الـ healthcheck يشتغل
+    # حتى لو البوت واجه مشكلة 409 Conflict، السيرفر لازم يكون شغال
+    _webhook_runner = None
+    try:
+        import asyncio as _aio
+        from whatsapp_webhook import start_webhook_server
+        
+        # بنبدأ الـ webhook server في event loop منفصل عشان ميعطلش البوت
+        _webhook_loop = _aio.new_event_loop()
+        
+        def _start_webhook_in_thread():
+            _aio.set_event_loop(_webhook_loop)
+            _webhook_loop.run_until_complete(start_webhook_server())
+            _webhook_loop.run_forever()
+        
+        import threading
+        _whatsapp_thread = threading.Thread(target=_start_webhook_in_thread, name="WhatsAppWebhook", daemon=True)
+        _whatsapp_thread.start()
+        logger.info("✅ WhatsApp webhook server starting in background thread...")
+    except Exception as e:
+        logger.warning(f"⚠️ WhatsApp webhook server failed to start in thread: {e}")
+    
     # بناء التطبيق مع إعدادات الاستقرار
     app = Application.builder().token(BOT_TOKEN).build()
 
@@ -320,13 +342,10 @@ def main():
     async def post_init(application):
         """بعد تشغيل البوت - inside event loop"""
 
-        # ═══ تشغيل WhatsApp Webhook Server ═══
-        try:
-            from whatsapp_webhook import start_webhook_server
-            await start_webhook_server()
-            logger.info("✅ WhatsApp webhook server started alongside Telegram bot")
-        except Exception as e:
-            logger.warning(f"⚠️ WhatsApp webhook server failed to start: {e}")
+        # ═══ WhatsApp Webhook Server — شغال بالفعل من الـ main thread ═══
+        # 🔴 FIX: الـ webhook server بدأ قبل كده في thread منفصل عشان الـ healthcheck يشتغل
+        # حتى لو البوت واجه مشكلة 409 Conflict
+        logger.info("✅ WhatsApp webhook server already running from background thread")
 
         # ═══ تشغيل Cookie Auto-Rotation ═══
         # 🍪 تدوير كوكيز YouTube تلقائياً كل 1-2 دقيقة
@@ -430,6 +449,22 @@ def main():
     app.post_init = post_init
 
     logger.info(f"🚀 {BOT_NAME} v{BOT_VERSION} is running!")
+    
+    # 🔴 FIX: حذف أي webhook نشط قبل البدء — ده بيمنع خطأ 409 Conflict
+    # اللي بيحصل لما بوتين (القديم والجديد) بيحاولوا يشتغلوا في نفس الوقت
+    try:
+        import asyncio as _aio
+        loop = _aio.new_event_loop()
+        loop.run_until_complete(app.bot.delete_webhook(drop_pending_updates=True))
+        loop.close()
+        logger.info("✅ Deleted any active webhook before polling")
+    except Exception as e:
+        logger.warning(f"⚠️ Could not delete webhook before polling: {e}")
+    
+    # 🔴 FIX: انتظر ثانية بعد حذف الـ webhook عشان Telegram يفرغ الـ pending updates
+    import time as _time
+    _time.sleep(2)
+    
     # 🔴 FIX: drop_pending_updates=True عشان منع معالجة رسائل قديمة
     # ممكن تكون سبب الـ crash لو في رسائل كتير متراكمة
     app.run_polling(
