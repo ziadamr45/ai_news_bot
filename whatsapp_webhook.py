@@ -828,6 +828,50 @@ def _contains_arabic(text: str) -> bool:
     return bool(_ARABIC_CHAR_PATTERN.search(text))
 
 
+
+async def _send_whatsapp_video(recipient_wa_id: str, media_id: str, caption: str = ""):
+    """Send a video message via WhatsApp Cloud API using an already-uploaded media ID
+    
+    Args:
+        recipient_wa_id: WhatsApp ID of the recipient
+        media_id: Already-uploaded media ID from WhatsApp Media API
+        caption: Optional caption for the video
+    """
+    if not WHATSAPP_ACCESS_TOKEN or not WHATSAPP_PHONE_NUMBER_ID:
+        return {"error": "not_configured"}
+    
+    try:
+        payload = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": recipient_wa_id,
+            "type": "video",
+            "video": {
+                "id": media_id,
+            },
+        }
+        
+        if caption:
+            payload["video"]["caption"] = caption[:1024]
+        
+        result = await _wa_api_post(payload)
+        
+        if "error" not in result:
+            _log_event("OUT", "video_sent", {
+                "to": recipient_wa_id,
+                "media_id": media_id,
+            })
+            logger.info(f"📤 WA Video sent to {recipient_wa_id}: media_id={media_id}")
+        else:
+            logger.warning(f"⚠️ WA Video send failed: {result}")
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"❌ WA Video send error: {e}")
+        return {"error": str(e)}
+
+
 async def _translate_prompt_to_english(prompt: str, user_id: int = None) -> str:
     """Translate Arabic image description to English for image generation models"""
     if not _contains_arabic(prompt):
@@ -1343,27 +1387,37 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                     try: os.remove(file_path)
                                     except: pass
                                     return
+                                else:
+                                    logger.warning(f"⚠️ Threads WA: media upload returned {media_response.status_code}: {media_response.text[:200]}")
                         except Exception as send_err:
                             logger.warning(f"⚠️ Threads WA video send failed: {send_err}")
+                        
+                        # 🔴 الإرسال المباشر فشل — نحاول Supabase كـ fallback
+                        logger.info(f"🧵 Threads WA: Direct send failed, trying Supabase upload...")
                     
-                    # 🔴 الملف كبير (>100MB) — رفع على Supabase
+                    # 🔴 الملف كبير (>100MB) أو الإرسال المباشر فشل → رفع على Supabase
                     try:
                         from supabase_storage import upload_and_get_link
-                        logger.info(f"🧵 Threads WA: File too large ({size_str}), uploading to Supabase...")
-                        await _send_whatsapp_message(wa_id, f"☁️ الملف كبير ({size_str}) — جاري الرفع على السحابة...")
-                        download_link = await asyncio.wait_for(
-                            upload_and_get_link(file_path),
+                        await _send_whatsapp_message(wa_id, f"☁️ جاري رفع الملف على السحابة ({size_str})...")
+                        cloud_msg = await asyncio.wait_for(
+                            upload_and_get_link(
+                                file_path=file_path,
+                                filename=f"{real_title[:50]}.mp4",
+                                content_type="video/mp4",
+                                platform="whatsapp",
+                                title=real_title,
+                                lang="ar",
+                            ),
                             timeout=600
                         )
-                        if download_link:
-                            caption = f"🧵 {real_title[:200]}\n📥 Threads | {size_str}\n⏰ الرابط صالح 24 ساعة"
-                            await _send_whatsapp_message(wa_id, f"📥 {caption}\n\n🔗 {download_link}")
+                        if cloud_msg:
+                            await _send_whatsapp_message(wa_id, cloud_msg)
                             await feedback.success()
                             try: os.remove(file_path)
                             except: pass
                             return
                         else:
-                            logger.warning("🧵 Threads WA: Supabase upload returned no link")
+                            logger.warning("🧵 Threads WA: Supabase upload returned None")
                     except asyncio.TimeoutError:
                         logger.warning("🧵 Threads WA: Supabase upload timed out")
                     except Exception as supa_err:
@@ -1393,6 +1447,8 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                 try: os.remove(file_path)
                                 except: pass
                                 return
+                            else:
+                                logger.warning(f"⚠️ Threads WA: image upload returned {media_response.status_code}")
                     except Exception as send_err:
                         logger.warning(f"⚠️ Threads WA image send failed: {send_err}")
                     
