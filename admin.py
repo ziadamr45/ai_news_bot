@@ -23,6 +23,87 @@ logger = logging.getLogger(__name__)
 
 CAIRO_TZ = timezone(timedelta(hours=2))
 
+
+# ═══════════════════════════════════════
+# تحليل المدة - Duration Parser
+# ═══════════════════════════════════════
+
+def parse_duration(duration_str: str) -> tuple[int, str]:
+    """
+    تحليل مدة الـ Premium من نص
+    
+    الاختصارات:
+    - d أو يوم أو day → أيام
+    - w أو أسبوع أو week → أسابيع (×7)
+    - m أو شهر أو month → أشهر (×30)
+    - y أو سنة أو year → سنين (×365)
+    - 0 أو دائم أو forever → مدى الحياة
+    - رقم لوحده → أيام
+    - مركبة: m3 (3 أشهر), w2 (أسبوعين), y2 (سنتين)
+    
+    Returns: (days, display_text)
+    - days = 0 يعني مدى الحياة
+    - days = -1 يعني خطأ
+    """
+    s = duration_str.strip().lower()
+    
+    # مدى الحياة
+    if s in ("0", "دائم", "forever", "lifetime", "life"):
+        return (0, "مدى الحياة 🔓")
+    
+    # سنة — الكلمات العربية الأول (قبل ما نحاول int)
+    if s in ("سنة", "سنين", "عام") or s.startswith("y"):
+        if s in ("سنة", "سنين", "عام"):
+            num = 1
+        else:
+            num_part = s.lstrip("y").strip()
+            num = int(num_part) if num_part else 1
+        days = num * 365
+        label = f"{num} سنة" if num > 1 else "سنة"
+        return (days, f"{label} ({days} يوم) 🔒")
+    
+    # شهر
+    if s in ("شهر", "شهور", "أشهر") or s.startswith("m"):
+        if s in ("شهر", "شهور", "أشهر"):
+            num = 1
+        else:
+            num_part = s.lstrip("m").strip()
+            num = int(num_part) if num_part else 1
+        days = num * 30
+        label = f"{num} شهر" if num > 1 else "شهر"
+        return (days, f"{label} ({days} يوم) 🔒")
+    
+    # أسبوع
+    if s in ("أسبوع", "اسبوع", "أسبوعين", "week", "weeks") or s.startswith("w"):
+        if s in ("أسبوع", "اسبوع", "أسبوعين", "week", "weeks"):
+            num = 1
+        else:
+            num_part = s.lstrip("w").strip()
+            num = int(num_part) if num_part else 1
+        days = num * 7
+        label = f"{num} أسبوع" if num > 1 else "أسبوع"
+        return (days, f"{label} ({days} يوم) 🔒")
+    
+    # يوم
+    if s in ("يوم", "ايام", "أيام", "day", "days") or s.startswith("d"):
+        if s in ("يوم", "ايام", "أيام", "day", "days"):
+            num = 1
+        else:
+            num_part = s.lstrip("d").strip()
+            num = int(num_part) if num_part else 1
+        return (num, f"{num} يوم 🔒")
+    
+    # رقم لوحده = أيام
+    try:
+        num = int(s)
+        if num < 0:
+            return (-1, "")
+        if num == 0:
+            return (0, "مدى الحياة 🔓")
+        return (num, f"{num} يوم 🔒")
+    except ValueError:
+        return (-1, "")
+
 # ═══════════════════════════════════════
 # Cache لـ ensure_admin_premium - عشان ميعملش DB query مع كل رسالة
 # ═══════════════════════════════════════
@@ -216,7 +297,7 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 ━━━━━━━━━━━━━━━━━
 🔧 <b>أوامر الأدمن</b>
-→ <code>/grant عدد_أيام user_id</code> — تفعيل Premium
+→ <code>/grant [مدة] user_id</code> — تفعيل Premium (m=شهر, w=أسبوع, y=سنة)
 → <code>/revoke user_id</code> — شيل Premium
 → <code>/resetlimit user_id</code> — إعادة تعيين الحدود المجانية
 → <code>/broadcast رسالة</code> — بث لكل المشتركين
@@ -255,9 +336,13 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def grant_premium_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     أمر /grant — تفعيل Premium ليوزر
-    الاستخدام: /grant 30 123456789  (تفعيل لمدة 30 يوم)
-    أو: /grant 0 123456789  (تفعيل مدى الحياة)
-    أو: /grant 123456789  (تفعيل مدى الحياة بالتلقائي)
+    الاستخدام: /grant [مدة] user_id
+    
+    المدة:
+    - رقم أيام: /grant 30 user_id
+    - اختصارات: w (أسبوع), m (شهر), y (سنة), d (يوم)
+    - مركبة: w2 (أسبوعين), m3 (3 أشهر)
+    - 0 أو دائم: مدى الحياة
     """
     user_id = update.effective_user.id
     username = update.effective_user.username or ""
@@ -273,38 +358,64 @@ async def grant_premium_command(update: Update, context: ContextTypes.DEFAULT_TY
             "⭐ <b>تفعيل Premium</b>\n\n"
             "الاستخدام:\n"
             "<code>/grant user_id</code> — تفعيل مدى الحياة\n"
-            "<code>/grant 30 user_id</code> — تفعيل لمدة 30 يوم\n"
+            "<code>/grant 30 user_id</code> — تفعيل 30 يوم\n"
+            "<code>/grant m user_id</code> — تفعيل شهر (30 يوم)\n"
+            "<code>/grant w user_id</code> — تفعيل أسبوع (7 أيام)\n"
+            "<code>/grant y user_id</code> — تفعيل سنة (365 يوم)\n"
+            "<code>/grant m3 user_id</code> — تفعيل 3 أشهر\n"
             "<code>/grant 0 user_id</code> — تفعيل مدى الحياة\n\n"
-            "مثال: <code>/grant 123456789</code>\n"
-            "مثال: <code>/grant 30 123456789</code>",
+            "🔑 <b>اختصارات المدة:</b>\n"
+            "d = يوم | w = أسبوع | m = شهر | y = سنة\n"
+            "0 أو دائم = مدى الحياة\n\n"
+            "مثال: <code>/grant m 123456789</code>\n"
+            "مثال: <code>/grant w2 123456789</code>",
             parse_mode="HTML"
         )
         return
 
-    # تحليل الأرقام
-    try:
-        numbers = [int(a) for a in args]
-    except ValueError:
-        await update.message.reply_text("❌ الأرقام مش صحيحة. اكتب user_id رقمي.")
-        return
-
-    if len(numbers) == 1:
-        target_id = numbers[0]
-        days = 0  # مدى الحياة
-    elif len(numbers) == 2:
-        days = numbers[0]
-        target_id = numbers[1]
+    # تحليل المعاملات
+    if len(args) == 1:
+        # /grant user_id → مدى الحياة
+        try:
+            target_id = int(args[0])
+        except ValueError:
+            await update.message.reply_text("❌ user_id لازم يكون رقم. مثال: /grant 123456789")
+            return
+        days = 0
+        expires_display = "مدى الحياة 🔓"
+    elif len(args) == 2:
+        # /grant [مدة] user_id
+        duration_str = args[0]
+        try:
+            target_id = int(args[1])
+        except ValueError:
+            await update.message.reply_text("❌ user_id لازم يكون رقم. مثال: /grant m 123456789")
+            return
+        
+        days, expires_display = parse_duration(duration_str)
+        if days == -1:
+            await update.message.reply_text(
+                "❌ المدة مش صحيحة.\n\n"
+                "🔑 الاختصارات:\n"
+                "d أو يوم = أيام | w أو أسبوع = أسابيع\n"
+                "m أو شهر = أشهر | y أو سنة = سنين\n"
+                "0 أو دائم = مدى الحياة\n\n"
+                "مثال: <code>/grant m 123456789</code> (شهر)\n"
+                "مثال: <code>/grant w2 123456789</code> (أسبوعين)\n"
+                "مثال: <code>/grant 30 123456789</code> (30 يوم)",
+                parse_mode="HTML"
+            )
+            return
     else:
-        await update.message.reply_text("❌ كترت الأرقام. الاستخدام: /grant [أيام] user_id")
+        await update.message.reply_text("❌ كترت المعاملات. الاستخدام: /grant [مدة] user_id")
         return
 
     # حساب تاريخ الانتهاء
     expires = None
-    expires_display = "مدى الحياة 🔓"
     if days > 0:
         expires_date = datetime.now(CAIRO_TZ) + timedelta(days=days)
         expires = expires_date.isoformat()
-        expires_display = f"{days} يوم (ينتهي {expires_date.strftime('%Y-%m-%d')}) 🔒"
+        expires_display += f" (ينتهي {expires_date.strftime('%Y-%m-%d')})"
 
     # تفعيل Premium
     try:
@@ -952,7 +1063,7 @@ def get_admin_help_text() -> str:
 📊 <code>/botstats</code> — إحصائيات مفصلة
 👥 <code>/allusers</code> — قائمة كل المستخدمين
 ⭐ <code>/grant user_id</code> — تفعيل Premium مدى الحياة
-⭐ <code>/grant 30 user_id</code> — تفعيل Premium لمدة 30 يوم
+⭐ <code>/grant m user_id</code> — تفعيل شهر | <code>/grant w</code> أسبوع | <code>/grant y</code> سنة
 ❌ <code>/revoke user_id</code> — شيل Premium
 🔄 <code>/resetlimit user_id</code> — إعادة تعيين الحدود المجانية
 🚫 <code>/ban user_id [سبب]</code> — حظر مستخدم

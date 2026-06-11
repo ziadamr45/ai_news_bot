@@ -3487,7 +3487,7 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
                 f"→ معلومات أي يوزر\n\n"
                 f"━━━━━━━━━━━━━━━━━\n"
                 f"🔧 *أوامر الأدمن:*\n"
-                f"→ /grant user_id — تفعيل Premium\n"
+                f"→ /grant [مدة] رقم_الواتساب — تفعيل Premium (m=شهر, w=أسبوع, y=سنة)\n"
                 f"→ /revoke user_id — شيل Premium\n"
                 f"→ /resetlimit user_id — ريست الحدود\n"
                 f"→ /ban user_id — حظر مستخدم\n"
@@ -3509,9 +3509,16 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
         await _send_whatsapp_message(wa_id,
             "⭐ *تفعيل Premium*\n\n"
             "الاستخدام:\n"
-            "/grant user_id — تفعيل مدى الحياة\n"
-            "/grant 30 user_id — تفعيل 30 يوم\n\n"
-            "مثال: /grant 123456789")
+            "/grant رقم_الواتساب — تفعيل مدى الحياة\n"
+            "/grant 30 رقم_الواتساب — تفعيل 30 يوم\n"
+            "/grant m رقم_الواتساب — تفعيل شهر\n"
+            "/grant w رقم_الواتساب — تفعيل أسبوع\n"
+            "/grant y رقم_الواتساب — تفعيل سنة\n\n"
+            "🔑 *اختصارات المدة:*\n"
+            "d = يوم | w = أسبوع | m = شهر | y = سنة\n"
+            "0 أو دائم = مدى الحياة\n\n"
+            "مثال: /grant m 201203551789\n"
+            "مثال: /grant w2 201203551789")
         return True
 
     elif command == "admin_revoke":
@@ -5560,34 +5567,41 @@ async def _handle_admin_with_args(wa_id: str, content: str, wa_user_id: int, con
     try:
         if cmd in ("/grant",):
             if not args:
-                await _send_whatsapp_message(wa_id, "⭐ الاستخدام: /grant [أيام] رقم_الواتساب\nمثال: /grant 201203551789\nمثال: /grant 30 201203551789")
+                await _send_whatsapp_message(wa_id, "⭐ الاستخدام: /grant [مدة] رقم_الواتساب\nمثال: /grant 201203551789\nمثال: /grant m 201203551789\nمثال: /grant w 201203551789\nمثال: /grant y 201203551789")
                 return
 
             from premium import grant_premium
             from memory import _ensure_user_in_db
+            from admin import parse_duration
 
             if len(args) == 1:
+                # /grant phone → مدى الحياة
                 phone = args[0]
                 target_id = _wa_phone_to_user_id(phone)
                 days = 0
+                expires_display = "مدى الحياة 🔓"
             elif len(args) == 2:
-                days = int(args[0])
+                # /grant [مدة] phone
+                duration_str = args[0]
                 phone = args[1]
                 target_id = _wa_phone_to_user_id(phone)
+                days, expires_display = parse_duration(duration_str)
+                if days == -1:
+                    await _send_whatsapp_message(wa_id, "❌ المدة مش صحيحة.\n\n🔑 الاختصارات:\nd = يوم | w = أسبوع | m = شهر | y = سنة\n0 أو دائم = مدى الحياة\n\nمثال: /grant m 201203551789")
+                    return
             else:
-                await _send_whatsapp_message(wa_id, "❌ كترت الأرقام. /grant [أيام] رقم_الواتساب")
+                await _send_whatsapp_message(wa_id, "❌ كترت المعاملات. /grant [مدة] رقم_الواتساب")
                 return
 
             _ensure_user_in_db(target_id, platform="whatsapp")
 
             expires = None
-            expires_display = "مدى الحياة 🔓"
             if days > 0:
                 from datetime import timedelta
                 from admin import CAIRO_TZ
                 expires_date = datetime.now(CAIRO_TZ) + timedelta(days=days)
                 expires = expires_date.isoformat()
-                expires_display = f"{days} يوم 🔒"
+                expires_display += f" (ينتهي {expires_date.strftime('%Y-%m-%d')})"
 
             grant_premium(target_id, granted_by=f"admin_{wa_user_id}", expires=expires)
             await _send_whatsapp_message(wa_id, f"✅ تم تفعيل Premium!\n\n📱 المستخدم: {_wa_phone_to_display(phone)}\n⭐ الخطة: Premium\n⏰ المدة: {expires_display}")
