@@ -3626,8 +3626,8 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
                     {"id": "cmd_chat", "title": "🤖 المحادثة", "description": "تحدث مع AI"},
                     {"id": "cmd_news", "title": "📰 الأخبار", "description": "أخبار AI لحظة بلحظة"},
                     {"id": "cmd_download", "title": "📥 تحميل فيديو", "description": "تحميل من يوتيوب وتيك توك"},
-                    {"id": "video_search", "title": "🎬 فيديو بالبحث", "description": "ابحث وحمّل فيديو"},
-                    {"id": "audio_search", "title": "🎵 صوت بالبحث", "description": "ابحث وحمّل صوت"},
+                    {"id": "video_search", "title": "🎬 فيديو بالبحث", "description": "ابحث Dailymotion وحمّل فيديو"},
+                    {"id": "audio_search", "title": "🎵 صوت بالبحث", "description": "ابحث SoundCloud وحمّل صوت"},
                     {"id": "photo_search", "title": "🖼️ بحث صور", "description": "ابحث عن صور"},
                     {"id": "cmd_search", "title": "🔍 بحث الويب", "description": "ابحث في الإنترنت"},
                 ],
@@ -3681,8 +3681,8 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
                     {"id": "cmd_news", "title": "📰 أخبار AI", "description": "آخر أخبار الذكاء الاصطناعي"},
                     {"id": "cmd_youtube", "title": "🎬 ملخص يوتيوب", "description": "لخص أي فيديو يوتيوب"},
                     {"id": "cmd_download", "title": "📥 تحميل فيديو", "description": "حمّل من يوتيوب"},
-                    {"id": "video_search", "title": "🎬 فيديو بالبحث", "description": "ابحث وحمّل فيديو"},
-                    {"id": "audio_search", "title": "🎵 صوت بالبحث", "description": "ابحث وحمّل صوت"},
+                    {"id": "video_search", "title": "🎬 فيديو بالبحث", "description": "ابحث Dailymotion وحمّل فيديو"},
+                    {"id": "audio_search", "title": "🎵 صوت بالبحث", "description": "ابحث SoundCloud وحمّل صوت"},
                     {"id": "photo_search", "title": "🖼️ بحث صور", "description": "ابحث عن صور"},
                     {"id": "cmd_memory", "title": "🧠 ذاكرتي", "description": "عرض وإدارة الذاكرة"},
                 ],
@@ -6158,11 +6158,11 @@ async def _handle_command_with_arg(wa_id: str, cmd_name: str, arg: str, wa_user_
     # ══════════════════════════════════════
 
     elif cmd_name == "video_search_query":
-        # /video <query> — بحث يوتيوب + عرض نتائج + تحميل فيديو
+        # /video <query> — بحث Dailymotion + عرض نتائج + تحميل فيديو
         await _handle_wa_video_search(wa_id, arg, wa_user_id, contact_name, message_id, is_admin)
 
     elif cmd_name == "audio_search_query":
-        # /audio <query> — بحث يوتيوب + عرض نتائج + تحميل صوت
+        # /audio <query> — بحث SoundCloud + عرض نتائج + تحميل صوت
         await _handle_wa_audio_search(wa_id, arg, wa_user_id, contact_name, message_id, is_admin)
 
     elif cmd_name == "photo_search_query":
@@ -6206,7 +6206,7 @@ def _cleanup_wa_file(file_path: str):
 
 async def _handle_wa_video_search(wa_id: str, query: str, wa_user_id: int, 
                                    contact_name: str, message_id: str, is_admin: bool):
-    """بحث يوتيوب + عرض نتائج + تحميل فيديو عبر WhatsApp"""
+    """بحث Dailymotion + عرض نتائج + تحميل فيديو عبر WhatsApp"""
     # 🛡️ Safety: Check query before searching
     try:
         is_safe, reason = await check_query_safety(query, platform="whatsapp", user_id=str(wa_user_id))
@@ -6216,12 +6216,12 @@ async def _handle_wa_video_search(wa_id: str, query: str, wa_user_id: int,
     except Exception as e:
         logger.warning(f"🛡️ Query safety check failed (allowing): {e}")
     
-    await _send_whatsapp_message(wa_id, f"🔍 جاري البحث في YouTube عن: {query}...")
+    await _send_whatsapp_message(wa_id, f"🔍 جاري البحث في Dailymotion عن: {query}...")
     
     try:
-        from youtube_search import search_youtube, format_search_results
+        from dailymotion_search import search_dailymotion, format_search_results as format_dm_results
         
-        results = await search_youtube(query, max_results=5)
+        results = await search_dailymotion(query, max_results=5)
         
         if not results:
             await _send_whatsapp_message(wa_id, "❌ مفيش نتائج. جرب كلمات بحث تانية!")
@@ -6246,10 +6246,10 @@ async def _handle_wa_video_search(wa_id: str, query: str, wa_user_id: int,
         }
         
         # عرض النتائج كـ interactive list
-        text = format_search_results(results, lang="ar")
+        text = format_dm_results(results, lang="ar")
         
         sections = [{
-            "title": "🎬 نتائج YouTube",
+            "title": "🎬 نتائج Dailymotion",
             "rows": []
         }]
         
@@ -6271,7 +6271,7 @@ async def _handle_wa_video_search(wa_id: str, query: str, wa_user_id: int,
 
 async def _handle_wa_audio_search(wa_id: str, query: str, wa_user_id: int,
                                    contact_name: str, message_id: str, is_admin: bool):
-    """بحث يوتيوب + عرض نتائج + تحميل صوت عبر WhatsApp"""
+    """بحث SoundCloud + عرض نتائج + تحميل صوت عبر WhatsApp"""
     # 🛡️ Safety: Check query before searching
     try:
         is_safe, reason = await check_query_safety(query, platform="whatsapp", user_id=str(wa_user_id))
@@ -6281,12 +6281,12 @@ async def _handle_wa_audio_search(wa_id: str, query: str, wa_user_id: int,
     except Exception as e:
         logger.warning(f"🛡️ Query safety check failed (allowing): {e}")
     
-    await _send_whatsapp_message(wa_id, f"🔍 جاري البحث في YouTube عن: {query}...")
+    await _send_whatsapp_message(wa_id, f"🔍 جاري البحث في Dailymotion عن: {query}...")
     
     try:
-        from youtube_search import search_youtube, format_search_results
+        from soundcloud_search import search_soundcloud, format_search_results as format_sc_results
         
-        results = await search_youtube(query, max_results=5)
+        results = await search_soundcloud(query, max_results=5)
         
         if not results:
             await _send_whatsapp_message(wa_id, "❌ مفيش نتائج. جرب كلمات بحث تانية!")
@@ -6309,10 +6309,10 @@ async def _handle_wa_audio_search(wa_id: str, query: str, wa_user_id: int,
             "created_at": time.time(),
         }
         
-        text = format_search_results(results, lang="ar")
+        text = format_sc_results(results, lang="ar")
         
         sections = [{
-            "title": "🎵 نتائج YouTube - صوت",
+            "title": "🎵 نتائج SoundCloud - صوت",
             "rows": []
         }]
         

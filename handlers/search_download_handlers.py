@@ -3,13 +3,13 @@ Media Search Handler 🔍🎬🎵🖼️
 أوامر البحث عن فيديو/صوت/صور وتحميلها في التليجرام
 
 🔴 الأوامر:
-- /video <بحث> — بحث YouTube وتحميل فيديو
-- /audio <بحث> — بحث YouTube وتحميل صوت MP3
+- /video <بحث> — بحث Dailymotion وتحميل فيديو
+- /audio <بحث> — بحث SoundCloud وتحميل صوت MP3
 - /photo <بحث> — بحث عن صور وتحميلها
 
 🔴 كيف بيشتغل:
 1. المستخدم يكتب /video اسم الاغنية مثلاً
-2. البوت بيبحث في YouTube ويعرض 5 نتائج كأزرار
+2. البوت بيبحث في Dailymotion ويعرض 5 نتائج كأزرار
 3. المستخدم يدوس على نتيجة ويتحمل الفيديو/الصوت
 
 🔴 تحميل الصور:
@@ -83,7 +83,7 @@ def _get_cached(key: str):
 # ═══════════════════════════════════════
 
 async def video_search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """أمر /video <بحث> — بحث YouTube وتحميل فيديو"""
+    """أمر /video <بحث> — بحث Dailymotion وتحميل فيديو"""
     user_id = update.effective_user.id
     lang = get_language(user_id)
     increment_command_count(user_id)
@@ -101,9 +101,9 @@ async def video_search_command(update: Update, context: ContextTypes.DEFAULT_TYP
     
     if not query:
         if lang == "ar":
-            msg = "🎬 <b>بحث فيديو YouTube</b>\n\nاكتب كلمة البحث بعد الأمر\nمثال: <code>/video اغنية سعاد ماسي</code>"
+            msg = "🎬 <b>بحث فيديو Dailymotion</b>\n\nاكتب كلمة البحث بعد الأمر\nمثال: <code>/video اغنية سعاد ماسي</code>"
         else:
-            msg = "🎬 <b>YouTube Video Search</b>\n\nType your search query after the command\nExample: <code>/video music video</code>"
+            msg = "🎬 <b>Dailymotion Video Search</b>\n\nType your search query after the command\nExample: <code>/video music video</code>"
         await update.message.reply_text(msg, parse_mode="HTML")
         return
     
@@ -121,14 +121,14 @@ async def video_search_command(update: Update, context: ContextTypes.DEFAULT_TYP
         pass  # Fail-open: let content through if safety check fails
     
     status_msg = await update.message.reply_text(
-        f"🔍 جاري البحث في YouTube عن: {query}..." if lang == "ar"
-        else f"🔍 Searching YouTube for: {query}..."
+        f"🔍 جاري البحث في Dailymotion عن: {query}..." if lang == "ar"
+        else f"🔍 Searching Dailymotion for: {query}..."
     )
     
     try:
-        from youtube_search import search_youtube, format_search_results
+        from dailymotion_search import search_dailymotion
         
-        results = await search_youtube(query, max_results=5)
+        results = await search_dailymotion(query, max_results=5)
         
         if not results:
             await status_msg.edit_text(
@@ -169,9 +169,9 @@ async def video_search_command(update: Update, context: ContextTypes.DEFAULT_TYP
             ])
         
         if lang == "ar":
-            text = f"🎬 <b>نتائج بحث YouTube عن: {query}</b>\n\nاختار فيديو:"
+            text = f"🎬 <b>نتائج بحث Dailymotion عن: {query}</b>\n\nاختار فيديو:"
         else:
-            text = f"🎬 <b>YouTube results for: {query}</b>\n\nChoose a video:"
+            text = f"🎬 <b>Dailymotion results for: {query}</b>\n\nChoose a video:"
         
         await update.message.reply_text(
             text, parse_mode="HTML",
@@ -179,7 +179,7 @@ async def video_search_command(update: Update, context: ContextTypes.DEFAULT_TYP
         )
         
     except ImportError:
-        logger.error("❌ youtube_search module not available")
+        logger.error("❌ dailymotion_search module not available")
         await status_msg.edit_text(
             "❌ ميزة البحث مش متاحة حالياً." if lang == "ar"
             else "❌ Search feature is currently unavailable."
@@ -193,7 +193,7 @@ async def video_search_command(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def audio_search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """أمر /audio <بحث> — بحث YouTube وتحميل صوت MP3"""
+    """أمر /audio <بحث> — بحث SoundCloud وتحميل صوت MP3"""
     user_id = update.effective_user.id
     lang = get_language(user_id)
     increment_command_count(user_id)
@@ -211,9 +211,9 @@ async def audio_search_command(update: Update, context: ContextTypes.DEFAULT_TYP
     
     if not query:
         if lang == "ar":
-            msg = "🎵 <b>بحث صوت YouTube</b>\n\nاكتب كلمة البحث بعد الأمر\nمثال: <code>/audio اغنية سعاد ماسي</code>"
+            msg = "🎵 <b>بحث صوت SoundCloud</b>\n\nاكتب كلمة البحث بعد الأمر\nمثال: <code>/audio اغنية سعاد ماسي</code>"
         else:
-            msg = "🎵 <b>YouTube Audio Search</b>\n\nType your search query after the command\nExample: <code>/audio song name</code>"
+            msg = "🎵 <b>SoundCloud Audio Search</b>\n\nType your search query after the command\nExample: <code>/audio song name</code>"
         await update.message.reply_text(msg, parse_mode="HTML")
         return
     
@@ -231,14 +231,14 @@ async def audio_search_command(update: Update, context: ContextTypes.DEFAULT_TYP
         pass  # Fail-open: let content through if safety check fails
     
     status_msg = await update.message.reply_text(
-        f"🔍 جاري البحث في YouTube عن: {query}..." if lang == "ar"
-        else f"🔍 Searching YouTube for: {query}..."
+        f"🔍 جاري البحث في SoundCloud عن: {query}..." if lang == "ar"
+        else f"🔍 Searching SoundCloud for: {query}..."
     )
     
     try:
-        from youtube_search import search_youtube, format_search_results
+        from soundcloud_search import search_soundcloud
         
-        results = await search_youtube(query, max_results=5)
+        results = await search_soundcloud(query, max_results=5)
         
         if not results:
             await status_msg.edit_text(
@@ -276,9 +276,9 @@ async def audio_search_command(update: Update, context: ContextTypes.DEFAULT_TYP
             ])
         
         if lang == "ar":
-            text = f"🎵 <b>نتائج بحث YouTube عن: {query}</b>\n\nاختار صوت:"
+            text = f"🎵 <b>نتائج بحث SoundCloud عن: {query}</b>\n\nاختار صوت:"
         else:
-            text = f"🎵 <b>YouTube results for: {query}</b>\n\nChoose audio:"
+            text = f"🎵 <b>SoundCloud results for: {query}</b>\n\nChoose audio:"
         
         await update.message.reply_text(
             text, parse_mode="HTML",
@@ -286,7 +286,7 @@ async def audio_search_command(update: Update, context: ContextTypes.DEFAULT_TYP
         )
         
     except ImportError:
-        logger.error("❌ youtube_search module not available")
+        logger.error("❌ soundcloud_search module not available")
         await status_msg.edit_text(
             "❌ ميزة البحث مش متاحة حالياً." if lang == "ar"
             else "❌ Search feature is currently unavailable."
