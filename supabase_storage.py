@@ -519,14 +519,21 @@ async def upload_file(
     safe_name = _sanitize_filename(filename)
     storage_path = f"{platform}/{date_str}/{unique_id}_{safe_name}"
 
-    # --- Upload (file is guaranteed <= 50MB at this point) ---
-    try:
-        data = path.read_bytes()
-    except Exception:
-        logger.exception(f"☁️ Failed to read file: {file_path}")
-        return None
+    # --- Choose upload method based on file size ---
+    STREAM_THRESHOLD = 10 * 1024 * 1024  # 10MB — عشان نتجنب OOM على Railway (كان 50MB)
 
-    result = await _do_upload(storage_path, data, content_type)
+    if file_size > STREAM_THRESHOLD:
+        # 🔴 Large file — stream upload (avoids OOM)
+        result = await _do_upload_stream(storage_path, file_path, content_type, file_size)
+    else:
+        # Small file — regular upload (loads into memory)
+        try:
+            data = path.read_bytes()
+        except Exception:
+            logger.exception(f"☁️ Failed to read file: {file_path}")
+            return None
+
+        result = await _do_upload(storage_path, data, content_type)
 
     if result is not None:
         logger.info(f"☁️ URL generated: {result['url']}")

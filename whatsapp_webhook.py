@@ -761,6 +761,93 @@ async def _send_whatsapp_document(recipient_wa_id: str, file_bytes: bytes, filen
         return {"error": str(e)}
 
 
+async def _send_whatsapp_document_from_file(recipient_wa_id: str, file_path: str,
+                                               filename: str, caption: str = "", 
+                                               content_type: str = "video/mp4"):
+    """Send a document via WhatsApp Cloud API — STREAMING from file (no memory loading)
+    
+    🔴 FIX: ده بيبعت الملف مباشرة من الديسك من غير ما يحمله كله في الرام
+    عشان نتجنب Out of Memory على Railway
+    """
+    import aiohttp
+    
+    if not WHATSAPP_ACCESS_TOKEN or not WHATSAPP_PHONE_NUMBER_ID:
+        return {"error": "not_configured"}
+    
+    file_size = os.path.getsize(file_path)
+    logger.info(f"📤 WA Document streaming upload: {filename} ({file_size / 1024 / 1024:.1f}MB)")
+    
+    try:
+        upload_url = f"https://graph.facebook.com/v21.0/{WHATSAPP_PHONE_NUMBER_ID}/media"
+        
+        # 🔴 Stream the file in chunks instead of loading it all into memory
+        CHUNK_SIZE = 2 * 1024 * 1024  # 2MB chunks
+        
+        async def _file_chunk_generator():
+            with open(file_path, "rb") as f:
+                while True:
+                    chunk = f.read(CHUNK_SIZE)
+                    if not chunk:
+                        break
+                    yield chunk
+        
+        form_data = aiohttp.FormData()
+        form_data.add_field('file', _file_chunk_generator(), filename=filename, content_type=content_type)
+        form_data.add_field('messaging_product', 'whatsapp')
+        form_data.add_field('type', content_type)
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                upload_url,
+                headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
+                data=form_data,
+                timeout=aiohttp.ClientTimeout(total=300)
+            ) as upload_resp:
+                upload_result = await upload_resp.json()
+                
+                if upload_resp.status != 200:
+                    error_msg = upload_result.get("error", {}).get("message", "Upload failed")
+                    logger.error(f"❌ WA Document streaming upload error: {error_msg}")
+                    return {"error": error_msg}
+                
+                media_id = upload_result.get("id")
+                if not media_id:
+                    return {"error": "no_media_id"}
+                
+                logger.info(f"📤 WA Document streaming uploaded: media_id={media_id}")
+            
+            # Step 2: Send the document message
+            payload = {
+                "messaging_product": "whatsapp",
+                "recipient_type": "individual",
+                "to": recipient_wa_id,
+                "type": "document",
+                "document": {
+                    "id": media_id,
+                    "filename": filename[:240],
+                },
+            }
+            
+            if caption:
+                payload["document"]["caption"] = caption[:1024]
+            
+            result = await _wa_api_post(payload)
+            
+            if "error" not in result:
+                _log_event("OUT", "document_sent", {
+                    "to": recipient_wa_id,
+                    "filename": filename,
+                    "media_id": media_id,
+                })
+                logger.info(f"📤 WA Document sent to {recipient_wa_id}: {filename}")
+            
+            return result
+            
+    except Exception as e:
+        logger.error(f"❌ WA Document streaming send error: {e}")
+        return {"error": str(e)}
+
+
 async def _send_whatsapp_audio(recipient_wa_id: str, audio_bytes: bytes, 
                                 filename: str = "audio.mp3", content_type: str = "audio/mpeg"):
     """Send an audio file via WhatsApp Cloud API"""
@@ -1366,7 +1453,7 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                     pass  # Fail-open
                 
                 # ═══ إرسال الملف — Direct Send أو Supabase Cloud Upload ═══
-                MAX_WHATSAPP_DIRECT_SIZE = 100 * 1024 * 1024  # 100MB
+                MAX_WHATSAPP_DIRECT_SIZE = 25 * 1024 * 1024    # 25MB — عشان نتجنب OOM على Railway (كان 100MB)
                 
                 if is_video:
                     if file_size <= MAX_WHATSAPP_DIRECT_SIZE:
@@ -1613,6 +1700,29 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
             info = None
             last_error = None
             
+            # 🔴 FIX: Progress updater — نحدث رسالة الحالة كل 20 ثانية عشان المستخدم يعرف إن التحميل شغال
+            import time as _time_mod
+            _wa_dl_start = _time_mod.time()
+            _wa_stop_progress = asyncio.Event()
+            
+            async def _wa_update_download_progress():
+                """تحديث حالة التحميل كل 20 ثانية"""
+                while not _wa_stop_progress.is_set():
+                    try:
+                        await asyncio.sleep(20)
+                    except:
+                        break
+                    if _wa_stop_progress.is_set():
+                        break
+                    elapsed = int(_time_mod.time() - _wa_dl_start)
+                    mins, secs = divmod(elapsed, 60)
+                    try:
+                        await _send_whatsapp_message(wa_id, f"⏳ التحميل مستمر... ({mins}:{secs:02d})")
+                    except:
+                        pass
+            
+            _wa_progress_task = asyncio.create_task(_wa_update_download_progress())
+            
             # ═══ المرحلة 1: yt-dlp مباشر + deno + remote_components (الأفضل) ═══
             try:
                 def _run_ytdlp():
@@ -1743,7 +1853,7 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                     logger.warning(f"⚠️ Cobalt audio send failed: {audio_send_err}")
                             else:
                                 # 🔴 استخدام Supabase للملفات الكبيرة
-                                if cobalt_size_mb > 100:
+                                if cobalt_size_mb > 25:
                                     try:
                                         from supabase_storage import upload_and_get_link
                                         cloud_msg = await upload_and_get_link(
@@ -1763,7 +1873,7 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                     except Exception as sup_err:
                                         logger.error(f"☁️ Supabase upload error: {sup_err}")
                                     await _send_whatsapp_message(wa_id, f"❌ فشل إرسال الفيديو من Cobalt ({size_str}). جرب تاني!")
-                                    await feedback.success()
+                                    await feedback.error()
                                     try: os.remove(cobalt_file)
                                     except: pass
                                     return
@@ -1863,7 +1973,7 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                     logger.warning(f"⚠️ Apify audio send failed: {audio_send_err}")
                             else:
                                 # 🔴 استخدام Supabase للملفات الكبيرة
-                                if apify_size_mb > 100:
+                                if apify_size_mb > 25:
                                     try:
                                         from supabase_storage import upload_and_get_link
                                         cloud_msg = await upload_and_get_link(
@@ -1883,7 +1993,7 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                     except Exception as sup_err:
                                         logger.error(f"☁️ Supabase upload error: {sup_err}")
                                     await _send_whatsapp_message(wa_id, f"❌ فشل إرسال الفيديو من Apify ({size_str}). جرب تاني!")
-                                    await feedback.success()
+                                    await feedback.error()
                                     try: os.remove(apify_file)
                                     except: pass
                                     return
@@ -2007,7 +2117,7 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                 except Exception as audio_send_err:
                                     logger.warning(f"⚠️ Piped audio send failed: {audio_send_err}")
                             else:
-                                if piped_size_mb <= 100:
+                                if piped_size_mb <= 25:
                                     try:
                                         with open(target, 'rb') as vf:
                                             media_response = requests.post(
@@ -2045,7 +2155,7 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                     except Exception:
                                         pass
                                     await _send_whatsapp_message(wa_id, f"❌ فشل إرسال الفيديو من Piped. جرب تاني!")
-                                    await feedback.success()
+                                    await feedback.error()
                                     try: os.remove(target)
                                     except: pass
                                     return
@@ -2144,7 +2254,7 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                 except Exception as audio_send_err:
                                     logger.warning(f"⚠️ Invidious audio send failed: {audio_send_err}")
                             else:
-                                if inv_size_mb <= 100:
+                                if inv_size_mb <= 25:
                                     try:
                                         with open(target, 'rb') as vf:
                                             media_response = requests.post(
@@ -2182,7 +2292,7 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                     except Exception:
                                         pass
                                     await _send_whatsapp_message(wa_id, f"❌ فشل إرسال الفيديو من Invidious. جرب تاني!")
-                                    await feedback.success()
+                                    await feedback.error()
                                     try: os.remove(target)
                                     except: pass
                                     return
@@ -2287,7 +2397,7 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                         except Exception as audio_send_err:
                                             logger.warning(f"⚠️ Cobalt JWT audio send failed: {audio_send_err}")
                                     else:
-                                        if jwt_size_mb <= 100:
+                                        if jwt_size_mb <= 25:
                                             try:
                                                 with open(jwt_file, 'rb') as vf:
                                                     media_response = requests.post(
@@ -2326,7 +2436,7 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                             except Exception:
                                                 pass
                                             await _send_whatsapp_message(wa_id, f"❌ فشل إرسال الفيديو من Cobalt JWT. جرب تاني!")
-                                            await feedback.success()
+                                            await feedback.error()
                                             try: os.remove(jwt_file)
                                             except: pass
                                             return
@@ -2600,6 +2710,11 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                 except Exception as e:
                     logger.warning(f"⚠️ Video check/conversion error: {e}")
             
+            # 🔴 إيقاف تحديث التقدم
+            _wa_stop_progress.set()
+            try: _wa_progress_task.cancel()
+            except: pass
+            
             # 🛡️ Safety: Comprehensive media safety check before sending
             try:
                 media_type = "audio" if is_audio_only else "video"
@@ -2633,18 +2748,17 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
             # 3. لو الملف > 100MB → Supabase مباشرة (مع ضغط تلقائي)
             # 4. لو Supabase فشل (حتى بعد الضغط) → رسالة خطأ
             #
-            MAX_WHATSAPP_DIRECT_SIZE = 100 * 1024 * 1024   # 100MB
+            MAX_WHATSAPP_DIRECT_SIZE = 25 * 1024 * 1024    # 25MB — عشان نتجنب OOM على Railway (كان 100MB)
+            MAX_SUPABASE_SIZE = 2 * 1024 * 1024 * 1024      # 2GB — أقصى حد للرفع على السحابة
             
             # 🔴 Step 1: لو الملف <= 100MB → إرسال مباشر
             if file_size <= MAX_WHATSAPP_DIRECT_SIZE:
-                with open(video_file, 'rb') as f:
-                    file_bytes = f.read()
-                
+                # 🔴 FIX: بنستخدم streaming send عشان نتجنب OOM
                 if is_audio_only:
                     safe_filename = re.sub(r'[<>:"/\\|?*]', '_', title) + '.mp3'
                     caption = f"🎵 {title}\n🔗 {platform_display}\n📊 {file_size / 1024 / 1024:.1f}MB"
-                    result = await _send_whatsapp_document(
-                        wa_id, file_bytes, safe_filename, caption, "audio/mpeg"
+                    result = await _send_whatsapp_document_from_file(
+                        wa_id, video_file, safe_filename, caption, "audio/mpeg"
                     )
                 else:
                     safe_filename = re.sub(r'[<>:"/\\|?*]', '_', title) + '.mp4'
@@ -2652,8 +2766,8 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                     caption = f"📥 {title}\n🔗 {platform_display}\n📊 {file_size / 1024 / 1024:.1f}MB"
                     if quality_label:
                         caption += f"\n🎬 {quality_label}"
-                    result = await _send_whatsapp_document(
-                        wa_id, file_bytes, safe_filename, caption, "video/mp4"
+                    result = await _send_whatsapp_document_from_file(
+                        wa_id, video_file, safe_filename, caption, "video/mp4"
                     )
                 
                 if "error" not in result:
@@ -2683,6 +2797,10 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                         )
                         if cloud_msg:
                             await _send_whatsapp_message(wa_id, cloud_msg)
+                            await feedback.success()
+                            try: shutil.rmtree(tmpdir, ignore_errors=True)
+                            except: pass
+                            return  # ✅ رفع السحابة نجح
                         else:
                             # Supabase فشل — رسالة خطأ
                             await _send_whatsapp_message(wa_id,
@@ -2761,10 +2879,16 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                 pass
         
     except ImportError:
+        _wa_stop_progress.set()
+        try: _wa_progress_task.cancel()
+        except: pass
         logger.error("❌ yt-dlp not installed!")
         await _send_whatsapp_message(wa_id, "❌ تحميل الفيديوهات مش متاح دلوقتي. جرب تاني بعد شوية! 📥")
         await feedback.error()
     except asyncio.TimeoutError:
+        _wa_stop_progress.set()
+        try: _wa_progress_task.cancel()
+        except: pass
         await _send_whatsapp_message(wa_id, "❌ انتهى وقت التحميل. حاول مرة تانية! 📥")
         await feedback.error()
     except Exception as e:

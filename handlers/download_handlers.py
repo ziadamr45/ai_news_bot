@@ -1943,6 +1943,32 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
         
         loop = asyncio.get_event_loop()
         
+        # 🔴 FIX: Progress updater — نحدث رسالة الحالة كل 15 ثانية عشان المستخدم يعرف إن التحميل شغال
+        import time as _time_mod
+        _dl_start_time = _time_mod.time()
+        _stop_dl_progress = asyncio.Event()
+        
+        async def _update_download_progress():
+            """تحديث رسالة الحالة كل 15 ثانية بمدة التحميل"""
+            while not _stop_dl_progress.is_set():
+                try:
+                    await asyncio.sleep(15)
+                except:
+                    break
+                if _stop_dl_progress.is_set():
+                    break
+                elapsed = int(_time_mod.time() - _dl_start_time)
+                mins, secs = divmod(elapsed, 60)
+                try:
+                    if lang == "ar":
+                        await status_msg.edit_text(f"⏳ جاري التحميل... ({mins}:{secs:02d})")
+                    else:
+                        await status_msg.edit_text(f"⏳ Downloading... ({mins}:{secs:02d})")
+                except:
+                    pass
+        
+        _progress_task = asyncio.create_task(_update_download_progress())
+        
         # ═══ المحاولة الأولى: yt-dlp + deno + remote_components (الأفضل!) ═══
         logger.info(f"📥 yt-dlp: Attempting download with deno+remote_components for {url[:80]}")
         ydl_opts = _get_ydl_opts(quality, output_template, platform, player_client_idx=0)
@@ -2082,6 +2108,11 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                                             )
                                             if cloud_msg:
                                                 await message.reply_text(cloud_msg, parse_mode="HTML")
+                                                try: await status_msg.delete()
+                                                except: pass
+                                                try: os.remove(cb_file_path)
+                                                except: pass
+                                                return  # ✅ رفع السحابة نجح
                                         except:
                                             pass
                                     if lang == "ar":
@@ -2111,6 +2142,11 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                                         )
                                         if cloud_msg:
                                             await message.reply_text(cloud_msg, parse_mode="HTML", disable_web_page_preview=False)
+                                            try: await status_msg.delete()
+                                            except: pass
+                                            try: os.remove(cb_file_path)
+                                            except: pass
+                                            return  # ✅ رفع السحابة نجح
                                     except:
                                         pass
                                     if lang == "ar":
@@ -2200,6 +2236,11 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                                             )
                                             if cloud_msg:
                                                 await message.reply_text(cloud_msg, parse_mode="HTML")
+                                                try: await status_msg.delete()
+                                                except: pass
+                                                try: os.remove(af_file_path)
+                                                except: pass
+                                                return  # ✅ رفع السحابة نجح
                                         except:
                                             pass
                                     if lang == "ar":
@@ -2229,6 +2270,11 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                                         )
                                         if cloud_msg:
                                             await message.reply_text(cloud_msg, parse_mode="HTML", disable_web_page_preview=False)
+                                            try: await status_msg.delete()
+                                            except: pass
+                                            try: os.remove(af_file_path)
+                                            except: pass
+                                            return  # ✅ رفع السحابة نجح
                                     except:
                                         pass
                                     if lang == "ar":
@@ -2937,6 +2983,11 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
         
         logger.info(f"✅ Downloaded: {filename} ({filesize // (1024*1024)}MB, {quality_label}, codec={video_vcodec})")
         
+        # 🔴 إيقاف تحديث التقدم
+        _stop_dl_progress.set()
+        try: _progress_task.cancel()
+        except: pass
+        
         # ═══ إرسال الملف — Direct Send أو Supabase Cloud Upload ═══
         #
         # 🔴 المسار الجديد (بدون تجربة جودة أقل — على طول السحابة):
@@ -3191,6 +3242,9 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                 except: pass
     
     except asyncio.TimeoutError:
+        _stop_dl_progress.set()
+        try: _progress_task.cancel()
+        except: pass
         logger.error("yt-dlp download timed out")
         try:
             await status_msg.edit_text("❌ انتهى وقت التحميل. جرب جودة أقل." if lang == "ar" else "❌ Download timed out. Try a lower quality.")
