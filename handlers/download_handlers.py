@@ -1969,6 +1969,92 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
         
         _progress_task = asyncio.create_task(_update_download_progress())
         
+        from urllib.parse import quote as _url_quote
+        # 🔴 FIX: quote for URL encoding
+        def quote(s): return _url_quote(s, safe='')
+        
+        # ═══ المحاولة 0: سيرفر التحميل الخاص (VPS بـ IP نظيف) ═══
+        # 🔴 ده أفضل طريقة — السيرفر بيحمل من YouTube بـ IP نظيف ومبيحصلش حظر
+        # السيرفر بيرفع على Supabase وبيرجع رابط — مفيش OOM على Railway
+        if is_youtube:
+            try:
+                from config import DOWNLOAD_SERVICE_URL, DOWNLOAD_SERVICE_KEY
+                if DOWNLOAD_SERVICE_URL:
+                    logger.info(f"🖥️ Download Service: Trying VPS download for {url[:80]}")
+                    try:
+                        await status_msg.edit_text(
+                            "🖥️ جاري التحميل عبر السيرفر الخاص..." if lang == "ar"
+                            else "🖥️ Downloading via dedicated server..."
+                        )
+                    except:
+                        pass
+                    
+                    import aiohttp as _aiohttp_ds
+                    ds_url = DOWNLOAD_SERVICE_URL.rstrip("/")
+                    api_url = f"{ds_url}/download?url={quote(url)}&quality={quality}&platform=telegram&lang={lang}"
+                    ds_headers = {}
+                    if DOWNLOAD_SERVICE_KEY:
+                        ds_headers["X-API-Key"] = DOWNLOAD_SERVICE_KEY
+                    
+                    try:
+                        async with _aiohttp_ds.ClientSession(timeout=_aiohttp_ds.ClientTimeout(total=360)) as ds_session:
+                            async with ds_session.get(api_url, headers=ds_headers) as ds_resp:
+                                if ds_resp.status == 200:
+                                    ds_result = await ds_resp.json()
+                                    if ds_result and ds_result.get("success"):
+                                        logger.info(f"🖥️ Download Service succeeded! URL: {ds_result.get('url', '')[:60]}")
+                                        
+                                        # 🔴 إيقاف تحديث التقدم
+                                        _stop_dl_progress.set()
+                                        try: _progress_task.cancel()
+                                        except: pass
+                                        
+                                        # بعت الرابط للمستخدم
+                                        cloud_msg = ds_result.get("cloud_msg", "")
+                                        if cloud_msg:
+                                            await message.reply_text(cloud_msg, parse_mode="HTML", disable_web_page_preview=False)
+                                        else:
+                                            dl_url = ds_result.get("url", "")
+                                            title = ds_result.get("title", "Video")
+                                            size_mb = ds_result.get("size_mb", 0)
+                                            if lang == "ar":
+                                                await message.reply_text(
+                                                    f"🎬 {title}\n\n☁️ تم رفعه على السحابة ({size_mb:.1f}MB)\n\n🔗 رابط التحميل:\n{dl_url}",
+                                                    parse_mode="HTML", disable_web_page_preview=False
+                                                )
+                                            else:
+                                                await message.reply_text(
+                                                    f"🎬 {title}\n\n☁️ Uploaded to cloud ({size_mb:.1f}MB)\n\n🔗 Download link:\n{dl_url}",
+                                                    parse_mode="HTML", disable_web_page_preview=False
+                                                )
+                                        
+                                        try: await status_msg.delete()
+                                        except: pass
+                                        
+                                        # Increment usage
+                                        increment_usage(user_id, "youtube_summaries")
+                                        try: track_event("media_downloads")
+                                        except: pass
+                                        
+                                        try: shutil.rmtree(tmpdir, ignore_errors=True)
+                                        except: pass
+                                        return  # ✅ السيرفر الخاص نجح!
+                                    else:
+                                        error_msg = ds_result.get("message", "unknown error") if ds_result else "no response"
+                                        logger.warning(f"🖥️ Download Service failed: {error_msg}")
+                                else:
+                                    logger.warning(f"🖥️ Download Service returned status {ds_resp.status}")
+                    except asyncio.TimeoutError:
+                        logger.warning("🖥️ Download Service timed out")
+                    except Exception as ds_err:
+                        logger.warning(f"🖥️ Download Service error: {ds_err}")
+                    
+                    logger.info("🖥️ Download Service failed, falling back to local yt-dlp...")
+            except ImportError:
+                pass
+            except Exception as ds_outer_err:
+                logger.warning(f"🖥️ Download Service outer error: {ds_outer_err}")
+        
         # ═══ المحاولة الأولى: yt-dlp + deno + remote_components (الأفضل!) ═══
         logger.info(f"📥 yt-dlp: Attempting download with deno+remote_components for {url[:80]}")
         ydl_opts = _get_ydl_opts(quality, output_template, platform, player_client_idx=0)

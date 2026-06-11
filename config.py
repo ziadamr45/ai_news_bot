@@ -525,6 +525,12 @@ PDF_SUMMARY_TIMEOUT = 180  # 3 minutes for PDF summarization (increased from def
 YOUTUBE_MAX_TRANSCRIPT_CHARS = 12000
 CLOUDFLARE_WORKER_URL = os.environ.get("CLOUDFLARE_WORKER_URL", "https://holy-forest-335e.ziadamreltourcke7.workers.dev")
 
+# 🔴 سيرفر التحميل الخاص — VPS بـ IP نظيف بيحل مشكلة حظر YouTube
+# ده أفضل طريقة — البوت يبعت الرابط للسيرفر، السيرفر يحمل ويرفع على Supabase
+# لو مش متوفر، البوت يكمل بالطرق العادية (yt-dlp على Railway)
+DOWNLOAD_SERVICE_URL = os.environ.get("DOWNLOAD_SERVICE_URL", "")  # مثال: http://1.2.3.4:8080
+DOWNLOAD_SERVICE_KEY = os.environ.get("DOWNLOAD_SERVICE_KEY", "")   # API Key للسيرفر
+
 # Cobalt Self-Hosted — أقوى بديل لتحميل الفيديوهات (أول طبقة في fallback chain)
 # بنشغله على Railway سيرفر منفصل ونربطه بالبوت
 COBALT_API_URL = os.environ.get("COBALT_API_URL", "")  # مثال: https://cobalt.up.railway.app

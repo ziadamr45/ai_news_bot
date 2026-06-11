@@ -1723,6 +1723,82 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
             
             _wa_progress_task = asyncio.create_task(_wa_update_download_progress())
             
+            # ═══ المرحلة 0: سيرفر التحميل الخاص (VPS بـ IP نظيف) ═══
+            # 🔴 ده أفضل طريقة — السيرفر بيحمل من YouTube بـ IP نظيف ومبيحصلش حظر
+            if is_youtube:
+                try:
+                    from config import DOWNLOAD_SERVICE_URL, DOWNLOAD_SERVICE_KEY
+                    if DOWNLOAD_SERVICE_URL:
+                        logger.info(f"🖥️ WA Download Service: Trying VPS download for {url[:80]}")
+                        try:
+                            await _send_whatsapp_message(wa_id, "🖥️ جاري التحميل عبر السيرفر الخاص...")
+                        except:
+                            pass
+                        
+                        from urllib.parse import quote as _wa_quote
+                        def wa_quote(s): return _wa_quote(s, safe='')
+                        
+                        import aiohttp as _aiohttp_wa_ds
+                        ds_url = DOWNLOAD_SERVICE_URL.rstrip("/")
+                        api_url = f"{ds_url}/download?url={wa_quote(url)}&quality={quality}&platform=whatsapp&lang=ar"
+                        ds_headers = {}
+                        if DOWNLOAD_SERVICE_KEY:
+                            ds_headers["X-API-Key"] = DOWNLOAD_SERVICE_KEY
+                        
+                        try:
+                            async with _aiohttp_wa_ds.ClientSession(timeout=_aiohttp_wa_ds.ClientTimeout(total=360)) as ds_session:
+                                async with ds_session.get(api_url, headers=ds_headers) as ds_resp:
+                                    if ds_resp.status == 200:
+                                        ds_result = await ds_resp.json()
+                                        if ds_result and ds_result.get("success"):
+                                            logger.info(f"🖥️ WA Download Service succeeded!")
+                                            
+                                            # 🔴 إيقاف تحديث التقدم
+                                            _wa_stop_progress.set()
+                                            try: _wa_progress_task.cancel()
+                                            except: pass
+                                            
+                                            # بعت الرابط للمستخدم
+                                            cloud_msg = ds_result.get("cloud_msg", "")
+                                            if cloud_msg:
+                                                await _send_whatsapp_message(wa_id, cloud_msg)
+                                            else:
+                                                dl_url = ds_result.get("url", "")
+                                                title = ds_result.get("title", "Video")
+                                                size_mb = ds_result.get("size_mb", 0)
+                                                await _send_whatsapp_message(wa_id,
+                                                    f"🎬 *{title}*\n\n☁️ تم رفعه على السحابة ({size_mb:.1f}MB)\n\n🔗 رابط التحميل:\n{dl_url}"
+                                                )
+                                            
+                                            await feedback.success()
+                                            
+                                            # Increment usage
+                                            if not is_admin:
+                                                try:
+                                                    from premium import increment_usage
+                                                    increment_usage(wa_user_id, "downloads")
+                                                except:
+                                                    pass
+                                            
+                                            try: shutil.rmtree(tmpdir, ignore_errors=True)
+                                            except: pass
+                                            return  # ✅ السيرفر الخاص نجح!
+                                        else:
+                                            error_msg = ds_result.get("message", "unknown error") if ds_result else "no response"
+                                            logger.warning(f"🖥️ WA Download Service failed: {error_msg}")
+                                    else:
+                                        logger.warning(f"🖥️ WA Download Service returned status {ds_resp.status}")
+                        except asyncio.TimeoutError:
+                            logger.warning("🖥️ WA Download Service timed out")
+                        except Exception as ds_err:
+                            logger.warning(f"🖥️ WA Download Service error: {ds_err}")
+                        
+                        logger.info("🖥️ WA Download Service failed, falling back to local yt-dlp...")
+                except ImportError:
+                    pass
+                except Exception as ds_outer_err:
+                    logger.warning(f"🖥️ WA Download Service outer error: {ds_outer_err}")
+            
             # ═══ المرحلة 1: yt-dlp مباشر + deno + remote_components (الأفضل) ═══
             try:
                 def _run_ytdlp():

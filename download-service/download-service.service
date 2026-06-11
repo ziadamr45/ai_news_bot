@@ -1,0 +1,15 @@
+[Unit]
+Description=YouTube Download Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/download-service
+ExecStart=/usr/bin/python3 main.py
+Restart=always
+RestartSec=10
+EnvironmentFile=/opt/download-service/.env
+
+[Install]
+WantedBy=multi-user.target
