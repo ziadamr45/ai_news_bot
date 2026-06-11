@@ -338,6 +338,27 @@ def main():
         jitter=60,
     )
 
+    # ═══ Supabase Storage Cleanup — حذف الملفات المنتهية (أكتر من 24 ساعة) ═══
+    async def supabase_cleanup():
+        """تنظيف ملفات Supabase المنتهية — كل ساعة"""
+        try:
+            from supabase_storage import cleanup_expired_files
+            deleted = await cleanup_expired_files(max_age_hours=24)
+            if deleted > 0:
+                logger.info(f"☁️ Supabase cleanup: {deleted} expired file(s) deleted")
+        except Exception as e:
+            logger.warning(f"⚠️ Supabase cleanup failed: {e}")
+
+    _scheduler.add_job(
+        supabase_cleanup,
+        trigger="cron",
+        hour="*",
+        minute="0",
+        id="supabase_cleanup",
+        name="Supabase Storage Cleanup (delete files older than 24h)",
+        jitter=120,
+    )
+
     # تعيين أوامر البوت + تشغيل الجدولة بعد بدء event loop
     async def post_init(application):
         """بعد تشغيل البوت - inside event loop"""

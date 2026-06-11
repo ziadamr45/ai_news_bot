@@ -38,6 +38,13 @@ from premium import (
 from dashboard import track_event
 from handlers.dedup import _is_duplicate_update
 
+# 🔴 Supabase Storage — رفع الملفات الكبيرة تلقائياً
+from supabase_storage import (
+    should_use_supabase,
+    upload_file as supabase_upload,
+    format_download_link as supabase_download_link,
+)
+
 logger = logging.getLogger(__name__)
 
 # ═══════════════════════════════════════
@@ -2692,11 +2699,9 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
         
         logger.info(f"✅ Downloaded: {filename} ({filesize // (1024*1024)}MB, {quality_label}, codec={video_vcodec})")
         
-        # 🔴 FIX: رفع الحد الأقصى من 50MB إلى 2GB
+        # 🔴 FIX + Supabase: حدود الإرسال المباشر + رفع تلقائي للملفات الكبيرة
         # Telegram Premium bots: 2GB limit
-        # Telegram Free bots: 50MB limit (but we try anyway — Telegram handles the rejection)
-        # If file is too large for direct send, we try sendVideo which streams the file
-        # 🔴 FIX: الحدود الحقيقية — بس نقول "كبير" لو عدى الحد فعلاً
+        # Telegram Free bots: 50MB limit — فوق كده بنرفع على Supabase
         TELEGRAM_MAX_FREE = 50 * 1024 * 1024     # 50MB — بوت مجاني
         TELEGRAM_MAX_PREMIUM = 2000 * 1024 * 1024  # 2GB — بوت premium
         
@@ -2709,7 +2714,6 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                     await status_msg.edit_text(f"⏳ Trying lower quality...")
                 os.remove(filepath)
                 lower_quality = {"best": "medium", "medium": "low", "low": "audio"}.get(quality, "medium")
-                # 🔴 FIX: نمرر status_msg=None عشان ينشئ واحد جديد — القديم ممكن يكون اتمسح
                 return await _download_with_ytdlp(update_or_query, url, lower_quality, lang, user_id, status_msg=None)
             else:
                 if lang == "ar":
@@ -2717,6 +2721,74 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                 else:
                     await status_msg.edit_text(f"❌ File too large ({filesize // (1024*1024)}MB). Maximum is 2GB.\n💡 Try downloading lower quality audio.")
                 return
+        
+        # 🔴 Supabase: لو الملف أكبر من 50MB — نرفعه على Supabase ونرسل رابط
+        if should_use_supabase(filesize, "telegram"):
+            size_mb = filesize / (1024 * 1024)
+            size_str = f"{size_mb:.1f}MB"
+            title = info.get("title", filename) if info else filename
+            
+            logger.info(f"☁️ Telegram: File too large ({size_str}) — uploading to Supabase Storage")
+            
+            try:
+                if lang == "ar":
+                    await status_msg.edit_text("☁️ جاري رفع الملف على السحابة...")
+                else:
+                    await status_msg.edit_text("☁️ Uploading to cloud storage...")
+            except:
+                pass
+            
+            # تحديد نوع الملف
+            if quality == "audio":
+                content_type = "audio/mpeg"
+                safe_filename = re.sub(r'[<>:"/\\|?*]', '_', title[:80]) + '.mp3'
+            else:
+                content_type = "video/mp4"
+                safe_filename = re.sub(r'[<>:"/\\|?*]', '_', title[:80]) + '.mp4'
+            
+            supabase_result = await supabase_upload(
+                filepath, safe_filename, content_type, platform="telegram"
+            )
+            
+            if supabase_result and supabase_result.get("success"):
+                download_url = supabase_result["url"]
+                logger.info(f"☁️ Telegram: Supabase upload succeeded — URL: {download_url}")
+                
+                # تتبع الاستخدام
+                increment_usage(user_id, "youtube_summaries")
+                try: track_event("media_downloads")
+                except: pass
+                
+                # إرسال رابط التحميل
+                download_msg = supabase_download_link(
+                    download_url, title, size_mb, "telegram", lang=lang
+                )
+                await message.reply_text(download_msg)
+                
+                try: await status_msg.delete()
+                except: pass
+                try: os.remove(filepath)
+                except: pass
+                return
+            else:
+                # فشل الرفع على Supabase — نجرب جودة أقل
+                logger.warning(f"☁️ Telegram: Supabase upload failed, trying lower quality")
+                
+                if quality != "audio" and quality != "low":
+                    try: os.remove(filepath)
+                    except: pass
+                    lower_quality = {"best": "medium", "medium": "low", "low": "audio"}.get(quality, "medium")
+                    try: await status_msg.edit_text("⏳ جاري تجربة جودة أقل..." if lang == "ar" else "⏳ Trying lower quality...")
+                    except: pass
+                    return await _download_with_ytdlp(update_or_query, url, lower_quality, lang, user_id, status_msg=None)
+                else:
+                    if lang == "ar":
+                        await message.reply_text(f"❌ فشل رفع الملف على السحابة. جرب تاني!")
+                    else:
+                        await message.reply_text(f"❌ Failed to upload file to cloud. Try again!")
+                    try: await status_msg.delete()
+                    except: pass
+                    return
         
         # تتبع
         increment_usage(user_id, "youtube_summaries")
@@ -2777,22 +2849,53 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                 is_too_large = file_exceeds_limit and any(kw in err_str for kw in ["too large", "file is too big", "file too large", "exceeds", "413"])
                 logger.warning(f"⚠️ Video send failed: {send_err} | is_too_large={is_too_large} | file_size={filesize}")
         
-        # 🔴 FIX: لو الإرسال فشل — نفرق بين "ملف كبير حقيقي" و "خطأ تاني"
+        # 🔴 FIX + Supabase: لو الإرسال فشل — نفرق بين "ملف كبير" و "خطأ تاني"
         if send_failed and quality != "audio":
             if is_too_large:
-                # فعلاً الملف كبير (أكتر من 50MB) — نجرب جودة أقل بصمت
-                logger.info(f"📥 File too large ({size_str}), retrying with lower quality silently...")
+                # فعلاً الملف كبير (أكتر من 50MB) — نرفعه على Supabase أولاً
+                logger.info(f"☁️ Telegram: File too large ({size_str}), uploading to Supabase...")
                 
                 try:
-                    os.remove(filepath)
-                except Exception:
+                    if lang == "ar":
+                        await status_msg.edit_text("☁️ جاري رفع الملف على السحابة...")
+                    else:
+                        await status_msg.edit_text("☁️ Uploading to cloud storage...")
+                except:
                     pass
                 
-                lower_quality = {"best": "medium", "medium": "low", "low": "audio"}.get(quality, "medium")
-                # 🔴 FIX: نمرر status_msg=None عشان ينشئ واحد جديد — القديم ممكن يكون اتمسح
-                try: await status_msg.edit_text("⏳ جاري تجربة جودة أقل..." if lang == "ar" else "⏳ Trying lower quality...")
-                except: pass
-                return await _download_with_ytdlp(update_or_query, url, lower_quality, lang, user_id, status_msg=None)
+                # تحديد نوع الملف
+                if quality == "audio":
+                    sb_content_type = "audio/mpeg"
+                    sb_filename = re.sub(r'[<>:"/\\|?*]', '_', title[:80]) + '.mp3'
+                else:
+                    sb_content_type = "video/mp4"
+                    sb_filename = re.sub(r'[<>:"/\\|?*]', '_', title[:80]) + '.mp4'
+                
+                sb_result = await supabase_upload(
+                    filepath, sb_filename, sb_content_type, platform="telegram"
+                )
+                
+                if sb_result and sb_result.get("success"):
+                    download_url = sb_result["url"]
+                    logger.info(f"☁️ Telegram: Supabase upload succeeded — URL: {download_url}")
+                    
+                    download_msg = supabase_download_link(
+                        download_url, title, size_mb, "telegram", lang=lang
+                    )
+                    await message.reply_text(download_msg)
+                    
+                    try: os.remove(filepath)
+                    except: pass
+                    try: await status_msg.delete()
+                    except: pass
+                    return
+                else:
+                    # فشل الرفع — نجرب جودة أقل
+                    logger.warning(f"☁️ Telegram: Supabase upload failed, trying lower quality")
+                    try: os.remove(filepath)
+                    except: pass
+                    lower_quality = {"best": "medium", "medium": "low", "low": "audio"}.get(quality, "medium")
+                    return await _download_with_ytdlp(update_or_query, url, lower_quality, lang, user_id, status_msg=None)
             else:
                 # مشكلة تانية (مش حجم) — نجرب نبعته كـ document
                 logger.info(f"⚠️ Video send failed (not size), trying send as document...")

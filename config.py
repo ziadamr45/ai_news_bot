@@ -592,6 +592,14 @@ DATABASE_PATH = os.path.join(DATA_DIR, "memory.db")
 LOG_FILE = os.path.join(DATA_DIR, "bot.log")
 
 # ═══════════════════════════════════════
+# Supabase Storage — رفع الملفات الكبيرة
+# ═══════════════════════════════════════
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
+SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
+SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
+SUPABASE_BUCKET = os.environ.get("SUPABASE_BUCKET", "downloads")
+
+# ═══════════════════════════════════════
 # إعدادات الجدولة - Scheduler Settings
 # ═══════════════════════════════════════
 
