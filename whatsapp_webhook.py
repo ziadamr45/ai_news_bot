@@ -4160,9 +4160,14 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
                     "🖼️ صور غير محدودة + Vision Pro\n"
                     "🎬 يوتيوب غير محدود\n"
                     "🔍 بحث غير محدود\n"
+                    "📥 تحميل من أي منصة (YouTube, Insta, TikTok...)\n"
+                    "🎬 فيديو بالبحث غير محدود\n"
+                    "🎵 صوت بالبحث غير محدود\n"
+                    "🖼️ بحث صور غير محدود\n"
                     "🎨 إنشاء وتعديل صور\n"
                     "📚 وضع الدراسة\n"
-                    "🧠 ذاكرة طويلة المدى")
+                    "🧠 ذاكرة طويلة المدى\n"
+                    "🤖 نماذج AI أقوى")
                 return True
 
             # Free user — show comparison
@@ -4174,12 +4179,18 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
                 "• 3 تحليلات PDF/يوم\n"
                 "• 5 تحليلات صور/يوم\n"
                 "• 3 ملخصات يوتيوب/يوم\n"
-                "• 5 عمليات بحث/يوم\n\n"
+                "• 5 عمليات بحث/يوم\n"
+                "• 3 بحث صور/يوم 🖼️\n\n"
                 "⭐ *Premium:*\n"
                 "• كل حاجة غير محدودة!\n"
+                "• تحميل من أي منصة 📥\n"
+                "  (YouTube, Insta, TikTok, FB, Twitter...)\n"
+                "• فيديو بالبحث 🎬\n"
+                "• صوت بالبحث 🎵\n"
+                "• بحث صور غير محدود 🖼️\n"
+                "• إنشاء وتعديل صور 🎨🖌️\n"
                 "• وضع الدراسة 📚\n"
                 "• ذاكرة طويلة المدى 🧠\n"
-                "• إنشاء وتعديل صور 🎨🖌️\n"
                 "• Vision Pro 👁️\n"
                 "• نماذج AI أقوى 🤖\n\n"
                 f"📩 تواصل مع المطور على واتساب:\n📱 {DEVELOPER_WHATSAPP_URL}")
@@ -4219,10 +4230,15 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
                     "🖼️ صور: غير محدود + Vision Pro\n"
                     "🎬 يوتيوب: غير محدود\n"
                     "🔍 بحث: غير محدود\n"
+                    "📥 تحميل من أي منصة: مفتوح\n"
+                    "🎬 فيديو بالبحث: مفتوح\n"
+                    "🎵 صوت بالبحث: مفتوح\n"
+                    "🖼️ بحث صور: مفتوح\n"
                     "🎨 إنشاء صور: مفتوح\n"
                     "🖌️ تعديل صور: مفتوح\n"
                     "📚 وضع الدراسة: مفتوح\n"
-                    "🧠 ذاكرة طويلة المدى: مفتوح"
+                    "🧠 ذاكرة طويلة المدى: مفتوح\n"
+                    "🤖 نماذج AI أقوى: مفتوح"
                 )
             else:
                 # Free plan — show usage with limits
@@ -4231,21 +4247,27 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
                 img_rem = max(0, limits["image_analyses_per_day"] - usage.get("image_analyses", 0))
                 yt_rem = max(0, limits["youtube_summaries_per_day"] - usage.get("youtube_summaries", 0))
                 search_rem = max(0, limits["searches_per_day"] - usage.get("searches", 0))
+                photo_rem = max(0, limits.get("photo_searches_per_day", 3) - usage.get("photo_searches", 0))
 
                 ai_used = usage.get("ai_messages", 0)
                 pdf_used = usage.get("pdf_analyses", 0)
                 img_used = usage.get("image_analyses", 0)
                 yt_used = usage.get("youtube_summaries", 0)
                 search_used = usage.get("searches", 0)
+                photo_used = usage.get("photo_searches", 0)
 
                 plan_text = (
                     "🆓 *الخطة المجانية*\n"
                     "━━━━━━━━━━━━━━━━━\n\n"
                     f"💬 رسائل: {ai_used}/{limits['ai_messages_per_day']} (متبقي {ai_rem})\n"
                     f"📄 PDF: {pdf_used}/{limits['pdf_analyses_per_day']} (متبقي {pdf_rem})\n"
-                    f"🖼️ صور: {img_used}/{limits['image_analyses_per_day']} (متبقي {img_rem})\n"
+                    f"🖼️ تحليل صور: {img_used}/{limits['image_analyses_per_day']} (متبقي {img_rem})\n"
                     f"🎬 يوتيوب: {yt_used}/{limits['youtube_summaries_per_day']} (متبقي {yt_rem})\n"
-                    f"🔍 بحث: {search_used}/{limits['searches_per_day']} (متبقي {search_rem})\n\n"
+                    f"🔍 بحث: {search_used}/{limits['searches_per_day']} (متبقي {search_rem})\n"
+                    f"🖼️ بحث صور: {photo_used}/{limits.get('photo_searches_per_day', 3)} (متبقي {photo_rem})\n\n"
+                    "📥 تحميل فيديو: ❌ بريميوم\n"
+                    "🎬 فيديو بالبحث: ❌ بريميوم\n"
+                    "🎵 صوت بالبحث: ❌ بريميوم\n"
                     "🎨 إنشاء صور: ❌ بريميوم\n"
                     "🖌️ تعديل صور: ❌ بريميوم\n"
                     "📚 وضع الدراسة: ❌ بريميوم\n"
@@ -4304,6 +4326,25 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
     # ══════════════════════════════════════
 
     elif command == "video_search":
+        # 🔴 فحص Premium — فيديو بالبحث مميزة بريميوم بس
+        if not is_admin:
+            try:
+                from premium import get_user_plan, PLAN_LIMITS
+                plan = get_user_plan(wa_user_id)
+                if plan not in ("premium", "premium_plus"):
+                    await _send_whatsapp_message(wa_id,
+                        f"🎬 فيديو بالبحث مميزة Premium بس!\n\n"
+                        f"📥 تحميل من أي منصة 📥\n"
+                        f"🎬 فيديو بالبحث\n"
+                        f"🎵 صوت بالبحث\n"
+                        f"🎨 إنشاء وتعديل صور 🎨🖌️\n"
+                        f"📚 وضع الدراسة\n"
+                        f"🧠 ذاكرة طويلة المدى\n\n"
+                        f"📩 تواصل مع المطور على واتساب:\n📱 {DEVELOPER_WHATSAPP_URL}")
+                    return True
+            except Exception:
+                pass
+
         # 🔴 حفظ حالة المستخدم — في انتظار كلمات البحث
         _set_user_state(wa_id, "video_search_query", {"step": "awaiting_query"})
         await _send_whatsapp_message(wa_id,
@@ -4314,6 +4355,25 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
         return True
 
     elif command == "audio_search":
+        # 🔴 فحص Premium — صوت بالبحث مميزة بريميوم بس
+        if not is_admin:
+            try:
+                from premium import get_user_plan
+                plan = get_user_plan(wa_user_id)
+                if plan not in ("premium", "premium_plus"):
+                    await _send_whatsapp_message(wa_id,
+                        f"🎵 صوت بالبحث مميزة Premium بس!\n\n"
+                        f"📥 تحميل من أي منصة 📥\n"
+                        f"🎬 فيديو بالبحث\n"
+                        f"🎵 صوت بالبحث\n"
+                        f"🎨 إنشاء وتعديل صور 🎨🖌️\n"
+                        f"📚 وضع الدراسة\n"
+                        f"🧠 ذاكرة طويلة المدى\n\n"
+                        f"📩 تواصل مع المطور على واتساب:\n📱 {DEVELOPER_WHATSAPP_URL}")
+                    return True
+            except Exception:
+                pass
+
         # 🔴 حفظ حالة المستخدم — في انتظار كلمات البحث
         _set_user_state(wa_id, "audio_search_query", {"step": "awaiting_query"})
         await _send_whatsapp_message(wa_id,
@@ -4324,6 +4384,22 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
         return True
 
     elif command == "photo_search":
+        # 🔴 فحص Premium — بحث صور (مجاني 3/يوم، بريميوم غير محدود)
+        if not is_admin:
+            try:
+                from premium import get_user_plan, check_limit, increment_usage
+                plan = get_user_plan(wa_user_id)
+                if plan not in ("premium", "premium_plus"):
+                    can_search, _ = check_limit(wa_user_id, "photo_searches_per_day")
+                    if not can_search:
+                        await _send_whatsapp_message(wa_id,
+                            "🖼️ وصلت حد بحث الصور اليوم (3/يوم)\n\n"
+                            "⭐ Premium: بحث صور غير محدود!\n\n"
+                            f"📩 تواصل مع المطور على واتساب:\n📱 {DEVELOPER_WHATSAPP_URL}")
+                        return True
+            except Exception:
+                pass
+
         # 🔴 حفظ حالة المستخدم — في انتظار كلمات البحث
         _set_user_state(wa_id, "photo_search_query", {"step": "awaiting_query"})
         await _send_whatsapp_message(wa_id,
@@ -4887,10 +4963,16 @@ async def _handle_incoming_message(message: dict, value: dict):
             from memory import _ensure_user_in_db
             _ensure_user_in_db(wa_user_id, platform="whatsapp")
             # Save name from WhatsApp profile
+            updates = {}
             if contact_name and contact_name != "Unknown":
+                updates["name"] = contact_name
+            # 🔴 حفظ رقم واتساب المستخدم — ضروري لإرسال الإشعارات من التليجرام
+            if wa_id:
+                updates["wa_phone"] = wa_id
+            if updates:
                 try:
                     from memory import update_user
-                    update_user(wa_user_id, {"name": contact_name})
+                    update_user(wa_user_id, updates)
                 except Exception:
                     pass
         except Exception:
@@ -5526,6 +5608,24 @@ async def _handle_incoming_message(message: dict, value: dict):
             if url:
                 platform = _detect_platform(url)
                 if platform != "unknown":
+                    # 🔴 فحص Premium — التحميل من المنصات مميز بريميوم بس
+                    if not is_admin:
+                        try:
+                            from premium import get_user_plan
+                            plan = get_user_plan(wa_user_id)
+                            if plan not in ("premium", "premium_plus"):
+                                await _send_whatsapp_message(wa_id,
+                                    f"📥 تحميل الفيديوهات مميز Premium بس!\n\n"
+                                    f"⭐ مع Premium تقدر:\n"
+                                    f"• تحميل من أي منصة 📥\n"
+                                    f"  (YouTube, Insta, TikTok, FB, Twitter...)\n"
+                                    f"• فيديو بالبحث 🎬\n"
+                                    f"• صوت بالبحث 🎵\n\n"
+                                    f"📩 تواصل مع المطور على واتساب:\n📱 {DEVELOPER_WHATSAPP_URL}")
+                                return
+                        except Exception:
+                            pass
+                    
                     # 🛡️ Safety: Check URL/query before proceeding with download
                     try:
                         is_safe, reason = await check_query_safety(url, platform="whatsapp", user_id=str(wa_user_id))
@@ -5613,10 +5713,18 @@ async def _handle_admin_with_args(wa_id: str, content: str, wa_user_id: int, con
                     f"⭐ مبروك! تم تفعيل Premium!\n\n"
                     f"أنت دلوقتي مشترك Premium في My Bro!\n"
                     f"استمتع بكل المزايا:\n"
-                    f"• رسائل AI غير محدودة\n"
-                    f"• تحليل PDF غير محدود\n"
-                    f"• تحليل صور غير محدود\n"
+                    f"• رسائل AI غير محدودة 💬\n"
+                    f"• تحليل PDF غير محدود 📄\n"
+                    f"• تحليل صور غير محدود + Vision Pro 👁️\n"
+                    f"• ملخصات YouTube غير محدودة 🎬\n"
                     f"• بحث غير محدود 🔍\n"
+                    f"• تحميل وسائط من أي منصة 📥\n"
+                    f"  (YouTube, Instagram, TikTok, FB, Twitter...)\n"
+                    f"• فيديو بالبحث غير محدود 🎬\n"
+                    f"• صوت بالبحث غير محدود 🎵\n"
+                    f"• بحث صور غير محدود 🖼️\n"
+                    f"• إنشاء صور بالذكاء الاصطناعي 🎨\n"
+                    f"• تعديل صور بالذكاء الاصطناعي 🖌️\n"
                     f"• وضع الدراسة 📚\n"
                     f"• ذاكرة طويلة المدى 🧠\n\n"
                     f"⏰ المدة: {expires_display}"

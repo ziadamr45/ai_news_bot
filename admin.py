@@ -262,6 +262,87 @@ def ensure_admin_premium(user_id: int):
 
 
 # ═══════════════════════════════════════
+# إرسال إشعارات عبر المنصات - Cross-Platform Notifications
+# ═══════════════════════════════════════
+
+async def send_cross_platform_notification(
+    target_user_id: int,
+    text: str,
+    telegram_bot=None,
+    html_parse_mode: bool = True
+):
+    """إرسال إشعار للمستخدم على المنصة الصح (تليجرام أو واتساب)
+    
+    Args:
+        target_user_id: معرف المستخدم (hashed user_id)
+        text: نص الرسالة
+        telegram_bot: كائن البوت التليجرام (context.bot) — لازم لو اليوزر تليجرام
+        html_parse_mode: هل الرسالة بـ HTML formatting
+    
+    Returns:
+        True لو الإشعار وصل، False لو فشل
+    """
+    try:
+        from memory import get_user
+        user_data = get_user(target_user_id)
+        platform = user_data.get("platform", "telegram")
+        wa_phone = user_data.get("wa_phone", "")
+        
+        if platform == "whatsapp" and wa_phone:
+            # يوزر واتساب — ابعت عبر WhatsApp Cloud API
+            try:
+                from whatsapp_webhook import _send_whatsapp_message, _strip_html_for_whatsapp
+                
+                # WhatsApp لا يدعم HTML — حوّله لـ WhatsApp formatting
+                wa_text = _strip_html_for_whatsapp(text) if html_parse_mode else text
+                
+                result = await _send_whatsapp_message(wa_phone, wa_text)
+                if "error" not in result:
+                    logger.info(f"📤 WA notification sent to {wa_phone}")
+                    return True
+                else:
+                    logger.warning(f"⚠️ WA notification failed for {wa_phone}: {result}")
+            except ImportError:
+                logger.warning("⚠️ whatsapp_webhook not available for notification")
+            except Exception as e:
+                logger.warning(f"⚠️ WA notification error: {e}")
+            
+            # Fallback: حاول ابعت على التليجرام كمان
+            if telegram_bot:
+                try:
+                    await telegram_bot.send_message(
+                        chat_id=target_user_id,
+                        text=text,
+                        parse_mode="HTML" if html_parse_mode else None
+                    )
+                    return True
+                except Exception:
+                    pass
+            
+            return False
+        
+        else:
+            # يوزر تليجرام — ابعت عبر Telegram Bot API
+            if telegram_bot:
+                try:
+                    await telegram_bot.send_message(
+                        chat_id=target_user_id,
+                        text=text,
+                        parse_mode="HTML" if html_parse_mode else None
+                    )
+                    return True
+                except Exception as e:
+                    logger.info(f"Could not notify Telegram user {target_user_id}: {e}")
+                    return False
+            
+            return False
+    
+    except Exception as e:
+        logger.warning(f"⚠️ Cross-platform notification error: {e}")
+        return False
+
+
+# ═══════════════════════════════════════
 # أوامر الأدمن - Admin Commands
 # ═══════════════════════════════════════
 
@@ -444,21 +525,29 @@ async def grant_premium_command(update: Update, context: ContextTypes.DEFAULT_TY
             parse_mode="HTML"
         )
 
-        # محاولة إرسال رسالة للمستخدم
+        # محاولة إرسال رسالة للمستخدم (عبر المنصة الصح — تليجرام أو واتساب)
         try:
-            await context.bot.send_message(
-                chat_id=target_id,
+            await send_cross_platform_notification(
+                target_user_id=target_id,
                 text=f"⭐ <b>مبروك! تم تفعيل Premium!</b>\n\n"
                      f"أنت دلوقتي مشترك Premium في My Bro!\n"
                      f"استمتع بكل المزايا:\n"
-                     f"• رسائل AI غير محدودة\n"
-                     f"• تحليل PDF غير محدود\n"
-                     f"• تحليل صور غير محدود\n"
+                     f"• رسائل AI غير محدودة 💬\n"
+                     f"• تحليل PDF غير محدود 📄\n"
+                     f"• تحليل صور غير محدود + Vision Pro 👁️\n"
+                     f"• ملخصات YouTube غير محدودة 🎬\n"
                      f"• بحث غير محدود 🔍\n"
+                     f"• تحميل وسائط من أي منصة 📥\n"
+                     f"  (YouTube, Instagram, TikTok, FB, Twitter...)\n"
+                     f"• فيديو بالبحث غير محدود 🎬\n"
+                     f"• صوت بالبحث غير محدود 🎵\n"
+                     f"• بحث صور غير محدود 🖼️\n"
+                     f"• إنشاء صور بالذكاء الاصطناعي 🎨\n"
+                     f"• تعديل صور بالذكاء الاصطناعي 🖌️\n"
                      f"• وضع الدراسة 📚\n"
                      f"• ذاكرة طويلة المدى 🧠\n\n"
                      f"⏰ المدة: {expires_display}",
-                parse_mode="HTML"
+                telegram_bot=context.bot
             )
         except Exception as e:
             logger.info(f"Could not notify user {target_id}: {e}")
@@ -515,14 +604,14 @@ async def revoke_premium_command(update: Update, context: ContextTypes.DEFAULT_T
             parse_mode="HTML"
         )
 
-        # إبلاغ المستخدم
+        # إبلاغ المستخدم (عبر المنصة الصح — تليجرام أو واتساب)
         try:
-            await context.bot.send_message(
-                chat_id=target_id,
+            await send_cross_platform_notification(
+                target_user_id=target_id,
                 text="⚠️ <b>تم إلغاء اشتراك Premium</b>\n\n"
                      "اشتراكك Premium اتلغى. لسه تقدر تستخدم الخطة المجانية.\n\n"
                      "📩 لو عايز تجدده تواصل مع @ziadamr",
-                parse_mode="HTML"
+                telegram_bot=context.bot
             )
         except Exception:
             pass
@@ -606,10 +695,10 @@ async def resetlimit_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 parse_mode="HTML"
             )
 
-            # إبلاغ المستخدم
+            # إبلاغ المستخدم (عبر المنصة الصح — تليجرام أو واتساب)
             try:
-                await context.bot.send_message(
-                    chat_id=target_id,
+                await send_cross_platform_notification(
+                    target_user_id=target_id,
                     text="🔄 <b>تم إعادة تعيين حدودك!</b>\n\n"
                          "حدودك اليومية اترجعت تاني — تقدر تكمل استخدام البوت عادي!\n\n"
                          "💬 رسائل AI: 0/20\n"
@@ -617,7 +706,7 @@ async def resetlimit_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
                          "🖼️ تحليلات صور: 0/5\n"
                          "🎬 ملخصات YouTube: 0/3\n"
                          "🔍 عمليات بحث: 0/5",
-                    parse_mode="HTML"
+                    telegram_bot=context.bot
                 )
             except Exception as e:
                 logger.info(f"Could not notify user {target_id}: {e}")
@@ -909,10 +998,10 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
 
         for i, sub in enumerate(subscribers):
             try:
-                await context.bot.send_message(
-                    chat_id=sub["user_id"],
+                await send_cross_platform_notification(
+                    target_user_id=sub["user_id"],
                     text=f"📢 <b>رسالة من My Bro</b>\n\n{message_text}",
-                    parse_mode="HTML"
+                    telegram_bot=context.bot
                 )
                 success += 1
             except Exception:

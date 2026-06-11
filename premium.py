@@ -42,6 +42,10 @@ PLAN_LIMITS = {
         "deep_searches_per_day": 0,  # Premium only
         "image_generations_per_day": 0,  # Premium only 🎨
         "image_edits_per_day": 0,  # Premium only 🖌️
+        "downloads_per_day": 0,  # Premium only 📥 تحميل من أي منصة
+        "video_searches_per_day": 0,  # Premium only 🎬 فيديو بالبحث
+        "audio_searches_per_day": 0,  # Premium only 🎵 صوت بالبحث
+        "photo_searches_per_day": 3,  # 🖼️ بحث صور — مجاني 3/يوم
         "study_mode": False,
         "long_term_memory": False,
         "voice_assistant": False,
@@ -63,6 +67,10 @@ PLAN_LIMITS = {
         "deep_searches_per_day": -1,
         "image_generations_per_day": -1,  # 🎨 إنشاء صور غير محدود
         "image_edits_per_day": -1,  # 🖌️ تعديل صور غير محدود
+        "downloads_per_day": -1,  # 📥 تحميل غير محدود
+        "video_searches_per_day": -1,  # 🎬 فيديو بالبحث غير محدود
+        "audio_searches_per_day": -1,  # 🎵 صوت بالبحث غير محدود
+        "photo_searches_per_day": -1,  # 🖼️ بحث صور غير محدود
         "study_mode": True,
         "long_term_memory": True,
         "voice_assistant": True,
@@ -85,6 +93,10 @@ PLAN_LIMITS = {
         "deep_searches_per_day": -1,
         "image_generations_per_day": -1,
         "image_edits_per_day": -1,
+        "downloads_per_day": -1,
+        "video_searches_per_day": -1,
+        "audio_searches_per_day": -1,
+        "photo_searches_per_day": -1,
         "study_mode": True,
         "long_term_memory": True,
         "voice_assistant": True,
@@ -909,14 +921,22 @@ def premium_required_message(feature: str, lang: str = "ar") -> str:
 • 5 تحليلات صور في اليوم
 • 3 ملخصات YouTube في اليوم
 • 5 عمليات بحث في اليوم
+• 3 عمليات بحث صور في اليوم 🖼️
 • نموذج AI أساسي
 
 ⭐ <b>خطة Premium:</b>
-• رسائل AI غير محدودة
-• تحليل PDF غير محدود
+• رسائل AI غير محدودة 💬
+• تحليل PDF غير محدود 📄
 • تحليل صور غير محدود + Vision Pro 👁️
-• ملخصات YouTube غير محدودة
+• ملخصات YouTube غير محدودة 🎬
 • بحث غير محدود 🔍
+• تحميل وسائط من أي منصة 📥
+  (YouTube, Instagram, TikTok, Facebook, Twitter...)
+• فيديو بالبحث غير محدود 🎬
+• صوت بالبحث غير محدود 🎵
+• بحث صور غير محدود 🖼️
+• إنشاء صور بالذكاء الاصطناعي 🎨
+• تعديل صور بالذكاء الاصطناعي 🖌️
 • وضع الدراسة 📚
 • ذاكرة طويلة المدى 🧠
 • مساعد صوتي 🎙️
@@ -941,14 +961,22 @@ Feature: {feature}
 • 5 image analyses per day
 • 3 YouTube summaries per day
 • 5 searches per day
+• 3 photo searches per day 🖼️
 • Basic AI model
 
 ⭐ <b>Premium Plan:</b>
-• Unlimited AI messages
-• Unlimited PDF analysis
+• Unlimited AI messages 💬
+• Unlimited PDF analysis 📄
 • Unlimited image analysis + Vision Pro 👁️
-• Unlimited YouTube summaries
+• Unlimited YouTube summaries 🎬
 • Unlimited search 🔍
+• Media downloads from any platform 📥
+  (YouTube, Instagram, TikTok, Facebook, Twitter...)
+• Unlimited video search 🎬
+• Unlimited audio search 🎵
+• Unlimited photo search 🖼️
+• AI Image Generation 🎨
+• AI Image Editing 🖌️
 • Study Mode 📚
 • Long-term Memory 🧠
 • Voice Assistant 🎙️

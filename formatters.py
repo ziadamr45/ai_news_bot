@@ -332,30 +332,44 @@ def welcome_message(language: str = "ar", user_name: str = "") -> str:
         return f"""🤖 <b>أهلاً بك{name_part} في My Bro</b>
 ━━━━━━━━━━━━━━━━━
 
-مساعدك الذكي لمتابعة عالم الذكاء الاصطناعي 🧠
+مساعدك الذكي الشامل 🧠
 
-📰 <b>الأخبار</b> — آخر أخبار AI لحظة بلحظة
-🤖 <b>اسألني</b> — أي سؤال وهيكون عندك إجابة
-📚 <b>تعلّم</b> — شروحات وخرائط طريق
-🔍 <b>ابحث</b> — بحث في الأخبار والويب
-📈 <b>التريندات</b> — أكثر المواضيع رواجاً
+💬 <b>اسألني</b> — أي سؤال وهيكون عندك إجابة
+📄 <b>تحليل ملفات</b> — ارفع PDF وأنا أحللهولك
+🎬 <b>ملخص يوتيوب</b> — ابعت رابط فيديو وهلخصه
+📥 <b>تحميل وسائط</b> — حمّل من YouTube, Insta, TikTok ⭐
+🎨 <b>إنشاء صور</b> — صور بالذكاء الاصطناعي ⭐
+🖌️ <b>تعديل صور</b> — عدّل أي صورة بوصف نصي ⭐
+🎬 <b>فيديو بالبحث</b> — ابحث وحمّل فيديو ⭐
+🎵 <b>صوت بالبحث</b> — ابحث وحمّل صوت ⭐
+🖼️ <b>بحث صور</b> — ابحث عن أي صورة
+📚 <b>وضع الدراسة</b> — خطط، كويزات، امتحانات ⭐
+🔍 <b>بحث الويب</b> — بحث شامل في الإنترنت
 
 ━━━━━━━━━━━━━━━━━
-💡 <i>اختار من الأزرار بالأسفل أو اكتب سؤالك مباشرة!</i>"""
+💡 <i>اختار من الأزرار بالأسفل أو اكتب سؤالك مباشرة!</i>
+⭐ <i>الميزات المعلّمة بالنجمة للمشتركين Premium بس</i>"""
     else:
         return f"""🤖 <b>Welcome{name_part} to My Bro</b>
 ━━━━━━━━━━━━━━━━━
 
-Your smart AI assistant for the AI world 🧠
+Your smart AI assistant 🧠
 
-📰 <b>News</b> — Latest AI news in real-time
-🤖 <b>Ask Me</b> — Any question, answered instantly
-📚 <b>Learn</b> — Tutorials & learning roadmaps
-🔍 <b>Search</b> — Search news & the web
-📈 <b>Trending</b> — Hottest AI topics
+💬 <b>Ask Me</b> — Any question, answered instantly
+📄 <b>PDF Analysis</b> — Upload PDF and I'll analyze it
+🎬 <b>YouTube Summary</b> — Send a video link and I'll summarize
+📥 <b>Media Downloads</b> — Download from YouTube, Insta, TikTok ⭐
+🎨 <b>Image Generation</b> — AI-generated images ⭐
+🖌️ <b>Image Editing</b> — Edit any image with text ⭐
+🎬 <b>Video Search</b> — Search & download videos ⭐
+🎵 <b>Audio Search</b> — Search & download audio ⭐
+🖼️ <b>Photo Search</b> — Search for any image
+📚 <b>Study Mode</b> — Plans, quizzes, exams ⭐
+🔍 <b>Web Search</b> — Comprehensive web search
 
 ━━━━━━━━━━━━━━━━━
-💡 <i>Choose from buttons below or just type your question!</i>"""
+💡 <i>Choose from buttons below or just type your question!</i>
+⭐ <i>Features marked with ⭐ are Premium only</i>"""
 
 
 def help_message(language: str = "ar") -> str:
@@ -364,84 +378,109 @@ def help_message(language: str = "ar") -> str:
         return """🤖 <b>أوامر My Bro</b>
 ━━━━━━━━━━━━━━━━━
 
-📰 <b>الأخبار</b>
-/news — أخبار AI اليوم
-/breaking — أهم خبر حالي
-/weekly — ملخص الأسبوع
-/trending — الترندات الآن
-
-🔍 <b>البحث والاستكشاف</b>
-/search &lt;كلمة&gt; — بحث في أخبار AI
-
-💬 <b>المحادثة والتعلم</b>
+💬 <b>المحادثة والذكاء الاصطناعي</b>
 /ask &lt;سؤال&gt; — سؤال مباشر
-/learn &lt;موضوع&gt; — شرح تعليمي
-/roadmap &lt;موضوع&gt; — خارطة طريق
+ابعت أي سؤال وهجاوبك فوراً!
 
-📬 <b>الاشتراك في الأخبار</b>
-/subscribe — اشترك في الأخبار اليومية
-/unsubscribe — إلغاء الاشتراك
-/subscribers — عدد المشتركين
+📄 <b>تحليل الملفات</b>
+ارفع PDF أو مستند وهحللهولك
+
+🎬 <b>ملخص يوتيوب</b>
+ابعت رابط فيديو وهلخصهولك
+
+📥 <b>تحميل وسائط</b> ⭐
+ابعت رابط من YouTube, Instagram, TikTok, Facebook, Twitter
+/كمبيوتر — تحميل مباشر بالرابط
+
+🎬 <b>فيديو بالبحث</b> ⭐
+/video &lt;بحث&gt; — ابحث عن فيديو وحمّله
+
+🎵 <b>صوت بالبحث</b> ⭐
+/audio &lt;بحث&gt; — ابحث عن صوت وحمّله
+
+🖼️ <b>بحث صور</b>
+/photo &lt;بحث&gt; — ابحث عن صور (3/يوم مجاني)
+
+🎨 <b>إنشاء صور</b> ⭐
+/image &lt;وصف&gt; — صورة من وصف نصي
+
+🖌️ <b>تعديل صور</b> ⭐
+/edit &lt;وصف&gt; — عدّل صورة بوصف نصي
+
+📚 <b>وضع الدراسة</b> ⭐
+/study — خطط دراسية وكويزات وامتحانات
+
+🔍 <b>البحث</b>
+/search &lt;كلمة&gt; — بحث في الويب
 
 🧠 <b>الذاكرة والمفضلات</b>
 /memory — ذاكرتي عنك
-/progress — تقدمك في التعلم
 /favorite — احفظ آخر شيء في المفضلة
 /favorites — المفضلات
 /forget &lt;كلمة&gt; — امسح ذكرى محددة
-/resetmemory — امسح كل الذكريات
 
 ⚙️ <b>الإعدادات</b>
 /language — تغيير اللغة
-/time — تغيير وقت الأخبار
-/sources — المصادر المفضلة
 /about — عن البوت والمؤسس
+/premium — حالة الاشتراك
+/plan — مزايا Premium
 
-🌐 <b>بحث الويب</b>
-ابحث عن أي شيء في الويب مباشرة!
-مثال: "ابحث عن أحدث أخبار OpenAI"
-
-💡 <b>ملاحظة:</b> ممكن تتكلم معايا بشكل عادي من غير أوامر! أنا ببحث في الويب تلقائياً لو سألت عن شيء يحتاج معلومات حالية 🔍
-💡 <b>أنا بفتكر:</b> اهتماماتك، مواضيع تعلمتها، وشركات تتابعها تلقائياً!"""
+━━━━━━━━━━━━━━━━━
+⭐ = مميزات Premium بس
+💡 ممكن تتكلم معايا بشكل عادي من غير أوامر!"""
     else:
         return """🤖 <b>My Bro Commands</b>
 ━━━━━━━━━━━━━━━━━
 
-📰 <b>News</b>
-/news — Today's AI news
-/breaking — Most important news now
-/weekly — Weekly summary
-/trending — Trending topics
-
-🔍 <b>Search & Explore</b>
-/search &lt;query&gt; — Search AI news
-
-💬 <b>Chat & Learn</b>
+💬 <b>Chat & AI</b>
 /ask &lt;question&gt; — Direct question
-/learn &lt;topic&gt; — Educational explanation
-/roadmap &lt;topic&gt; — Learning roadmap
+Just type anything and I'll respond!
 
-📬 <b>News Subscription</b>
-/subscribe — Subscribe to daily news
-/unsubscribe — Unsubscribe
-/subscribers — Subscriber count
+📄 <b>File Analysis</b>
+Upload a PDF or document and I'll analyze it
+
+🎬 <b>YouTube Summary</b>
+Send a video link and I'll summarize it
+
+📥 <b>Media Downloads</b> ⭐
+Send a link from YouTube, Instagram, TikTok, Facebook, Twitter
+
+🎬 <b>Video Search</b> ⭐
+/video &lt;query&gt; — Search & download videos
+
+🎵 <b>Audio Search</b> ⭐
+/audio &lt;query&gt; — Search & download audio
+
+🖼️ <b>Photo Search</b>
+/photo &lt;query&gt; — Search for images (3/day free)
+
+🎨 <b>Image Generation</b> ⭐
+/image &lt;description&gt; — Generate AI images
+
+🖌️ <b>Image Editing</b> ⭐
+/edit &lt;description&gt; — Edit images with text
+
+📚 <b>Study Mode</b> ⭐
+/study — Study plans, quizzes, exams
+
+🔍 <b>Search</b>
+/search &lt;query&gt; — Web search
 
 🧠 <b>Memory & Favorites</b>
 /memory — My memory about you
-/progress — Your learning progress
 /favorite — Save last item to favorites
 /favorites — View favorites
 /forget &lt;keyword&gt; — Delete specific memory
-/resetmemory — Delete all memories
 
 ⚙️ <b>Settings</b>
 /language — Change language
-/time — Change news time
-/sources — Preferred sources
 /about — About the bot & creator
+/premium — Subscription status
+/plan — Premium features
 
-💡 <b>Note:</b> You can chat with me naturally without commands! I automatically search the web when you ask about current information 🔍
-💡 <b>I Remember:</b> Your interests, learned topics, and followed companies automatically!"""
+━━━━━━━━━━━━━━━━━
+⭐ = Premium features only
+💡 You can chat with me naturally without commands!"""
 
 
 def format_news_item(index: int, title: str, summary: str, url: str, is_top: bool = False, category: str = "", language: str = "ar") -> str:

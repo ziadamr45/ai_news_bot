@@ -250,7 +250,11 @@ async def premium_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 📄 تحليلات PDF: {usage.get('pdf_analyses', 0)}
 🖼️ تحليلات الصور: {usage.get('image_analyses', 0)}
 🎬 ملخصات YouTube: {usage.get('youtube_summaries', 0)}
-🔍 عمليات البحث: {usage.get('searches', 0)}"""
+🔍 عمليات البحث: {usage.get('searches', 0)}
+📥 تحميل وسائط: {usage.get('downloads', 0)}
+🎬 فيديو بالبحث: {usage.get('video_searches', 0)}
+🎵 صوت بالبحث: {usage.get('audio_searches', 0)}
+🖼️ بحث صور: {usage.get('photo_searches', 0)}"""
         else:
             # Free user — show limits with usage
             from premium import PLAN_LIMITS
@@ -277,6 +281,14 @@ async def premium_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 🖼️ تحليلات الصور: {img_used} من {img_limit}
 🎬 ملخصات YouTube: {yt_used} من {yt_limit}
 🔍 عمليات البحث: {search_used} من {search_limit}
+🖼️ بحث صور: {usage.get('photo_searches', 0)} من {limits.get('photo_searches_per_day', 3)}
+
+📥 تحميل فيديو: ❌ بريميوم
+🎬 فيديو بالبحث: ❌ بريميوم
+🎵 صوت بالبحث: ❌ بريميوم
+🎨 إنشاء صور: ❌ بريميوم
+🖌️ تعديل صور: ❌ بريميوم
+📚 وضع الدراسة: ❌ بريميوم
 
 💡 الحد بيرجع تاني بكرة!
 ⭐ ترقية لـ Premium عشان استخدام غير محدود!
@@ -299,7 +311,11 @@ async def premium_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 📄 PDF Analyses: {usage.get('pdf_analyses', 0)}
 🖼️ Image Analyses: {usage.get('image_analyses', 0)}
 🎬 YouTube Summaries: {usage.get('youtube_summaries', 0)}
-🔍 Searches: {usage.get('searches', 0)}"""
+🔍 Searches: {usage.get('searches', 0)}
+📥 Media Downloads: {usage.get('downloads', 0)}
+🎬 Video Searches: {usage.get('video_searches', 0)}
+🎵 Audio Searches: {usage.get('audio_searches', 0)}
+🖼️ Photo Searches: {usage.get('photo_searches', 0)}"""
         else:
             from premium import PLAN_LIMITS
             limits = PLAN_LIMITS["free"]
@@ -325,6 +341,14 @@ async def premium_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 🖼️ Image Analyses: {img_used} of {img_limit}
 🎬 YouTube Summaries: {yt_used} of {yt_limit}
 🔍 Searches: {search_used} of {search_limit}
+🖼️ Photo Searches: {usage.get('photo_searches', 0)} of {limits.get('photo_searches_per_day', 3)}
+
+📥 Video Downloads: ❌ Premium
+🎬 Video Search: ❌ Premium
+🎵 Audio Search: ❌ Premium
+🎨 Image Generation: ❌ Premium
+🖌️ Image Editing: ❌ Premium
+📚 Study Mode: ❌ Premium
 
 💡 Limits reset tomorrow!
 ⭐ Upgrade to Premium for unlimited usage!

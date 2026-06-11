@@ -496,12 +496,13 @@ DEVELOPER_TELEGRAM_URL = "https://t.me/ziadamr"
 DEVELOPER_WHATSAPP = "01203551789"
 DEVELOPER_WHATSAPP_URL = "https://wa.me/201203551789"
 
-# Premium limits
+# Premium limits (⚠️仅供参考 — the actual limits are in PLAN_LIMITS in premium.py)
 FREE_AI_MESSAGES_PER_DAY = 20
-FREE_PDF_PER_DAY = 2
-FREE_IMAGES_PER_DAY = 3
-FREE_YOUTUBE_PER_DAY = 2
+FREE_PDF_PER_DAY = 3
+FREE_IMAGES_PER_DAY = 5
+FREE_YOUTUBE_PER_DAY = 3
 FREE_SEARCHES_PER_DAY = 5
+FREE_PHOTO_SEARCHES_PER_DAY = 3
 
 # ═══════════════════════════════════════
 # إعدادات الصوت - Voice Settings

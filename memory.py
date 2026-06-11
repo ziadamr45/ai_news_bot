@@ -642,6 +642,18 @@ def _ensure_user_in_db(user_id: int, platform: str = "telegram"):
     except Exception:
         pass  # العمود موجود بالفعل
 
+    # Migration: إضافة عمود wa_phone لو مش موجود (لتخزين رقم واتساب المستخدم)
+    try:
+        if _is_postgres():
+            _execute("ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS wa_phone TEXT DEFAULT ''")
+        else:
+            try:
+                _execute("SELECT wa_phone FROM user_profiles LIMIT 1", fetchone=True)
+            except Exception:
+                _execute("ALTER TABLE user_profiles ADD COLUMN wa_phone TEXT DEFAULT ''")
+    except Exception:
+        pass  # العمود موجود بالفعل
+
     row = _execute("SELECT user_id FROM user_profiles WHERE user_id = %s" if _is_postgres() else "SELECT user_id FROM user_profiles WHERE user_id = ?", (user_id,), fetchone=True)
     if not row:
         now = datetime.now().isoformat()
@@ -717,7 +729,7 @@ _ALLOWED_USER_COLUMNS = frozenset({
     'name', 'language', 'news_time', 'sources', 'subscribed',
     'response_length', 'notification_enabled', 'interests',
     'favorite_companies', 'last_interaction', 'commands_used',
-    'chat_count', 'last_news_delivery'
+    'chat_count', 'last_news_delivery', 'wa_phone'
 })
 
 def update_user(user_id: int, updates: Dict[str, Any]):
