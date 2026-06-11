@@ -299,6 +299,7 @@ def _download_video(url: str, quality: str, output_dir: str) -> dict | None:
         'fragment_retries': 5,
         'no_check_certificates': True,
         'format': format_str,
+        'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
         'http_headers': {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
         },
@@ -319,7 +320,8 @@ def _download_video(url: str, quality: str, output_dir: str) -> dict | None:
     if os.path.exists(cookies_path):
         try:
             with open(cookies_path, 'r') as f:
-                if f.read().strip() and len(f.read()) > 50:
+                content = f.read()
+                if content.strip() and len(content) > 50:
                     ydl_opts['cookiefile'] = cookies_path
         except:
             pass
@@ -513,7 +515,7 @@ async def download(
     video_title = ""
     video_description = ""
     try:
-        info_opts = {'quiet': True, 'no_warnings': True, 'skip_download': True}
+        info_opts = {'quiet': True, 'no_warnings': True, 'skip_download': True, 'extractor_args': {'youtube': {'player_client': ['android', 'web']}}}
         with yt_dlp.YoutubeDL(info_opts) as ydl:
             info = ydl.extract_info(url, download=False)
             if info:
@@ -677,6 +679,7 @@ async def get_info(
             'quiet': True,
             'no_warnings': True,
             'skip_download': True,
+            'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
         }
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
