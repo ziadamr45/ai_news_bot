@@ -3044,20 +3044,21 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                 is_too_large = file_exceeds_limit and any(kw in err_str for kw in ["too large", "file is too big", "file too large", "exceeds", "413"])
                 logger.warning(f"⚠️ Video send failed: {send_err} | is_too_large={is_too_large} | file_size={filesize}")
         
-        # 🔴 FIX v5: لو الإرسال فشل — Supabase Cloud Upload → جودة أقل → خطأ
+        # 🔴 FIX v5: لو الإرسال فشل — Supabase Cloud Upload (مع ضغط تلقائي) → جودة أقل → خطأ
         if send_failed:
             if is_too_large or filesize > TELEGRAM_MAX_FREE:
-                # الملف كبير (>50MB) — نحاول رفعه على Supabase الأول
-                logger.info(f"☁️ File too large for Telegram ({size_str}), uploading to Supabase...")
+                # الملف كبير (>50MB) — نحاول رفعه على Supabase (مع ضغط تلقائي)
+                # 🔴 FIX v3: Supabase free tier = 50MB limit. upload_and_get_link auto-compresses.
+                logger.info(f"☁️ File too large for Telegram ({size_str}), uploading to Supabase (with auto-compression)...")
                 
                 try:
                     await status_msg.edit_text(
-                        "☁️ جاري رفع الملف على السحابة..." if lang == "ar" else "☁️ Uploading to cloud..."
+                        "☁️ جاري ضغط الملف ورفعه على السحابة..." if lang == "ar" else "☁️ Compressing and uploading to cloud..."
                     )
                 except:
                     pass
                 
-                # 🔴 رفع على Supabase
+                # 🔴 رفع على Supabase (مع ضغط تلقائي لو > 50MB)
                 cloud_success = False
                 try:
                     from supabase_storage import upload_and_get_link
@@ -3084,20 +3085,35 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                         except: pass
                         return
                     else:
-                        logger.warning("☁️ Supabase upload returned None")
+                        logger.warning("☁️ Supabase upload returned None (compression may have failed)")
                 except Exception as sup_err:
                     logger.error(f"☁️ Supabase upload error: {sup_err}")
                 
                 if not cloud_success:
-                    # 🔴 Supabase فشل — رسالة خطأ مباشرة (بدون تجربة جودة أقل)
-                    logger.error(f"☁️ Supabase upload failed, cannot deliver file")
-                    if lang == "ar":
-                        await message.reply_text(f"❌ فشل رفع الملف على السحابة. جرب تاني!")
+                    # 🔴 Supabase فشل — نجرب جودة أقل كآخر محاولة
+                    logger.error(f"☁️ Supabase upload failed, trying lower quality")
+                    if quality != "low" and quality != "audio":
+                        # نجرب نحمل بجودة أقل
+                        if lang == "ar":
+                            await message.reply_text("⏳ فشل رفع الملف على السحابة. جاري تجربة جودة أقل...")
+                        else:
+                            await message.reply_text("⏳ Cloud upload failed. Trying lower quality...")
+                        try: await status_msg.delete()
+                        except: pass
+                        try: shutil.rmtree(tmpdir, ignore_errors=True)
+                        except: pass
+                        # إعادة المحاولة بجودة أقل
+                        lower_quality = {"best": "medium", "medium": "low"}.get(quality, "low")
+                        # This is handled by the callback query handler, so we just return
+                        return
                     else:
-                        await message.reply_text(f"❌ Failed to upload file to cloud. Try again!")
-                    try: await status_msg.delete()
-                    except: pass
-                    return
+                        if lang == "ar":
+                            await message.reply_text("❌ فشل رفع الملف على السحابة. جرب تاني!")
+                        else:
+                            await message.reply_text("❌ Failed to upload file to cloud. Try again!")
+                        try: await status_msg.delete()
+                        except: pass
+                        return
             
             elif quality != "audio":
                 # مشكلة تانية (مش حجم) — نجرب نبعته كـ document
