@@ -1302,46 +1302,39 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                 is_video = threads_result.get("is_video", True)
                 size_mb = file_size / (1024 * 1024)
                 
-                if is_video and size_mb <= 100:
-                    try:
-                        with open(file_path, 'rb') as vf:
-                            media_response = requests.post(
-                                f"{WHATSAPP_API_URL}/{WHATSAPP_PHONE_NUMBER_ID}/media",
-                                headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
-                                files={"file": (f"{real_title[:50]}.mp4", vf, "video/mp4")},
-                                data={"messaging_product": "whatsapp", "type": "video"},
-                                timeout=180
-                            )
-                            if media_response.status_code == 200:
-                                media_id = media_response.json().get("id")
-                                await _send_whatsapp_video(wa_id, media_id, caption=f"🧵 {real_title[:200]}\n📥 Threads")
-                                await feedback.success()
-                                try: os.remove(file_path)
-                                except: pass
-                                return
-                    except Exception as send_err:
-                        logger.warning(f"⚠️ Threads WA video send failed: {send_err}")
-                elif not is_video:
-                    try:
-                        with open(file_path, 'rb') as img_f:
-                            media_response = requests.post(
-                                f"{WHATSAPP_API_URL}/{WHATSAPP_PHONE_NUMBER_ID}/media",
-                                headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
-                                files={"file": (f"{real_title[:50]}.jpg", img_f, "image/jpeg")},
-                                data={"messaging_product": "whatsapp", "type": "image"},
-                                timeout=60
-                            )
-                            if media_response.status_code == 200:
-                                media_id = media_response.json().get("id")
-                                await _send_whatsapp_image(wa_id, media_id, caption=f"🧵 {real_title[:200]}\n📥 Threads")
-                                await feedback.success()
-                                try: os.remove(file_path)
-                                except: pass
-                                return
-                    except Exception as send_err:
-                        logger.warning(f"⚠️ Threads WA image send failed: {send_err}")
+                # 🔴 FIX: نستخدم _send_whatsapp_document زي المسار الرئيسي بالظبط
+                # لأن _send_whatsapp_video مش موجودة كدالة!
+                try:
+                    with open(file_path, 'rb') as f:
+                        file_bytes = f.read()
+                    
+                    if is_video:
+                        safe_filename = re.sub(r'[<>:"/\\|?*]', '_', real_title[:50]) + '.mp4'
+                        caption = f"🧵 {real_title[:200]}\n📥 Threads | {size_mb:.1f}MB"
+                        result = await _send_whatsapp_document(
+                            wa_id, file_bytes, safe_filename, caption, "video/mp4"
+                        )
+                    else:
+                        safe_filename = re.sub(r'[<>:"/\\|?*]', '_', real_title[:50]) + '.jpg'
+                        caption = f"🧵 {real_title[:200]}\n📥 Threads"
+                        result = await _send_whatsapp_document(
+                            wa_id, file_bytes, safe_filename, caption, "image/jpeg"
+                        )
+                    
+                    if "error" not in result:
+                        increment_usage(wa_user_id, "downloads")
+                        try: track_event("media_downloads")
+                        except: pass
+                        await feedback.success()
+                        try: os.remove(file_path)
+                        except: pass
+                        return
+                    else:
+                        logger.warning(f"⚠️ Threads WA document send failed: {result.get('error')}")
+                except Exception as send_err:
+                    logger.warning(f"⚠️ Threads WA send error: {send_err}")
                 
-                # File too large or send failed
+                # Send failed
                 await _send_whatsapp_message(wa_id, f"❌ فشل إرسال الملف من Threads. جرب تاني!")
                 await feedback.error()
                 try: os.remove(file_path)
@@ -1627,11 +1620,23 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                         )
                                         if media_response.status_code == 200:
                                             media_id = media_response.json().get("id")
-                                            await _send_whatsapp_audio(wa_id, media_id)
-                                            await feedback.success()
-                                            try: os.remove(target)
-                                            except: pass
-                                            return
+                                            # 🔴 FIX: نستخدم _send_whatsapp_document بدل _send_whatsapp_audio
+                                            # لأن _send_whatsapp_audio بتاخد bytes مش media_id
+                                            with open(target, 'rb') as af2:
+                                                audio_bytes = af2.read()
+                                            safe_audio_name = re.sub(r'[<>:"/\\|?*]', '_', piped_title[:50]) + '.mp3'
+                                            result = await _send_whatsapp_document(
+                                                wa_id, audio_bytes, safe_audio_name,
+                                                f"🎵 {piped_title[:200]}\n📥 Piped | MP3",
+                                                "audio/mpeg"
+                                            )
+                                            if "error" not in result:
+                                                await feedback.success()
+                                                try: os.remove(target)
+                                                except: pass
+                                                return
+                                            else:
+                                                logger.warning(f"⚠️ Piped audio doc send failed: {result.get('error')}")
                                 except Exception as audio_send_err:
                                     logger.warning(f"⚠️ Piped audio send failed: {audio_send_err}")
                                     # 🔴 FIX: لازم نعيد info لـ None عشان المراحل اللي بعد كده (Cobalt) تشتغل
@@ -1639,36 +1644,30 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                     try: os.remove(target)
                                     except: pass
                             else:
-                                if piped_size_mb <= 100:
-                                    try:
-                                        with open(target, 'rb') as vf:
-                                            media_response = requests.post(
-                                                f"{WHATSAPP_API_URL}/{WHATSAPP_PHONE_NUMBER_ID}/media",
-                                                headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
-                                                files={"file": (f"{piped_title[:50]}.mp4", vf, "video/mp4")},
-                                                data={"messaging_product": "whatsapp", "type": "video"},
-                                                timeout=180
-                                            )
-                                            if media_response.status_code == 200:
-                                                media_id = media_response.json().get("id")
-                                                await _send_whatsapp_video(wa_id, media_id, caption=f"🎬 {piped_title[:200]}\n📥 Piped | {piped_quality_label}")
-                                                await feedback.success()
-                                                try: os.remove(target)
-                                                except: pass
-                                                return
-                                    except Exception as video_send_err:
-                                        logger.warning(f"⚠️ Piped video send failed: {video_send_err}")
-                                        # 🔴 FIX: لازم نعيد info لـ None عشان المراحل اللي بعد كده (Cobalt) تشتغل
+                                # 🔴 FIX: نستخدم _send_whatsapp_document بدل _send_whatsapp_video (مش موجودة!)
+                                try:
+                                    with open(target, 'rb') as vf:
+                                        file_bytes = vf.read()
+                                    safe_filename = re.sub(r'[<>:"/\\|?*]', '_', piped_title[:50]) + '.mp4'
+                                    caption = f"🎬 {piped_title[:200]}\n📥 Piped | {piped_quality_label}"
+                                    result = await _send_whatsapp_document(
+                                        wa_id, file_bytes, safe_filename, caption, "video/mp4"
+                                    )
+                                    if "error" not in result:
+                                        await feedback.success()
+                                        try: os.remove(target)
+                                        except: pass
+                                        return
+                                    else:
+                                        logger.warning(f"⚠️ Piped video doc send failed: {result.get('error')}")
                                         info = None
                                         try: os.remove(target)
                                         except: pass
-                                else:
-                                    # File too large for WhatsApp — send link
-                                    await _send_whatsapp_message(wa_id, f"❌ فشل إرسال الفيديو من Piped. جرب تاني!")
-                                    await feedback.success()
+                                except Exception as video_send_err:
+                                    logger.warning(f"⚠️ Piped video send failed: {video_send_err}")
+                                    info = None
                                     try: os.remove(target)
                                     except: pass
-                                    return
                     
                     logger.warning(f"⚠️ Piped failed, trying Invidious...")
                 except ImportError:
@@ -1728,59 +1727,40 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                             inv_size_mb = inv_size / (1024 * 1024)
                             inv_quality_label = inv_format.get("quality_label", quality)
                             
-                            if is_audio_only or quality == "audio":
-                                try:
-                                    with open(target, 'rb') as af:
-                                        media_response = requests.post(
-                                            f"{WHATSAPP_API_URL}/{WHATSAPP_PHONE_NUMBER_ID}/media",
-                                            headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
-                                            files={"file": (f"{inv_title[:50]}.mp3", af, "audio/mpeg")},
-                                            data={"messaging_product": "whatsapp", "type": "audio"},
-                                            timeout=120
-                                        )
-                                        if media_response.status_code == 200:
-                                            media_id = media_response.json().get("id")
-                                            await _send_whatsapp_audio(wa_id, media_id)
-                                            await feedback.success()
-                                            try: os.remove(target)
-                                            except: pass
-                                            return
-                                except Exception as audio_send_err:
-                                    logger.warning(f"⚠️ Invidious audio send failed: {audio_send_err}")
-                                    # 🔴 FIX: لازم نعيد info لـ None عشان المراحل اللي بعد كده (Cobalt) تشتغل
-                                    info = None
-                                    try: os.remove(target)
-                                    except: pass
-                            else:
-                                if inv_size_mb <= 100:
-                                    try:
-                                        with open(target, 'rb') as vf:
-                                            media_response = requests.post(
-                                                f"{WHATSAPP_API_URL}/{WHATSAPP_PHONE_NUMBER_ID}/media",
-                                                headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
-                                                files={"file": (f"{inv_title[:50]}.mp4", vf, "video/mp4")},
-                                                data={"messaging_product": "whatsapp", "type": "video"},
-                                                timeout=180
-                                            )
-                                            if media_response.status_code == 200:
-                                                media_id = media_response.json().get("id")
-                                                await _send_whatsapp_video(wa_id, media_id, caption=f"🎬 {inv_title[:200]}\n📥 Invidious | {inv_quality_label}")
-                                                await feedback.success()
-                                                try: os.remove(target)
-                                                except: pass
-                                                return
-                                    except Exception as video_send_err:
-                                        logger.warning(f"⚠️ Invidious video send failed: {video_send_err}")
-                                        # 🔴 FIX: لازم نعيد info لـ None عشان المراحل اللي بعد كده (Cobalt) تشتغل
-                                        info = None
-                                        try: os.remove(target)
-                                        except: pass
+                            # 🔴 FIX: نستخدم _send_whatsapp_document بدل _send_whatsapp_video/audio
+                            # لأن _send_whatsapp_video مش موجودة و _send_whatsapp_audio بتاخد bytes مش media_id
+                            try:
+                                with open(target, 'rb') as f:
+                                    file_bytes = f.read()
+                                
+                                if is_audio_only or quality == "audio":
+                                    safe_filename = re.sub(r'[<>:"/\\|?*]', '_', inv_title[:50]) + '.mp3'
+                                    caption = f"🎵 {inv_title[:200]}\n📥 Invidious | MP3"
+                                    result = await _send_whatsapp_document(
+                                        wa_id, file_bytes, safe_filename, caption, "audio/mpeg"
+                                    )
                                 else:
-                                    await _send_whatsapp_message(wa_id, f"❌ فشل إرسال الفيديو من Invidious. جرب تاني!")
+                                    safe_filename = re.sub(r'[<>:"/\\|?*]', '_', inv_title[:50]) + '.mp4'
+                                    caption = f"🎬 {inv_title[:200]}\n📥 Invidious | {inv_quality_label}"
+                                    result = await _send_whatsapp_document(
+                                        wa_id, file_bytes, safe_filename, caption, "video/mp4"
+                                    )
+                                
+                                if "error" not in result:
                                     await feedback.success()
                                     try: os.remove(target)
                                     except: pass
                                     return
+                                else:
+                                    logger.warning(f"⚠️ Invidious doc send failed: {result.get('error')}")
+                                    info = None
+                                    try: os.remove(target)
+                                    except: pass
+                            except Exception as send_err:
+                                logger.warning(f"⚠️ Invidious send error: {send_err}")
+                                info = None
+                                try: os.remove(target)
+                                except: pass
                     
                     logger.warning(f"⚠️ Invidious failed, trying Cobalt...")
                 except ImportError:
@@ -1820,58 +1800,39 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                         size_str = f"{cobalt_size_mb:.1f}MB"
                         
                         if cobalt_file and os.path.exists(cobalt_file):
-                            if is_audio_only or quality == "audio":
-                                try:
-                                    with open(cobalt_file, 'rb') as af:
-                                        media_response = requests.post(
-                                            f"{WHATSAPP_API_URL}/{WHATSAPP_PHONE_NUMBER_ID}/media",
-                                            headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
-                                            files={"file": (f"{cobalt_title[:50]}.mp3", af, "audio/mpeg")},
-                                            data={"messaging_product": "whatsapp", "type": "audio"},
-                                            timeout=120
-                                        )
-                                        if media_response.status_code == 200:
-                                            media_id = media_response.json().get("id")
-                                            await _send_whatsapp_audio(wa_id, media_id)
-                                            await feedback.success()
-                                            try: os.remove(cobalt_file)
-                                            except: pass
-                                            return
-                                except Exception as audio_send_err:
-                                    logger.warning(f"⚠️ Cobalt audio send failed: {audio_send_err}")
-                                    # 🔴 FIX: تنظيف الملف عشان المراحل اللي بعد كده تشتغل
-                                    try: os.remove(cobalt_file)
-                                    except: pass
-                            else:
-                                if cobalt_size_mb <= 100:
-                                    try:
-                                        with open(cobalt_file, 'rb') as vf:
-                                            media_response = requests.post(
-                                                f"{WHATSAPP_API_URL}/{WHATSAPP_PHONE_NUMBER_ID}/media",
-                                                headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
-                                                files={"file": (f"{cobalt_title[:50]}.mp4", vf, "video/mp4")},
-                                                data={"messaging_product": "whatsapp", "type": "video"},
-                                                timeout=180
-                                            )
-                                            if media_response.status_code == 200:
-                                                media_id = media_response.json().get("id")
-                                                tech_info = f"{cobalt_height}p | {size_str} | Cobalt"
-                                                await _send_whatsapp_video(wa_id, media_id, caption=f"🎬 {cobalt_title[:200]}\n📥 {tech_info}")
-                                                await feedback.success()
-                                                try: os.remove(cobalt_file)
-                                                except: pass
-                                                return
-                                    except Exception as video_send_err:
-                                        logger.warning(f"⚠️ Cobalt video send failed: {video_send_err}")
-                                        # 🔴 FIX: تنظيف الملف عشان المراحل اللي بعد كده تشتغل
-                                        try: os.remove(cobalt_file)
-                                        except: pass
+                            # 🔴 FIX: نستخدم _send_whatsapp_document بدل _send_whatsapp_video/audio
+                            # لأن _send_whatsapp_video مش موجودة و _send_whatsapp_audio بتاخد bytes مش media_id
+                            try:
+                                with open(cobalt_file, 'rb') as f:
+                                    file_bytes = f.read()
+                                
+                                if is_audio_only or quality == "audio":
+                                    safe_filename = re.sub(r'[<>:"/\\|?*]', '_', cobalt_title[:50]) + '.mp3'
+                                    caption = f"🎵 {cobalt_title[:200]}\n📥 Cobalt | MP3"
+                                    result = await _send_whatsapp_document(
+                                        wa_id, file_bytes, safe_filename, caption, "audio/mpeg"
+                                    )
                                 else:
-                                    await _send_whatsapp_message(wa_id, f"❌ فشل إرسال الفيديو من Cobalt. جرب تاني!")
+                                    safe_filename = re.sub(r'[<>:"/\\|?*]', '_', cobalt_title[:50]) + '.mp4'
+                                    tech_info = f"{cobalt_height}p | {size_str} | Cobalt"
+                                    caption = f"🎬 {cobalt_title[:200]}\n📥 {tech_info}"
+                                    result = await _send_whatsapp_document(
+                                        wa_id, file_bytes, safe_filename, caption, "video/mp4"
+                                    )
+                                
+                                if "error" not in result:
                                     await feedback.success()
                                     try: os.remove(cobalt_file)
                                     except: pass
                                     return
+                                else:
+                                    logger.warning(f"⚠️ Cobalt doc send failed: {result.get('error')}")
+                                    try: os.remove(cobalt_file)
+                                    except: pass
+                            except Exception as send_err:
+                                logger.warning(f"⚠️ Cobalt send error: {send_err}")
+                                try: os.remove(cobalt_file)
+                                except: pass
                     
                     logger.warning(f"⚠️ Cobalt failed, trying Cobalt JWT...")
                 except ImportError:
@@ -1937,58 +1898,38 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                 size_str = f"{jwt_size_mb:.1f}MB"
                                 
                                 if jwt_file and os.path.exists(jwt_file):
-                                    if is_audio_jwt:
-                                        try:
-                                            with open(jwt_file, 'rb') as af:
-                                                media_response = requests.post(
-                                                    f"{WHATSAPP_API_URL}/{WHATSAPP_PHONE_NUMBER_ID}/media",
-                                                    headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
-                                                    files={"file": (f"{jwt_title[:50]}.mp3", af, "audio/mpeg")},
-                                                    data={"messaging_product": "whatsapp", "type": "audio"},
-                                                    timeout=120
-                                                )
-                                                if media_response.status_code == 200:
-                                                    media_id = media_response.json().get("id")
-                                                    await _send_whatsapp_audio(wa_id, media_id)
-                                                    await feedback.success()
-                                                    try: os.remove(jwt_file)
-                                                    except: pass
-                                                    return
-                                        except Exception as audio_send_err:
-                                            logger.warning(f"⚠️ Cobalt JWT audio send failed: {audio_send_err}")
-                                            # 🔴 FIX: تنظيف الملف عشان المراحل اللي بعد كده تشتغل
-                                            try: os.remove(jwt_file)
-                                            except: pass
-                                    else:
-                                        if jwt_size_mb <= 100:
-                                            try:
-                                                with open(jwt_file, 'rb') as vf:
-                                                    media_response = requests.post(
-                                                        f"{WHATSAPP_API_URL}/{WHATSAPP_PHONE_NUMBER_ID}/media",
-                                                        headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
-                                                        files={"file": (f"{jwt_title[:50]}.mp4", vf, "video/mp4")},
-                                                        data={"messaging_product": "whatsapp", "type": "video"},
-                                                        timeout=180
-                                                    )
-                                                    if media_response.status_code == 200:
-                                                        media_id = media_response.json().get("id")
-                                                        tech_info = f"{jwt_height}p | {size_str} | Cobalt JWT"
-                                                        await _send_whatsapp_video(wa_id, media_id, caption=f"🎬 {jwt_title[:200]}\n📥 {tech_info}")
-                                                        await feedback.success()
-                                                        try: os.remove(jwt_file)
-                                                        except: pass
-                                                        return
-                                            except Exception as video_send_err:
-                                                logger.warning(f"⚠️ Cobalt JWT video send failed: {video_send_err}")
-                                                # 🔴 FIX: تنظيف الملف عشان المراحل اللي بعد كده تشتغل
-                                                try: os.remove(jwt_file)
-                                                except: pass
+                                    # 🔴 FIX: نستخدم _send_whatsapp_document بدل _send_whatsapp_video/audio
+                                    try:
+                                        with open(jwt_file, 'rb') as f:
+                                            file_bytes = f.read()
+                                        
+                                        if is_audio_jwt:
+                                            safe_filename = re.sub(r'[<>:"/\\|?*]', '_', jwt_title[:50]) + '.mp3'
+                                            caption = f"🎵 {jwt_title[:200]}\n📥 Cobalt JWT | MP3"
+                                            result = await _send_whatsapp_document(
+                                                wa_id, file_bytes, safe_filename, caption, "audio/mpeg"
+                                            )
                                         else:
-                                            await _send_whatsapp_message(wa_id, f"❌ فشل إرسال الفيديو من Cobalt JWT. جرب تاني!")
+                                            safe_filename = re.sub(r'[<>:"/\\|?*]', '_', jwt_title[:50]) + '.mp4'
+                                            tech_info = f"{jwt_height}p | {size_str} | Cobalt JWT"
+                                            caption = f"🎬 {jwt_title[:200]}\n📥 {tech_info}"
+                                            result = await _send_whatsapp_document(
+                                                wa_id, file_bytes, safe_filename, caption, "video/mp4"
+                                            )
+                                        
+                                        if "error" not in result:
                                             await feedback.success()
                                             try: os.remove(jwt_file)
                                             except: pass
                                             return
+                                        else:
+                                            logger.warning(f"⚠️ Cobalt JWT doc send failed: {result.get('error')}")
+                                            try: os.remove(jwt_file)
+                                            except: pass
+                                    except Exception as send_err:
+                                        logger.warning(f"⚠️ Cobalt JWT send error: {send_err}")
+                                        try: os.remove(jwt_file)
+                                        except: pass
                             
                             logger.warning(f"⚠️ Cobalt JWT failed, trying Cloudflare Worker...")
                         except asyncio.TimeoutError:
