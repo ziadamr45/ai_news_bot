@@ -2385,16 +2385,26 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                                 )
                         except Exception as send_err:
                             logger.warning(f"⚠️ Invidious video send failed (likely too large): {send_err}")
-                            if quality != "low" and quality != "audio":
-                                if lang == "ar":
-                                    await message.reply_text(f"⚠️ الملف كبير ({size_str}). جرب جودة أقل!")
-                                else:
-                                    await message.reply_text(f"⚠️ File too large ({size_str}). Try a lower quality!")
-                            else:
-                                await message.reply_text(
-                                    f"❌ فشل إرسال الفيديو ({size_str}). جرب تاني!" if lang == "ar"
-                                    else f"❌ Failed to send video ({size_str}). Try again!"
+                            # 🔴 لو الملف كبير → رفع على Supabase فوراً
+                            try:
+                                from supabase_storage import upload_and_get_link
+                                cloud_msg = await upload_and_get_link(
+                                    file_path=file_path, filename=f"{real_title[:50]}.mp4",
+                                    content_type="video/mp4", platform="telegram", title=real_title, lang=lang,
                                 )
+                                if cloud_msg:
+                                    await message.reply_text(cloud_msg, parse_mode="HTML", disable_web_page_preview=False)
+                                    try: await status_msg.delete()
+                                    except: pass
+                                    try: os.remove(file_path)
+                                    except: pass
+                                    return
+                            except Exception:
+                                pass
+                            await message.reply_text(
+                                f"❌ فشل إرسال الفيديو ({size_str}). جرب تاني!" if lang == "ar"
+                                else f"❌ Failed to send video ({size_str}). Try again!"
+                            )
                     
                     try: os.remove(file_path)
                     except: pass
@@ -2486,6 +2496,22 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                                 )
                         except Exception as send_err:
                             if "too large" in str(send_err).lower() or "file is too big" in str(send_err).lower():
+                                # 🔴 لو الملف كبير → رفع على Supabase فوراً
+                                try:
+                                    from supabase_storage import upload_and_get_link
+                                    cloud_msg = await upload_and_get_link(
+                                        file_path=file_path, filename=f"{real_title[:50]}.mp3",
+                                        content_type="audio/mpeg", platform="telegram", title=real_title, lang=lang,
+                                    )
+                                    if cloud_msg:
+                                        await message.reply_text(cloud_msg, parse_mode="HTML", disable_web_page_preview=False)
+                                        try: await status_msg.delete()
+                                        except: pass
+                                        try: os.remove(file_path)
+                                        except: pass
+                                        return
+                                except Exception:
+                                    pass
                                 await message.reply_text(
                                     f"❌ الملف كبير على التليجرام ({size_str})" if lang == "ar"
                                     else f"❌ File too large for Telegram ({size_str})"
@@ -2507,6 +2533,22 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                                 )
                         except Exception as send_err:
                             if "too large" in str(send_err).lower() or "file is too big" in str(send_err).lower():
+                                # 🔴 لو الملف كبير → رفع على Supabase فوراً
+                                try:
+                                    from supabase_storage import upload_and_get_link
+                                    cloud_msg = await upload_and_get_link(
+                                        file_path=file_path, filename=f"{real_title[:50]}.mp4",
+                                        content_type="video/mp4", platform="telegram", title=real_title, lang=lang,
+                                    )
+                                    if cloud_msg:
+                                        await message.reply_text(cloud_msg, parse_mode="HTML", disable_web_page_preview=False)
+                                        try: await status_msg.delete()
+                                        except: pass
+                                        try: os.remove(file_path)
+                                        except: pass
+                                        return
+                                except Exception:
+                                    pass
                                 await message.reply_text(
                                     f"❌ الملف كبير على التليجرام ({size_str})" if lang == "ar"
                                     else f"❌ File too large for Telegram ({size_str})"
@@ -2659,9 +2701,25 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                             except Exception as send_err:
                                 logger.warning(f"⚠️ Cobalt JWT video send failed: {send_err}")
                                 if "too large" in str(send_err).lower() or "file is too big" in str(send_err).lower():
+                                    # 🔴 لو الملف كبير → رفع على Supabase فوراً
+                                    try:
+                                        from supabase_storage import upload_and_get_link
+                                        cloud_msg = await upload_and_get_link(
+                                            file_path=jwt_file_path, filename=f"{jwt_title[:50]}.mp4",
+                                            content_type="video/mp4", platform="telegram", title=jwt_title, lang=lang,
+                                        )
+                                        if cloud_msg:
+                                            await message.reply_text(cloud_msg, parse_mode="HTML", disable_web_page_preview=False)
+                                            try: await status_msg.delete()
+                                            except: pass
+                                            try: os.remove(jwt_file_path)
+                                            except: pass
+                                            return
+                                    except Exception:
+                                        pass
                                     await message.reply_text(
-                                        f"⚠️ الملف كبير ({size_str}). جرب جودة أقل!" if lang == "ar"
-                                        else f"⚠️ File too large ({size_str}). Try a lower quality!"
+                                        f"❌ فشل إرسال الفيديو ({size_str}). جرب تاني!" if lang == "ar"
+                                        else f"❌ Failed to send video ({size_str}). Try again!"
                                     )
                                 else:
                                     await message.reply_text(
@@ -2881,12 +2939,11 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
         
         # ═══ إرسال الملف — Direct Send أو Supabase Cloud Upload ═══
         #
-        # 🔴 المسار:
-        # 1. لو الملف > 2GB → جودة أقل
-        # 2. لو الملف <= 2GB → نجرب إرسال مباشر
-        # 3. لو الإرسال فشل بسبب الحجم → رفع على Supabase وبعت رابط
-        # 4. لو Supabase فشل → جودة أقل
-        # 5. لو كل حاجة فشلت → رسالة خطأ
+        # 🔴 المسار الجديد (بدون تجربة جودة أقل — على طول السحابة):
+        # 1. لو الملف > 2GB → جودة أقل (الاستثناء الوحيد)
+        # 2. لو الملف > 50MB → رفع على Supabase فوراً + بعت رابط
+        # 3. لو الملف <= 50MB → إرسال مباشر
+        # 4. لو الإرسال المباشر فشل → نحاول كـ document → Supabase
         #
         TELEGRAM_MAX_FREE = 50 * 1024 * 1024     # 50MB — بوت مجاني
         TELEGRAM_MAX_PREMIUM = 2000 * 1024 * 1024  # 2GB — بوت premium
@@ -3032,27 +3089,15 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                     logger.error(f"☁️ Supabase upload error: {sup_err}")
                 
                 if not cloud_success:
-                    # 🔴 Supabase فشل — نجرب جودة أقل
-                    logger.info(f"☁️ Supabase failed, trying lower quality...")
-                    
-                    if quality != "audio" and quality != "low":
-                        try:
-                            os.remove(filepath)
-                        except:
-                            pass
-                        lower_quality = {"best": "medium", "medium": "low", "low": "audio"}.get(quality, "medium")
-                        try: await status_msg.edit_text("⏳ جاري تجربة جودة أقل..." if lang == "ar" else "⏳ Trying lower quality...")
-                        except: pass
-                        return await _download_with_ytdlp(update_or_query, url, lower_quality, lang, user_id, status_msg=None)
+                    # 🔴 Supabase فشل — رسالة خطأ مباشرة (بدون تجربة جودة أقل)
+                    logger.error(f"☁️ Supabase upload failed, cannot deliver file")
+                    if lang == "ar":
+                        await message.reply_text(f"❌ فشل رفع الملف على السحابة. جرب تاني!")
                     else:
-                        # حتى الجودة المنخفضة فشلت
-                        if lang == "ar":
-                            await message.reply_text(f"❌ فشل إرسال الملف ورفعه على السحابة. جرب تاني!")
-                        else:
-                            await message.reply_text(f"❌ Failed to send file and upload to cloud. Try again!")
-                        try: await status_msg.delete()
-                        except: pass
-                        return
+                        await message.reply_text(f"❌ Failed to upload file to cloud. Try again!")
+                    try: await status_msg.delete()
+                    except: pass
+                    return
             
             elif quality != "audio":
                 # مشكلة تانية (مش حجم) — نجرب نبعته كـ document
