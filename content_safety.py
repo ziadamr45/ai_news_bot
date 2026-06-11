@@ -50,6 +50,15 @@ SAFETY_VLM_TIMEOUT = 15      # timeout لكل VLM call
 SAFETY_VIDEO_TIMEOUT = 30    # timeout كلي لفحص الفيديو
 SAFETY_TOTAL_TIMEOUT = 45    # timeout كلي للفحص الشامل
 
+# 🔴 الوضع الصارم — لو timeout يحصل نحظر بدل ما نفوت
+# "strict" = نحظر لو أي فحص timeout (أحياطي — أقوى حماية)
+# "open" = نفوت لو timeout (أسرع — الافتراضي)
+SAFETY_TIMEOUT_MODE = os.environ.get("CONTENT_SAFETY_TIMEOUT_MODE", "strict").lower()
+
+def _timeout_blocked(reason: str = "") -> bool:
+    """هل نحظر عند timeout حسب الوضع المختار"""
+    return SAFETY_TIMEOUT_MODE == "strict"
+
 # أقصى حجم للصورة اللي نبعتها للـ VLM (bytes) — 5MB
 MAX_IMAGE_SIZE_FOR_VLM = 5 * 1024 * 1024
 
@@ -262,7 +271,9 @@ Example: SAFE"""
         return False, ""
 
     except asyncio.TimeoutError:
-        logger.warning(f"🛡️ AI query check timed out ({SAFETY_AI_TIMEOUT}s), passing through")
+        logger.warning(f"🛡️ AI query check timed out ({SAFETY_AI_TIMEOUT}s), {'blocking' if _timeout_blocked() else 'passing through'}")
+        if _timeout_blocked():
+            return True, "AI safety check timed out"
         return False, ""
     except Exception as e:
         logger.warning(f"🛡️ AI query check failed: {e}")
@@ -475,7 +486,9 @@ If BLOCKED, add reason after colon."""
         return False, ""
 
     except asyncio.TimeoutError:
-        logger.warning(f"🛡️ AI result check timed out ({SAFETY_AI_TIMEOUT}s), passing through")
+        logger.warning(f"🛡️ AI result check timed out ({SAFETY_AI_TIMEOUT}s), {'blocking' if _timeout_blocked() else 'passing through'}")
+        if _timeout_blocked():
+            return True, "AI safety check timed out"
         return False, ""
     except Exception as e:
         logger.warning(f"🛡️ AI result check failed: {e}")
@@ -586,6 +599,9 @@ REASON: <brief explanation>"""
         return True, "", safety_score
 
     except asyncio.TimeoutError:
+        if _timeout_blocked():
+            logger.warning(f"🛡️ Image safety VLM timed out ({SAFETY_VLM_TIMEOUT}s), BLOCKING (strict mode)")
+            return False, "فحص الأمان تجاوز الوقت", 0
         logger.warning(f"🛡️ Image safety VLM timed out ({SAFETY_VLM_TIMEOUT}s), passing through")
         return True, "", 75
     except Exception as e:
@@ -654,6 +670,9 @@ async def check_video_safety(
                 timeout=SAFETY_VIDEO_TIMEOUT,
             )
         except asyncio.TimeoutError:
+            if _timeout_blocked():
+                logger.warning(f"🛡️ Video frame analysis timed out ({SAFETY_VIDEO_TIMEOUT}s), BLOCKING (strict mode)")
+                return False, "فحص الفيديو تجاوز الوقت", 0
             logger.warning(f"🛡️ Video frame analysis timed out ({SAFETY_VIDEO_TIMEOUT}s), passing through")
             return True, "", 75
 
@@ -678,6 +697,9 @@ async def check_video_safety(
         return True, "", lowest_score
 
     except asyncio.TimeoutError:
+        if _timeout_blocked():
+            logger.warning(f"🛡️ Video safety check timed out, BLOCKING (strict mode)")
+            return False, "فحص الفيديو تجاوز الوقت", 0
         logger.warning(f"🛡️ Video safety check timed out, passing through")
         return True, "", 75
     except Exception as e:
@@ -1070,5 +1092,8 @@ async def comprehensive_media_safety_check(
     try:
         return await asyncio.wait_for(_run_safety_checks(), timeout=SAFETY_TOTAL_TIMEOUT)
     except asyncio.TimeoutError:
+        if _timeout_blocked():
+            logger.warning(f"🛡️ Comprehensive safety check timed out ({SAFETY_TOTAL_TIMEOUT}s), BLOCKING (strict mode)")
+            return False, "🛡️ " + ("تجاوز فحص الأمان الوقت — تم حظر الملف احتياطياً" if lang == "ar" else "Safety check timed out — file blocked as precaution"), "timeout_blocked"
         logger.warning(f"🛡️ Comprehensive safety check timed out ({SAFETY_TOTAL_TIMEOUT}s), passing through")
         return True, "", ""
