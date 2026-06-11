@@ -597,7 +597,7 @@ LOG_FILE = os.path.join(DATA_DIR, "bot.log")
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
 SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
-SUPABASE_BUCKET = os.environ.get("SUPABASE_BUCKET", "downloads")
+SUPABASE_BUCKET = os.environ.get("SUPABASE_BUCKET", "Downloads")
 
 # ═══════════════════════════════════════
 # إعدادات الجدولة - Scheduler Settings

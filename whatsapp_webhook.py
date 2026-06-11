@@ -2252,23 +2252,33 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
             except Exception as e:
                 logger.warning(f"🛡️ Media safety check failed (allowing): {e}")
             
-            # 🔴 FIX: رفع الحد الأقصى — واتساب بيقبل لحد 512MB (تحديث 2025)
-            # بنحط 500MB كحد آمن عشان نبعت الملف مباشرة
-            MAX_WHATSAPP_MEDIA_SIZE = 500 * 1024 * 1024  # 500MB
+            # ═══ إرسال الملف — Direct Send أو Supabase Cloud Upload ═══
+            #
+            # 🔴 المسار:
+            # 1. لو الملف <= 100MB → إرسال مباشر عبر WhatsApp
+            # 2. لو الملف > 100MB → رفع على Supabase وبعت رابط تحميل
+            # 3. لو Supabase فشل → نجرب جودة أقل → لو برضو كبير → رفع على Supabase تاني
+            # 4. لو كل حاجة فشلت → رسالة خطأ واضحة
+            #
+            # WhatsApp Media API limit: ~100MB practically
+            # بس بنحاول لحد 500MB كـ document (أحياناً بتنجح)
+            #
+            MAX_WHATSAPP_DIRECT_SIZE = 100 * 1024 * 1024   # 100MB — الإرسال المباشر الآمن
+            MAX_WHATSAPP_RETRY_SIZE = 500 * 1024 * 1024     # 500MB — أقصى حد نجربه
+            MAX_SUPABASE_SIZE = 2 * 1024 * 1024 * 1024      # 2GB — أقصى حد للرفع على السحابة
             
-            if file_size <= MAX_WHATSAPP_MEDIA_SIZE:
+            # 🔴 Step 1: لو الملف <= 100MB → إرسال مباشر
+            if file_size <= MAX_WHATSAPP_DIRECT_SIZE:
                 with open(video_file, 'rb') as f:
                     file_bytes = f.read()
                 
                 if is_audio_only:
-                    # Send as audio file
                     safe_filename = re.sub(r'[<>:"/\\|?*]', '_', title) + '.mp3'
                     caption = f"🎵 {title}\n🔗 {platform_display}\n📊 {file_size / 1024 / 1024:.1f}MB"
                     result = await _send_whatsapp_document(
                         wa_id, file_bytes, safe_filename, caption, "audio/mpeg"
                     )
                 else:
-                    # Send as document (video files are more reliable as documents on WA)
                     safe_filename = re.sub(r'[<>:"/\\|?*]', '_', title) + '.mp4'
                     quality_label = {"best": "1080p", "medium": "720p", "low": "480p"}.get(quality, "")
                     caption = f"📥 {title}\n🔗 {platform_display}\n📊 {file_size / 1024 / 1024:.1f}MB"
@@ -2278,52 +2288,109 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                         wa_id, file_bytes, safe_filename, caption, "video/mp4"
                     )
                 
-                if "error" in result:
-                    # لو الإرسال فشل — نجرب جودة أقل
+                if "error" not in result:
+                    # ✅ الإرسال المباشر نجح
+                    pass
+                else:
+                    # الإرسال المباشر فشل — نجرب Supabase
                     error_msg = str(result.get("error", ""))
-                    logger.warning(f"⚠️ WhatsApp send failed: {error_msg}")
+                    logger.warning(f"⚠️ WhatsApp direct send failed: {error_msg}")
                     
+                    # 🔴 محاولة رفع على Supabase
+                    await _send_whatsapp_message(wa_id, "☁️ جاري رفع الملف على السحابة...")
+                    
+                    content_type = "audio/mpeg" if is_audio_only else "video/mp4"
+                    ext = ".mp3" if is_audio_only else ".mp4"
+                    safe_filename = re.sub(r'[<>:"/\\|?*]', '_', title) + ext
+                    
+                    try:
+                        from supabase_storage import upload_and_get_link
+                        cloud_msg = await upload_and_get_link(
+                            file_path=video_file,
+                            filename=safe_filename,
+                            content_type=content_type,
+                            platform="whatsapp",
+                            title=title,
+                            lang="ar",
+                        )
+                        if cloud_msg:
+                            await _send_whatsapp_message(wa_id, cloud_msg)
+                        else:
+                            # Supabase فشل — رسالة خطأ
+                            await _send_whatsapp_message(wa_id,
+                                f"📥 *{title}*\n\n"
+                                f"🔗 المنصة: {platform_display}\n\n"
+                                f"❌ فشل إرسال الملف. جرب تاني!")
+                    except Exception as sup_err:
+                        logger.error(f"☁️ Supabase upload error: {sup_err}")
+                        await _send_whatsapp_message(wa_id,
+                            f"📥 *{title}*\n\n"
+                            f"🔗 المنصة: {platform_display}\n\n"
+                            f"❌ فشل إرسال الملف. جرب تاني!")
+            
+            # 🔴 Step 2: لو الملف > 100MB → رفع على Supababe مباشرة
+            else:
+                # هل الملف ضمن حدود Supabase (2GB)؟
+                if file_size > MAX_SUPABASE_SIZE:
+                    # فوق 2GB — لازم نجرب جودة أقل الأول
                     if quality != "audio" and quality != "low":
-                        # نجرب جودة أقل بصمت
-                        lower_quality = {"best": "medium", "medium": "low"}.get(quality, "low")
-                        # 🔴 FIX: منقولش "كبير" — نجرب جودة أقل بصمت
-                        await _send_whatsapp_message(wa_id, "⏳ جاري تجربة جودة أقل...")
-                        # تنظيف وإعادة المحاولة
+                        await _send_whatsapp_message(wa_id, "⏳ الملف كبير جداً، جاري تجربة جودة أقل...")
                         try:
                             shutil.rmtree(tmpdir, ignore_errors=True)
                         except Exception:
                             pass
                         await feedback.complete()
+                        lower_quality = {"best": "medium", "medium": "low"}.get(quality, "low")
                         return await _download_and_send_video(wa_id, url, wa_user_id, contact_name, message_id, is_admin, quality=lower_quality)
                     else:
-                        # لو حتى الجودة المنخفضة فشلت — نقول فشل إرسال بدون ذكر الحجم
-                        await _send_whatsapp_message(wa_id, 
+                        await _send_whatsapp_message(wa_id,
                             f"📥 *{title}*\n\n"
                             f"🔗 المنصة: {platform_display}\n\n"
-                            f"❌ فشل إرسال الفيديو. جرب تاني!")
-            else:
-                # File actually exceeds 500MB limit — ده الحد الحقيقي
-                if quality != "audio" and quality != "low":
-                    lower_quality = {"best": "medium", "medium": "low"}.get(quality, "low")
-                    # 🔴 FIX: منقولش حجم — نجرب جودة أقل بصمت
-                    await _send_whatsapp_message(wa_id, "⏳ جاري تجربة جودة أقل...")
+                            f"❌ الملف أكبر من 2GB — مش ممكن رفعه. جرب جودة أقل!")
+                else:
+                    # الملف بين 100MB و 2GB → رفع على السحابة
+                    await _send_whatsapp_message(wa_id, "☁️ الملف كبير ({:.0f}MB)، جاري رفعه على السحابة...".format(file_size / 1024 / 1024))
+                    
+                    content_type = "audio/mpeg" if is_audio_only else "video/mp4"
+                    ext = ".mp3" if is_audio_only else ".mp4"
+                    safe_filename = re.sub(r'[<>:"/\\|?*]', '_', title) + ext
+                    
+                    cloud_msg = None
                     try:
-                        shutil.rmtree(tmpdir, ignore_errors=True)
-                    except Exception:
-                        pass
-                    await feedback.complete()
-                    return await _download_and_send_video(wa_id, url, wa_user_id, contact_name, message_id, is_admin, quality=lower_quality)
-                
-                # حتى الجودة المنخفضة كبيرة — ده الوحيد اللي نقول فيه كبير
-                duration = info.get('duration', 0)
-                duration_str = f"{int(duration // 60)}:{int(duration % 60):02d}" if duration else "غير معروف"
-                
-                await _send_whatsapp_message(wa_id,
-                    f"📥 *{title}*\n\n"
-                    f"🔗 المنصة: {platform_display}\n"
-                    f"⏱️ المدة: {duration_str}\n\n"
-                    f"❌ الفيديو أكبر من الحد الأقصى (512MB).\n\n"
-                    f"💡 جرب التليجرام عشان تحمل الفيديو بحجمه الكامل!")
+                        from supabase_storage import upload_and_get_link
+                        cloud_msg = await upload_and_get_link(
+                            file_path=video_file,
+                            filename=safe_filename,
+                            content_type=content_type,
+                            platform="whatsapp",
+                            title=title,
+                            lang="ar",
+                        )
+                    except Exception as sup_err:
+                        logger.error(f"☁️ Supabase upload error: {sup_err}")
+                    
+                    if cloud_msg:
+                        # ✅ رفع السحابة نجح
+                        await _send_whatsapp_message(wa_id, cloud_msg)
+                    else:
+                        # 🔴 Supabase فشل — نجرب جودة أقل
+                        logger.warning("☁️ Supabase upload failed, trying lower quality...")
+                        
+                        if quality != "audio" and quality != "low":
+                            await _send_whatsapp_message(wa_id, "⏳ فشل الرفع، جاري تجربة جودة أقل...")
+                            try:
+                                shutil.rmtree(tmpdir, ignore_errors=True)
+                            except Exception:
+                                pass
+                            await feedback.complete()
+                            lower_quality = {"best": "medium", "medium": "low"}.get(quality, "low")
+                            return await _download_and_send_video(wa_id, url, wa_user_id, contact_name, message_id, is_admin, quality=lower_quality)
+                        else:
+                            # حتى الجودة المنخفضة فشل رفعها
+                            await _send_whatsapp_message(wa_id,
+                                f"📥 *{title}*\n\n"
+                                f"🔗 المنصة: {platform_display}\n\n"
+                                f"❌ فشل رفع الملف على السحابة. جرب تاني أو جرب التليجرام!")
             
             # Increment usage
             if not is_admin:
