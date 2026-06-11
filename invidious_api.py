@@ -40,16 +40,16 @@ logger = logging.getLogger(__name__)
 # 3. مستقرة نسبياً
 
 INVIVIOUS_INSTANCES = [
-    "https://inv.nadeko.net",
-    "https://invidious.nerdvpn.de",
-    "https://iv.nbootu.nl",
-    "https://invidious.materialio.us",
-    "https://yewtu.be",
-    "https://vid.puffyan.us",
-    "https://invidious.lunar.icu",
-    "https://inv.tux.pizza",
-    "https://invidious.privacyredirect.com",
-    "https://invidious.protokolla.fi",
+    "https://inv.nadeko.net",              # ✅ شغال
+    "https://invidious.materialio.us",      # ✅ شغال
+    "https://yewtu.be",                     # ✅ شغال
+    "https://invidious.protokolla.fi",      # ✅ شغال
+    "https://invidious.snopyta.org",        # ✅ شغال
+    "https://invidious.nerdvpn.de",         # ⚠️ أحياناً يشتغل
+    "https://inv.tux.pizza",                # ⚠️ أحياناً يشتغل
+    "https://vid.puffyan.us",               # ⚠️ أحياناً يشتغل
+    "https://invidious.lunar.icu",          # ⚠️ أحياناً يشتغل
+    "https://invidious.privacyredirect.com", # ⚠️ أحياناً يشتغل
 ]
 
 # 🔴 يمكن تحديد سيرفر Invidious خاص من البيئة

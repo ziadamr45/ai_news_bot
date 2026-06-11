@@ -1122,8 +1122,12 @@ async def _download_direct_audio(update: Update, url: str, lang: str, user_id: i
 # Cobalt Public API — لليوتيوب بس (بدل yt-dlp)
 # ═══════════════════════════════════════
 
+# 🔴 Cobalt v6 API (api/json) اتنفصل في نوفمبر 2024
+# v7 API بيتطلب JWT — بنستخدمه في المحاولة 8 (Cobalt JWT)
+# Self-hosted Cobalt لسه شغال لو عندك COBALT_API_URL
+
 # 🔴 استراتيجية جديدة: أي رابط YouTube (youtube.com, youtu.be, youtube.com/shorts)
-# بنستخدم Cobalt Public API بدل yt-dlp تماماً
+# بنستخدم Invidious + Piped الأول (IP مختلف) ثم Cobalt ثم yt-dlp
 # السبب: yt-dlp بيتحجب باستمرار من YouTube (bot detection)
 # Cobalt Public API أسرع وأضمن لليوتيوب
 
@@ -2026,7 +2030,295 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
             except Exception as ds_outer_err:
                 logger.warning(f"🖥️ Download Service outer error: {ds_outer_err}")
         
-        # ═══ المحاولة الأولى: yt-dlp + deno + remote_components (الأفضل!) ═══
+        # ═══ المحاولة 1: Invidious API (IP مختلف — مش بيتأثر بـ YouTube bot detection!) ═══
+        # 🔴 Invidious بيشتغل من سيرفرات مختلفة — مش من Railway IP
+        # ده أحسن من yt-dlp عشان yt-dlp بيستخدم Railway IP وبيتحظر
+        if is_youtube:
+            try:
+                from invidious_api import download_youtube_invidious_file
+                
+                inv_quality_map = {"best": "best", "medium": "medium", "low": "low", "audio": "audio"}
+                inv_quality = inv_quality_map.get(quality, "best")
+                
+                logger.info(f"🟣 Invidious (early): Attempting download quality={inv_quality} for {url[:80]}")
+                
+                try:
+                    await status_msg.edit_text(
+                        "🟣 جاري التحميل عبر Invidious..." if lang == "ar"
+                        else "🟣 Downloading via Invidious..."
+                    )
+                except:
+                    pass
+                
+                try:
+                    invidious_result = await asyncio.wait_for(
+                        download_youtube_invidious_file(url, quality=inv_quality, output_dir=tmpdir),
+                        timeout=60
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning(f"⚠️ Invidious (early) timed out after 60s")
+                    invidious_result = None
+                
+                if invidious_result and invidious_result.get("success") and invidious_result.get("file_path"):
+                    logger.info(f"🟣 Invidious (early) succeeded! File: {invidious_result['file_path']}")
+                    
+                    file_path = invidious_result["file_path"]
+                    file_size = invidious_result.get("file_size", os.path.getsize(file_path))
+                    real_title = invidious_result.get("title", "YouTube Video")
+                    real_duration = invidious_result.get("duration", 0)
+                    format_info = invidious_result.get("format_info", {})
+                    
+                    quality_label = format_info.get("quality_label", "") or format_info.get("resolution", "")
+                    if not quality_label:
+                        if quality == "audio":
+                            quality_label = "MP3"
+                        else:
+                            quality_label = f"{inv_quality} quality"
+                    
+                    size_mb = file_size / (1024 * 1024)
+                    size_str = f"{size_mb:.1f}MB"
+                    
+                    # 🛡️ Safety check
+                    try:
+                        inv_file_type = "audio" if quality == "audio" else "video"
+                        is_safe_inv, block_msg_inv, _reason_inv = await comprehensive_media_safety_check(
+                            title=real_title, file_path=file_path, file_type=inv_file_type,
+                            platform="telegram", user_id=str(user_id), lang=lang,
+                        )
+                        if not is_safe_inv:
+                            await message.reply_text(block_msg_inv, parse_mode="HTML")
+                            try: os.remove(file_path)
+                            except: pass
+                            return
+                    except Exception:
+                        pass
+                    
+                    increment_usage(user_id, "youtube_summaries")
+                    try: track_event("media_downloads")
+                    except: pass
+                    
+                    await status_msg.delete()
+                    
+                    if quality == "audio":
+                        try:
+                            with open(file_path, 'rb') as f:
+                                caption = f"📥 {'تم تحميل الصوت!' if lang == 'ar' else 'Audio downloaded!'}\n🎵 {real_title[:200]}\n📁 {size_str} | Invidious"
+                                await message.reply_audio(
+                                    audio=f, filename=f"{real_title[:50]}.mp3",
+                                    caption=caption,
+                                    parse_mode="HTML",
+                                )
+                        except Exception as send_err:
+                            logger.warning(f"⚠️ Invidious audio send failed: {send_err}")
+                            # 🔴 لو الإرسال فشل — نجرب Supabase
+                            try:
+                                from supabase_storage import upload_and_get_link
+                                cloud_msg = await upload_and_get_link(
+                                    file_path=file_path, filename=f"{real_title[:50]}.mp3",
+                                    content_type="audio/mpeg", platform="telegram", title=real_title, lang=lang,
+                                )
+                                if cloud_msg:
+                                    await message.reply_text(cloud_msg, parse_mode="HTML", disable_web_page_preview=False)
+                                    try: os.remove(file_path)
+                                    except: pass
+                                    return
+                            except:
+                                pass
+                            await message.reply_text(
+                                f"❌ فشل إرسال الصوت ({size_str}). جرب تاني!" if lang == "ar"
+                                else f"❌ Failed to send audio ({size_str}). Try again!"
+                            )
+                    else:
+                        try:
+                            with open(file_path, 'rb') as f:
+                                tech_info = f"{quality_label} | {size_str} | Invidious"
+                                caption = f"📥 {'تم تحميل الفيديو!' if lang == 'ar' else 'Video downloaded!'}\n🎬 {real_title[:200]}\n📊 {tech_info}"
+                                await message.reply_video(
+                                    video=f, filename=f"{real_title[:50]}.mp4",
+                                    caption=caption,
+                                    parse_mode="HTML",
+                                    supports_streaming=True,
+                                )
+                        except Exception as send_err:
+                            logger.warning(f"⚠️ Invidious video send failed: {send_err}")
+                            try:
+                                from supabase_storage import upload_and_get_link
+                                cloud_msg = await upload_and_get_link(
+                                    file_path=file_path, filename=f"{real_title[:50]}.mp4",
+                                    content_type="video/mp4", platform="telegram", title=real_title, lang=lang,
+                                )
+                                if cloud_msg:
+                                    await message.reply_text(cloud_msg, parse_mode="HTML", disable_web_page_preview=False)
+                                    try: os.remove(file_path)
+                                    except: pass
+                                    return
+                            except:
+                                pass
+                            await message.reply_text(
+                                f"❌ فشل إرسال الفيديو ({size_str}). جرب تاني!" if lang == "ar"
+                                else f"❌ Failed to send video ({size_str}). Try again!"
+                            )
+                    
+                    try: os.remove(file_path)
+                    except: pass
+                    return  # ✅ Invidious (early) نجح!
+                
+                logger.warning(f"⚠️ Invidious (early) failed, trying Piped...")
+                    
+            except ImportError:
+                logger.warning("⚠️ invidious_api module not available, skipping Invidious")
+            except Exception as inv_err:
+                logger.warning(f"⚠️ Invidious (early) error: {inv_err}, trying Piped...")
+        
+        # ═══ المحاولة 2: Piped API (IP مختلف — سيرفرات مختلفة عن Invidious!) ═══
+        # 🔴 Piped بيستخدم NewPipe Extractor — سيرفرات مختلفة عن Invidious
+        # لو Invidious فشل، Piped ممكن يشتغل لأنه بيستخدم طريقة مختلفة
+        if is_youtube:
+            try:
+                from piped_api import download_youtube_piped_file
+                
+                piped_quality_map = {"best": "best", "medium": "medium", "low": "low", "audio": "audio"}
+                piped_quality = piped_quality_map.get(quality, "best")
+                
+                logger.info(f"🟢 Piped (early): Attempting download quality={piped_quality} for {url[:80]}")
+                
+                try:
+                    await status_msg.edit_text(
+                        "🟢 جاري التحميل عبر Piped..." if lang == "ar"
+                        else "🟢 Downloading via Piped..."
+                    )
+                except:
+                    pass
+                
+                try:
+                    piped_result = await asyncio.wait_for(
+                        download_youtube_piped_file(url, quality=piped_quality, output_dir=tmpdir),
+                        timeout=90
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning(f"⚠️ Piped (early) timed out after 90s")
+                    piped_result = None
+                
+                if piped_result and piped_result.get("success") and piped_result.get("file_path"):
+                    logger.info(f"🟢 Piped (early) succeeded! File: {piped_result['file_path']}")
+                    
+                    file_path = piped_result["file_path"]
+                    file_size = piped_result.get("file_size", os.path.getsize(file_path))
+                    real_title = piped_result.get("title", "YouTube Video")
+                    real_duration = piped_result.get("duration", 0)
+                    format_info = piped_result.get("format_info", {})
+                    
+                    quality_label = format_info.get("quality_label", "")
+                    if not quality_label:
+                        if quality == "audio":
+                            quality_label = "MP3"
+                        else:
+                            quality_label = f"{piped_quality} quality"
+                    
+                    size_mb = file_size / (1024 * 1024)
+                    size_str = f"{size_mb:.1f}MB"
+                    
+                    # 🛡️ Safety check
+                    try:
+                        pp_file_type = "audio" if quality == "audio" else "video"
+                        is_safe_pp, block_msg_pp, _reason_pp = await comprehensive_media_safety_check(
+                            title=real_title, file_path=file_path, file_type=pp_file_type,
+                            platform="telegram", user_id=str(user_id), lang=lang,
+                        )
+                        if not is_safe_pp:
+                            await message.reply_text(block_msg_pp, parse_mode="HTML")
+                            try: os.remove(file_path)
+                            except: pass
+                            return
+                    except Exception:
+                        pass
+                    
+                    increment_usage(user_id, "youtube_summaries")
+                    try: track_event("media_downloads")
+                    except: pass
+                    
+                    await status_msg.delete()
+                    
+                    if quality == "audio":
+                        try:
+                            with open(file_path, 'rb') as f:
+                                caption = f"📥 {'تم تحميل الصوت!' if lang == 'ar' else 'Audio downloaded!'}\n🎵 {real_title[:200]}\n📁 {size_str} | Piped"
+                                await message.reply_audio(
+                                    audio=f, filename=f"{real_title[:50]}.mp3",
+                                    caption=caption,
+                                    duration=int(real_duration) if real_duration else None,
+                                )
+                        except Exception as send_err:
+                            if "too large" in str(send_err).lower() or "file is too big" in str(send_err).lower():
+                                try:
+                                    from supabase_storage import upload_and_get_link
+                                    cloud_msg = await upload_and_get_link(
+                                        file_path=file_path, filename=f"{real_title[:50]}.mp3",
+                                        content_type="audio/mpeg", platform="telegram", title=real_title, lang=lang,
+                                    )
+                                    if cloud_msg:
+                                        await message.reply_text(cloud_msg, parse_mode="HTML", disable_web_page_preview=False)
+                                        try: os.remove(file_path)
+                                        except: pass
+                                        return
+                                except Exception:
+                                    pass
+                                await message.reply_text(
+                                    f"❌ الملف كبير على التليجرام ({size_str})" if lang == "ar"
+                                    else f"❌ File too large for Telegram ({size_str})"
+                                )
+                            else:
+                                await message.reply_text(
+                                    f"❌ فشل إرسال الصوت ({size_str}). جرب تاني!" if lang == "ar"
+                                    else f"❌ Failed to send audio ({size_str}). Try again!"
+                                )
+                    else:
+                        try:
+                            with open(file_path, 'rb') as f:
+                                caption = f"📥 {'تم تحميل الفيديو!' if lang == 'ar' else 'Video downloaded!'}\n🎬 {real_title[:200]}\n📁 {size_str} | {quality_label} | Piped"
+                                await message.reply_video(
+                                    video=f,
+                                    caption=caption,
+                                    duration=int(real_duration) if real_duration else None,
+                                    supports_streaming=True,
+                                )
+                        except Exception as send_err:
+                            if "too large" in str(send_err).lower() or "file is too big" in str(send_err).lower():
+                                try:
+                                    from supabase_storage import upload_and_get_link
+                                    cloud_msg = await upload_and_get_link(
+                                        file_path=file_path, filename=f"{real_title[:50]}.mp4",
+                                        content_type="video/mp4", platform="telegram", title=real_title, lang=lang,
+                                    )
+                                    if cloud_msg:
+                                        await message.reply_text(cloud_msg, parse_mode="HTML", disable_web_page_preview=False)
+                                        try: os.remove(file_path)
+                                        except: pass
+                                        return
+                                except Exception:
+                                    pass
+                                await message.reply_text(
+                                    f"❌ الملف كبير على التليجرام ({size_str})" if lang == "ar"
+                                    else f"❌ File too large for Telegram ({size_str})"
+                                )
+                            else:
+                                await message.reply_text(
+                                    f"❌ فشل إرسال الفيديو ({size_str}). جرب تاني!" if lang == "ar"
+                                    else f"❌ Failed to send video ({size_str}). Try again!"
+                                )
+                    
+                    try: os.remove(file_path)
+                    except: pass
+                    return  # ✅ Piped (early) نجح!
+                
+                logger.warning(f"⚠️ Piped (early) failed, falling back to yt-dlp...")
+                    
+            except ImportError:
+                logger.warning("⚠️ piped_api module not available, skipping Piped")
+            except Exception as piped_err:
+                logger.warning(f"⚠️ Piped (early) error: {piped_err}, falling back to yt-dlp...")
+        
+        # ═══ المحاولة 3: yt-dlp + deno + remote_components ═══
         logger.info(f"📥 yt-dlp: Attempting download with deno+remote_components for {url[:80]}")
         ydl_opts = _get_ydl_opts(quality, output_template, platform, player_client_idx=0)
         
@@ -2393,7 +2685,10 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                             last_error = ac_error
                             logger.warning(f"⚠️ Android clean attempt also failed: {ac_error}")
         
-        # ═══ المحاولة 5: Invidious API (fallback) ═══
+        # ═══ المحاولة 5: Invidious API (تم تجربته فوق — هنا fallback إضافي لو حاجة اتغيرت) ═══
+        # 🔴 لو Invidious (early) فشل فوق، مش هنجرب تاني هنا عشان مفيش فايدة
+        # بس لو info لسه None (يعني كل المحاولات فوق فشلت) هنحاول مرة تانية
+        # مع instance مختلف يمكن
         if info is None and is_youtube:
             try:
                 from invidious_api import download_youtube_invidious_file
@@ -2521,7 +2816,7 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
             except Exception as inv_err:
                 logger.warning(f"⚠️ Invidious error: {inv_err}, trying Piped...")
         
-        # ═══ المحاولة 6: Piped API (fallback — زي Invidious بس سيرفرات مختلفة) ═══
+        # ═══ المحاولة 6: Piped API (تم تجربته فوق — هنا fallback إضافي) ═══
         if info is None and is_youtube:
             try:
                 from piped_api import download_youtube_piped_file

@@ -49,13 +49,14 @@ logger = logging.getLogger(__name__)
 # 3. مش بطيئة
 
 PIPED_INSTANCES = [
-    "https://pipedapi.kavin.rocks",
-    "https://pipedapi.adminforge.de",
-    "https://api.piped.projectsegfau.lt",
-    "https://pipedapi.in.projectsegfau.lt",
-    "https://pipedapi.moomoo.me",
-    "https://pipedapi.leptons.xyz",
-    "https://pipedapi.r4fo.com",
+    "https://api.piped.private.coffee",    # ✅ شغال (أكتر واحد مستقر)
+    "https://pipedapi.kavin.rocks",         # ⚠️ أحياناً يشتغل (الرسمي)
+    "https://pipedapi.adminforge.de",        # ⚠️ أحياناً يشتغل
+    "https://pipedapi.r4fo.com",             # ⚠️ أحياناً يشتغل
+    "https://api.piped.projectsegfau.lt",    # ⚠️ أحياناً يشتغل
+    "https://pipedapi.in.projectsegfau.lt",  # ⚠️ أحياناً يشتغل
+    "https://pipedapi.moomoo.me",            # ⚠️ أحياناً يشتغل
+    "https://pipedapi.leptons.xyz",          # ⚠️ أحياناً يشتغل
 ]
 
 # 🔴 يمكن تحديد سيرفر Piped خاص من البيئة
