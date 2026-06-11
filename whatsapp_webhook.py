@@ -1424,11 +1424,6 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
         # 🔴 FIX: Threads — yt-dlp مش بيدعمه، نستخدم طريقة مخصصة
         if is_threads:
             logger.info(f"🧵 WhatsApp: Threads detected — using custom download method")
-            try:
-                await _send_whatsapp_message(wa_id, "🧵 جاري التحميل من Threads...")
-            except:
-                pass
-            
             threads_result = await _download_threads_media_wa(url, tmpdir)
             
             if threads_result and threads_result.get("success"):
@@ -1644,8 +1639,8 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                 remux = 'mp4'
                 progress_msg = f"📥 جاري تحميل الفيديو من {platform_display} (جودة منخفضة)..."
             
-            # Send progress message
-            await _send_whatsapp_message(wa_id, progress_msg)
+            # 🔴 WhatsApp: لا نرسل رسائل تقدم وسيطة — رسالة واحدة بس (الاولى)
+            # المستخدم مش شايف الخدمات — بس الشغل بيحصل في الباك اند
             
             ydl_opts = {
                 'outtmpl': output_template,
@@ -1712,10 +1707,7 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                     from config import DOWNLOAD_SERVICE_URL, DOWNLOAD_SERVICE_KEY
                     if DOWNLOAD_SERVICE_URL:
                         logger.info(f"🖥️ WA Download Service: Trying VPS download for {url[:80]}")
-                        try:
-                            await _send_whatsapp_message(wa_id, "🖥️ جاري التحميل عبر السيرفر الخاص...")
-                        except:
-                            pass
+                        # 🔴 WhatsApp: لا نرسل رسالة لكل خدمة — الشغل بصمت في الباك اند
                         
                         from urllib.parse import quote as _wa_quote
                         def wa_quote(s): return _wa_quote(s, safe='')
@@ -1788,11 +1780,7 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                     inv_quality = inv_quality_map.get(quality, "best")
                     
                     logger.info(f"🟣 WA Invidious (early): Attempting download quality={inv_quality} for {url[:80]}")
-                    
-                    try:
-                        await _send_whatsapp_message(wa_id, "🟣 جاري التحميل عبر Invidious...")
-                    except:
-                        pass
+                    # 🔴 WhatsApp: لا نرسل رسالة لكل خدمة
                     
                     inv_result = None
                     try:
@@ -1918,11 +1906,7 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                     piped_quality = piped_quality_map.get(quality, "best")
                     
                     logger.info(f"🟢 WA Piped (early): Attempting download quality={piped_quality} for {url[:80]}")
-                    
-                    try:
-                        await _send_whatsapp_message(wa_id, "🟢 جاري التحميل عبر Piped...")
-                    except:
-                        pass
+                    # 🔴 WhatsApp: لا نرسل رسالة لكل خدمة
                     
                     piped_result = None
                     try:
@@ -2107,11 +2091,7 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                     from handlers.download_handlers import _try_cobalt_for_youtube
                     
                     logger.info(f"🟠 WhatsApp Cobalt: Attempting download as 3rd fallback for {url[:80]}")
-                    
-                    try:
-                        await _send_whatsapp_message(wa_id, "🟠 جاري التحميل عبر Cobalt...")
-                    except:
-                        pass
+                    # 🔴 WhatsApp: لا نرسل رسالة لكل خدمة
                     
                     cobalt_result = await asyncio.wait_for(
                         _try_cobalt_for_youtube(url, quality, tmpdir),
@@ -2227,11 +2207,7 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                     from apify_download import download_youtube_apify
                     
                     logger.info(f"🔵 WhatsApp Apify: Attempting download as 4th fallback for {url[:80]}")
-                    
-                    try:
-                        await _send_whatsapp_message(wa_id, "🔵 جاري التحميل عبر Apify...")
-                    except:
-                        pass
+                    # 🔴 WhatsApp: لا نرسل رسالة لكل خدمة
                     
                     apify_result = await asyncio.wait_for(
                         download_youtube_apify(url, quality, tmpdir),
@@ -2351,11 +2327,7 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                     piped_quality = piped_quality_map.get(quality, "best")
                     
                     logger.info(f"🟢 WhatsApp Piped: Attempting download quality={piped_quality} for {url[:80]}")
-                    
-                    try:
-                        await _send_whatsapp_message(wa_id, "🟢 جاري التحميل عبر Piped...")
-                    except:
-                        pass
+                    # 🔴 WhatsApp: لا نرسل رسالة لكل خدمة
                     
                     piped_result = await asyncio.wait_for(
                         download_youtube_piped_file(url, quality=piped_quality, output_dir=tmpdir),
@@ -2492,11 +2464,7 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                     inv_quality = inv_quality_map.get(quality, "best")
                     
                     logger.info(f"🟣 WhatsApp Invidious: Attempting download quality={inv_quality} for {url[:80]}")
-                    
-                    try:
-                        await _send_whatsapp_message(wa_id, "🟣 جاري التحميل عبر Invidious...")
-                    except:
-                        pass
+                    # 🔴 WhatsApp: لا نرسل رسالة لكل خدمة
                     
                     inv_result = await asyncio.wait_for(
                         download_youtube_invidious_file(url, quality=inv_quality, output_dir=tmpdir),
@@ -2627,11 +2595,7 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                     
                     if COBALT_JWT:
                         logger.info(f"🔐 WhatsApp Cobalt JWT: Last-resort attempt for {url[:80]}")
-                        
-                        try:
-                            await _send_whatsapp_message(wa_id, "🔐 جاري التحميل عبر Cobalt JWT...")
-                        except:
-                            pass
+                        # 🔴 WhatsApp: لا نرسل رسالة لكل خدمة
                         
                         import aiohttp as _aiohttp_wa
                         import json as _json_wa
@@ -2769,10 +2733,7 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                 from config import CLOUDFLARE_WORKER_URL
                 if CLOUDFLARE_WORKER_URL:
                     logger.info(f"🔄 All yt-dlp methods failed, trying Cloudflare Worker proxy: {CLOUDFLARE_WORKER_URL}")
-                    try:
-                        await _send_whatsapp_message(wa_id, "🔄 جاري التحميل عبر سيرفر بروكسي...")
-                    except:
-                        pass
+                    # 🔴 WhatsApp: لا نرسل رسالة لكل خدمة
                     
                     try:
                         import aiohttp as _aiohttp
