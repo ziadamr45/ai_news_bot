@@ -1634,6 +1634,10 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                             return
                                 except Exception as audio_send_err:
                                     logger.warning(f"⚠️ Piped audio send failed: {audio_send_err}")
+                                    # 🔴 FIX: لازم نعيد info لـ None عشان المراحل اللي بعد كده (Cobalt) تشتغل
+                                    info = None
+                                    try: os.remove(target)
+                                    except: pass
                             else:
                                 if piped_size_mb <= 100:
                                     try:
@@ -1654,6 +1658,10 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                                 return
                                     except Exception as video_send_err:
                                         logger.warning(f"⚠️ Piped video send failed: {video_send_err}")
+                                        # 🔴 FIX: لازم نعيد info لـ None عشان المراحل اللي بعد كده (Cobalt) تشتغل
+                                        info = None
+                                        try: os.remove(target)
+                                        except: pass
                                 else:
                                     # File too large for WhatsApp — send link
                                     await _send_whatsapp_message(wa_id, f"❌ فشل إرسال الفيديو من Piped. جرب تاني!")
@@ -1739,6 +1747,10 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                             return
                                 except Exception as audio_send_err:
                                     logger.warning(f"⚠️ Invidious audio send failed: {audio_send_err}")
+                                    # 🔴 FIX: لازم نعيد info لـ None عشان المراحل اللي بعد كده (Cobalt) تشتغل
+                                    info = None
+                                    try: os.remove(target)
+                                    except: pass
                             else:
                                 if inv_size_mb <= 100:
                                     try:
@@ -1759,6 +1771,10 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                                 return
                                     except Exception as video_send_err:
                                         logger.warning(f"⚠️ Invidious video send failed: {video_send_err}")
+                                        # 🔴 FIX: لازم نعيد info لـ None عشان المراحل اللي بعد كده (Cobalt) تشتغل
+                                        info = None
+                                        try: os.remove(target)
+                                        except: pass
                                 else:
                                     await _send_whatsapp_message(wa_id, f"❌ فشل إرسال الفيديو من Invidious. جرب تاني!")
                                     await feedback.success()
@@ -1823,6 +1839,9 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                             return
                                 except Exception as audio_send_err:
                                     logger.warning(f"⚠️ Cobalt audio send failed: {audio_send_err}")
+                                    # 🔴 FIX: تنظيف الملف عشان المراحل اللي بعد كده تشتغل
+                                    try: os.remove(cobalt_file)
+                                    except: pass
                             else:
                                 if cobalt_size_mb <= 100:
                                     try:
@@ -1844,6 +1863,9 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                                 return
                                     except Exception as video_send_err:
                                         logger.warning(f"⚠️ Cobalt video send failed: {video_send_err}")
+                                        # 🔴 FIX: تنظيف الملف عشان المراحل اللي بعد كده تشتغل
+                                        try: os.remove(cobalt_file)
+                                        except: pass
                                 else:
                                     await _send_whatsapp_message(wa_id, f"❌ فشل إرسال الفيديو من Cobalt. جرب تاني!")
                                     await feedback.success()
@@ -1934,6 +1956,9 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                                     return
                                         except Exception as audio_send_err:
                                             logger.warning(f"⚠️ Cobalt JWT audio send failed: {audio_send_err}")
+                                            # 🔴 FIX: تنظيف الملف عشان المراحل اللي بعد كده تشتغل
+                                            try: os.remove(jwt_file)
+                                            except: pass
                                     else:
                                         if jwt_size_mb <= 100:
                                             try:
@@ -1955,6 +1980,9 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                                         return
                                             except Exception as video_send_err:
                                                 logger.warning(f"⚠️ Cobalt JWT video send failed: {video_send_err}")
+                                                # 🔴 FIX: تنظيف الملف عشان المراحل اللي بعد كده تشتغل
+                                                try: os.remove(jwt_file)
+                                                except: pass
                                         else:
                                             await _send_whatsapp_message(wa_id, f"❌ فشل إرسال الفيديو من Cobalt JWT. جرب تاني!")
                                             await feedback.success()
