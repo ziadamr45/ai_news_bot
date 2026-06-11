@@ -49,7 +49,7 @@ from handlers.message_handler import handle_message
 
 from admin import (
     admin_command, grant_premium_command, revoke_premium_command,
-    broadcast_command, userinfo_command,
+    broadcast_command, userinfo_command, userstats_command,
     ban_command, unban_command, warn_command,
     allusers_command, botstats_command,
     addadmin_command, removeadmin_command, listadmins_command,
@@ -146,6 +146,7 @@ def register_handlers(app):
     app.add_handler(CommandHandler("removeadmin", removeadmin_command))
     app.add_handler(CommandHandler("listadmins", listadmins_command))
     app.add_handler(CommandHandler("resetlimit", resetlimit_command))
+    app.add_handler(CommandHandler("userstats", userstats_command))
 
     # 🎨 Image Generation (Premium Only)
     app.add_handler(CommandHandler("image", image_command))

@@ -3400,6 +3400,7 @@ _COMMAND_TRIGGERS = {
     "/unban": "admin_unban", "الغاء حظر": "admin_unban",
     "/warn": "admin_warn", "تحذير": "admin_warn",
     "/userinfo": "admin_userinfo", "معلومات يوزر": "admin_userinfo",
+    "/userstats": "admin_userstats", "احصائيات يوزر": "admin_userstats",
     "/broadcast": "admin_broadcast", "بث": "admin_broadcast",
     "/allusers": "admin_allusers", "كل المستخدمين": "admin_allusers",
     "/addadmin": "admin_addadmin", "اضافة ادمن": "admin_addadmin",
@@ -3453,7 +3454,8 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
                 f"→ /resetlimit user_id — ريست الحدود\n"
                 f"→ /ban user_id — حظر مستخدم\n"
                 f"→ /unban user_id — إلغاء حظر\n"
-                f"→ /userinfo user_id — معلومات يوزر\n"
+                f"→ /userinfo رقم_الواتساب — معلومات يوزر شاملة (بدون بيانات حساسة)\n"
+                f"→ /userstats رقم_الواتساب — إحصائيات يوزر مفصلة\n"
                 f"→ /broadcast رسالة — بث لكل المشتركين\n"
                 f"→ /stats — الإحصائيات"
             )
@@ -3527,9 +3529,33 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
             await _send_whatsapp_message(wa_id, "❌ هذا الأمر للمطور فقط.")
             return True
         await _send_whatsapp_message(wa_id,
-            "👤 *معلومات يوزر*\n\n"
-            "الاستخدام: /userinfo user_id\n"
-            "مثال: /userinfo 123456789")
+            "👤 *معلومات مستخدم شاملة*\n\n"
+            "الاستخدام: /userinfo رقم_الواتساب\n"
+            "مثال: /userinfo 201203551789\n\n"
+            "💡 بيرجع كل المعلومات العامة:\n"
+            "→ الاسم (من البروفايل + المفضل)\n"
+            "→ الخطة وتاريخ الاشتراكات\n"
+            "→ كم مدة على البوت\n"
+            "→ إحصائيات الاستخدام\n\n"
+            "🔒 مش بيرجع بيانات حساسة")
+        return True
+
+    elif command == "admin_userstats":
+        if not is_admin:
+            await _send_whatsapp_message(wa_id, "❌ هذا الأمر للمطور فقط.")
+            return True
+        await _send_whatsapp_message(wa_id,
+            "📊 *إحصائيات مستخدم شاملة*\n\n"
+            "الاستخدام: /userstats رقم_الواتساب\n\n"
+            "💡 بيرجع كل المعلومات العامة:\n"
+            "→ الخطة وتاريخ الاشتراكات\n"
+            "→ كم مرة اشترك Premium\n"
+            "→ إحصائيات الاستخدام الإجمالي\n"
+            "→ حالة الحظر والتحذيرات\n\n"
+            "🔒 مش بيرجع بيانات حساسة:\n"
+            "→ محتوى المحادثات\n"
+            "→ ذكريات المستخدم\n\n"
+            "مثال: /userstats 201203551789")
         return True
 
     elif command == "admin_broadcast":
@@ -4927,6 +4953,8 @@ async def _handle_incoming_message(message: dict, value: dict):
             updates = {}
             if contact_name and contact_name != "Unknown":
                 updates["name"] = contact_name
+                # 🔴 حفظ الاسم الأصلي من بروفايل واتساب (منفصل عن الاسم المفضل)
+                updates["profile_name"] = contact_name
             # 🔴 حفظ رقم واتساب المستخدم — ضروري لإرسال الإشعارات من التليجرام
             if wa_id:
                 updates["wa_phone"] = wa_id
@@ -5261,7 +5289,7 @@ async def _handle_incoming_message(message: dict, value: dict):
 
             # Check for admin commands with arguments (e.g., /grant 123456789)
             if is_admin:
-                admin_arg_commands = ["/grant", "/revoke", "/resetlimit", "/ban", "/unban", "/userinfo", "/broadcast"]
+                admin_arg_commands = ["/grant", "/revoke", "/resetlimit", "/ban", "/unban", "/userinfo", "/userstats", "/broadcast"]
                 for admin_cmd in admin_arg_commands:
                     if content_lower.startswith(admin_cmd + " ") or content_lower == admin_cmd:
                         await _handle_admin_with_args(wa_id, content.strip(), wa_user_id, contact_name)
@@ -5844,34 +5872,243 @@ async def _handle_admin_with_args(wa_id: str, content: str, wa_user_id: int, con
 
         elif cmd in ("/userinfo",):
             if not args:
-                await _send_whatsapp_message(wa_id, "👤 الاستخدام: /userinfo رقم_الواتساب\nمثال: /userinfo 201203551789")
+                await _send_whatsapp_message(wa_id, 
+                    "👤 *معلومات مستخدم شاملة*\n\n"
+                    "الاستخدام: /userinfo رقم_الواتساب\n"
+                    "مثال: /userinfo 201203551789\n\n"
+                    "💡 بيرجع كل المعلومات العامة:\n"
+                    "→ الاسم (من البروفايل + المفضل)\n"
+                    "→ الخطة وتاريخ الاشتراكات\n"
+                    "→ كم مدة على البوت\n"
+                    "→ إحصائيات الاستخدام\n\n"
+                    "🔒 مش بيرجع بيانات حساسة")
                 return
             phone = args[0]
             target_id = _wa_phone_to_user_id(phone)
-            from memory import get_user, get_interests, get_favorite_companies
-            from premium import get_user_plan, get_usage
-            user_data = get_user(target_id)
-            plan = get_user_plan(target_id)
-            usage = get_usage(target_id)
-            interests = get_interests(target_id)
-
+            from premium import get_user_stats
+            
+            stats = get_user_stats(target_id)
+            
+            if not stats.get("found"):
+                await _send_whatsapp_message(wa_id, "❌ المستخدم ده مش موجود في قاعدة البيانات.")
+                return
+            
+            # ═══ الأسماء ═══
+            name = stats.get("name", "")
+            profile_name = stats.get("profile_name", "")
+            
+            if name and profile_name and name != profile_name:
+                name_display = f"{name} (اسم البروفايل: {profile_name})"
+            elif name:
+                name_display = name
+            elif profile_name:
+                name_display = profile_name
+            else:
+                name_display = "مش محدد"
+            
+            # ═══ معلومات أساسية ═══
+            plan_display = "⭐ Premium" if stats.get("is_premium") else "🆓 Free"
+            if stats.get("plan") == "premium_plus":
+                plan_display = "⭐ Premium+"
+            
+            platform_display = "📱 تليجرام" if stats.get("platform") == "telegram" else "📱 واتساب"
+            lang_display = "🇪🇬 العربية" if stats.get("language") == "ar" else "🇬🇧 English"
+            
+            # ═══ معلومات Premium ═══
+            if stats.get("is_premium"):
+                premium_section = (
+                    f"⭐ الخطة: {plan_display}\n"
+                    f"📅 مفعل من: {stats.get('premium_since', '')[:10] if stats.get('premium_since') else 'مش محدد'}\n"
+                    f"⏰ المتبقي: {stats.get('premium_expires_display', '—')}\n"
+                    f"⏱️ على الخطة دي من: {stats.get('time_on_current_plan', 'مش محدد')}\n"
+                    f"🔑 بواسطة: {stats.get('premium_granted_by') or 'مش محدد'}\n"
+                )
+            else:
+                premium_section = f"⭐ الخطة: {plan_display}\n"
+            
+            # ═══ تاريخ Premium ═══
+            grant_count = stats.get("premium_grant_count", 0)
+            revoke_count = stats.get("premium_revoke_count", 0)
+            history = stats.get("premium_history", [])
+            
+            premium_history_text = f"🔄 مرات الاشتراك: {grant_count}"
+            if revoke_count > 0:
+                premium_history_text += f" | ❌ مرات الإلغاء: {revoke_count}"
+            
+            if history:
+                premium_history_text += "\n\n📜 آخر أحداث Premium:"
+                for h in history[:5]:
+                    action_emoji = "✅" if h["action"] == "grant" else "❌" if h["action"] == "revoke" else "🔄"
+                    action_text = "تفعيل" if h["action"] == "grant" else "إلغاء" if h["action"] == "revoke" else h["action"]
+                    date = h.get("created_at", "")[:16] if h.get("created_at") else "مش محدد"
+                    by = h.get("granted_by", "") or ""
+                    by_text = f" (بواسطة: {by})" if by and by != "None" else ""
+                    premium_history_text += f"\n  {action_emoji} {action_text} — {date}{by_text}"
+            
+            # ═══ حالة الحظر ═══
+            ban_section = ""
+            if stats.get("banned"):
+                ban_section = f"\n🚫 محظور! السبب: {stats.get('ban_reason', 'مش محدد')}\n"
+            
+            # ═══ تحذيرات ═══
+            warnings = stats.get("warning_count", 0)
+            warn_section = f"\n⚠️ تحذيرات: {warnings}/3" if warnings > 0 else ""
+            
+            # ═══ أدمن ═══
+            admin_section = "\n👑 أدمن: نعم" if stats.get("is_admin") else ""
+            
+            # ═══ إحصائيات الاستخدام ═══
+            total = stats.get("total_usage", {})
+            today = stats.get("today_usage", {})
+            
             info = (
-                f"👤 *معلومات المستخدم*\n"
-                f"━━━━━━━━━━━━━━━━━\n\n"
+                f"👤 *معلومات المستخدم الشاملة*\n"
+                f"━━━━━━━━━━━━━━━━━\n"
+                f"🔒 بدون بيانات حساسة\n\n"
                 f"📱 الرقم: {_wa_phone_to_display(phone)}\n"
-                f"📝 الاسم: {user_data.get('name', 'مش محدد')}\n"
-                f"🌐 اللغة: {'العربية' if user_data.get('language') == 'ar' else 'English'}\n"
-                f"⭐ الخطة: {plan.upper()}\n"
-                f"📬 مشترك: {'نعم' if user_data.get('subscribed') else 'لا'}\n\n"
+                f"📝 الاسم: {name_display}\n"
+                f"📱 المنصة: {platform_display}\n"
+                f"🌐 اللغة: {lang_display}\n"
+                f"⏱️ على البوت من: {stats.get('time_on_bot', 'مش محدد')}\n\n"
+                f"{premium_section}\n"
+                f"{premium_history_text}\n"
+                f"{ban_section}{warn_section}{admin_section}\n\n"
                 f"📊 *استخدام اليوم:*\n"
-                f"→ رسائل AI: {usage.get('ai_messages', 0)}\n"
-                f"→ PDF: {usage.get('pdf_analyses', 0)}\n"
-                f"→ صور: {usage.get('image_analyses', 0)}\n"
-                f"→ YouTube: {usage.get('youtube_summaries', 0)}\n"
-                f"→ بحث: {usage.get('searches', 0)}\n\n"
-                f"🎯 اهتمامات: {', '.join(interests[:5]) if interests else 'لا يوجد'}"
+                f"→ رسائل AI: {today.get('ai_messages', 0)}\n"
+                f"→ PDF: {today.get('pdf_analyses', 0)}\n"
+                f"→ صور: {today.get('image_analyses', 0)}\n"
+                f"→ YouTube: {today.get('youtube_summaries', 0)}\n"
+                f"→ بحث: {today.get('searches', 0)}\n\n"
+                f"📈 *الإجمالي عبر الوقت:*\n"
+                f"→ رسائل AI: {total.get('ai_messages', 0)}\n"
+                f"→ PDF: {total.get('pdf_analyses', 0)}\n"
+                f"→ صور: {total.get('image_analyses', 0)}\n"
+                f"→ YouTube: {total.get('youtube_summaries', 0)}\n"
+                f"→ بحث: {total.get('searches', 0)}\n"
+                f"→ بحث عميق: {total.get('deep_searches', 0)}\n"
+                f"📅 أيام نشاط: {total.get('active_days', 0)}\n\n"
+                f"💬 محادثات: {stats.get('chat_count', 0)}\n"
+                f"⚡ أوامر: {stats.get('commands_used', 0)}\n"
+                f"🎯 اهتمامات: {', '.join(stats.get('interests', [])[:5]) if stats.get('interests') else 'لا يوجد'}\n\n"
+                f"📅 التسجيل: {stats.get('created_at', 'مش محدد')[:16] if stats.get('created_at') else 'مش محدد'}\n"
+                f"📅 آخر تفاعل: {stats.get('last_interaction', 'مش محدد')[:16] if stats.get('last_interaction') else 'مش محدد'}"
             )
             await _send_whatsapp_message(wa_id, info)
+
+        elif cmd in ("/userstats",):
+            if not args:
+                await _send_whatsapp_message(wa_id, "📊 الاستخدام: /userstats رقم_الواتساب\nمثال: /userstats 201203551789\n\n💡 بيرجع إحصائيات شاملة بدون بيانات حساسة")
+                return
+            phone = args[0]
+            target_id = _wa_phone_to_user_id(phone)
+            from premium import get_user_stats
+            
+            stats = get_user_stats(target_id)
+            
+            if not stats.get("found"):
+                await _send_whatsapp_message(wa_id, "❌ المستخدم ده مش موجود في قاعدة البيانات.")
+                return
+            
+            # ═══ معلومات أساسية ═══
+            plan_display = "⭐ Premium" if stats.get("is_premium") else "🆓 Free"
+            if stats.get("plan") == "premium_plus":
+                plan_display = "⭐ Premium+"
+            
+            platform_display = "📱 تليجرام" if stats.get("platform") == "telegram" else "📱 واتساب"
+            lang_display = "🇪🇬 العربية" if stats.get("language") == "ar" else "🇬🇧 English"
+            
+            # ═══ معلومات Premium ═══
+            if stats.get("is_premium"):
+                premium_section = (
+                    f"⭐ الخطة: {plan_display}\n"
+                    f"📅 مفعل من: {stats.get('premium_since', '')[:10] if stats.get('premium_since') else 'مش محدد'}\n"
+                    f"⏰ المتبقي: {stats.get('premium_expires_display', '—')}\n"
+                    f"⏱️ على الخطة دي من: {stats.get('time_on_current_plan', 'مش محدد')}\n"
+                    f"🔑 بواسطة: {stats.get('premium_granted_by') or 'مش محدد'}\n"
+                )
+            else:
+                premium_section = f"⭐ الخطة: {plan_display}\n"
+            
+            # ═══ تاريخ Premium ═══
+            grant_count = stats.get("premium_grant_count", 0)
+            revoke_count = stats.get("premium_revoke_count", 0)
+            history = stats.get("premium_history", [])
+            
+            premium_history_text = f"🔄 مرات الاشتراك: {grant_count}"
+            if revoke_count > 0:
+                premium_history_text += f" | ❌ مرات الإلغاء: {revoke_count}"
+            
+            if history:
+                premium_history_text += "\n\n📜 آخر أحداث Premium:"
+                for h in history[:5]:
+                    action_emoji = "✅" if h["action"] == "grant" else "❌" if h["action"] == "revoke" else "🔄"
+                    action_text = "تفعيل" if h["action"] == "grant" else "إلغاء" if h["action"] == "revoke" else h["action"]
+                    date = h.get("created_at", "")[:16] if h.get("created_at") else "مش محدد"
+                    by = h.get("granted_by", "") or ""
+                    by_text = f" ({by})" if by and by != "None" else ""
+                    premium_history_text += f"\n  {action_emoji} {action_text} — {date}{by_text}"
+            
+            # ═══ إحصائيات الاستخدام ═══
+            total = stats.get("total_usage", {})
+            today = stats.get("today_usage", {})
+            
+            # ═══ حالة الحظر ═══
+            ban_section = ""
+            if stats.get("banned"):
+                ban_section = f"\n🚫 محظور! السبب: {stats.get('ban_reason', '')}"
+            
+            warnings = stats.get("warning_count", 0)
+            warn_section = f"\n⚠️ تحذيرات: {warnings}/3" if warnings > 0 else ""
+            admin_section = "\n👑 أدمن: نعم" if stats.get("is_admin") else ""
+            
+            interests = stats.get("interests", [])
+            companies = stats.get("favorite_companies", [])
+            
+            info = (
+                f"📊 *إحصائيات المستخدم الشاملة*\n"
+                f"━━━━━━━━━━━━━━━━━\n"
+                f"🔒 بدون بيانات حساسة\n\n"
+                f"👤 *معلومات أساسية:*\n"
+                f"📱 الرقم: {_wa_phone_to_display(phone)}\n"
+                f"📝 الاسم: {stats.get('name') or 'مش محدد'}\n"
+                f"{platform_display} | {lang_display}\n"
+                f"📅 على البوت من: {stats.get('time_on_bot', 'مش محدد')} ({stats.get('days_on_bot', 0)} يوم)\n"
+                f"📅 التسجيل: {stats.get('created_at', '')[:16] if stats.get('created_at') else 'مش محدد'}\n"
+                f"📅 آخر تفاعل: {stats.get('last_interaction', '')[:16] if stats.get('last_interaction') else 'مش محدد'}\n\n"
+                f"💬 محادثات: {stats.get('chat_count', 0)}\n"
+                f"⚡ أوامر: {stats.get('commands_used', 0)}\n"
+                f"📬 مشترك أخبار: {'نعم ✅' if stats.get('subscribed') else 'لا ❌'}"
+                f"{admin_section}{ban_section}{warn_section}\n\n"
+                f"⭐ *Premium:*\n"
+                f"{premium_section}\n"
+                f"{premium_history_text}\n\n"
+                f"📊 *استخدام اليوم:*\n"
+                f"→ رسائل AI: {today.get('ai_messages', 0)}\n"
+                f"→ PDF: {today.get('pdf_analyses', 0)}\n"
+                f"→ صور: {today.get('image_analyses', 0)}\n"
+                f"→ YouTube: {today.get('youtube_summaries', 0)}\n"
+                f"→ بحث: {today.get('searches', 0)}\n\n"
+                f"📈 *الإجمالي عبر الوقت:*\n"
+                f"→ رسائل AI: {total.get('ai_messages', 0)}\n"
+                f"→ PDF: {total.get('pdf_analyses', 0)}\n"
+                f"→ صور: {total.get('image_analyses', 0)}\n"
+                f"→ YouTube: {total.get('youtube_summaries', 0)}\n"
+                f"→ بحث: {total.get('searches', 0)}\n"
+                f"→ بحث عميق: {total.get('deep_searches', 0)}\n"
+                f"→ إنشاء صور: {total.get('image_generations', 0)}\n"
+                f"→ تعديل صور: {total.get('image_edits', 0)}\n"
+                f"📅 أيام نشاط: {total.get('active_days', 0)}\n\n"
+                f"🎯 اهتمامات: {', '.join(interests[:8]) if interests else 'لا يوجد'}\n"
+                f"🏢 شركات: {', '.join(companies[:5]) if companies else 'لا يوجد'}\n"
+                f"📚 متعلمة: {stats.get('learning_topics_count', 0)} موضوع\n"
+                f"⭐ مفضلات: {stats.get('favorites_count', 0)} عنصر\n"
+                f"🗂️ Workspace: {stats.get('workspace_count', 0)} عنصر\n"
+                f"🔔 تنبيهات: {stats.get('smart_alerts_count', 0)}"
+            )
+            
+            # WhatsApp message limit — split if needed
+            for chunk in _split_whatsapp_message(info):
+                await _send_whatsapp_message(wa_id, chunk)
 
         elif cmd in ("/broadcast",):
             if not args:
@@ -6481,6 +6718,8 @@ async def _handle_wa_search_callback(wa_id: str, callback_id: str, wa_user_id: i
             return
         
         r = cached["results"][idx]
+        # 🔴 FIX: مسح حالة المستخدم لأنه اختار من الأزرار — عشان الرسالة العادية اللي بعد كده متتعاملش كأنها اختيار بحث
+        _clear_user_state(wa_id)
         # 🔴 FIX: بدل ما نحمل بجودة ثابتة، نعرض اختيار الجودة للمستخدم (زي التليجرام)
         await _show_quality_selection_for_search(wa_id, r['url'], r['title'], wa_user_id, contact_name, message_id, is_admin, search_type="video")
     
@@ -6501,6 +6740,8 @@ async def _handle_wa_search_callback(wa_id: str, callback_id: str, wa_user_id: i
             return
         
         r = cached["results"][idx]
+        # 🔴 FIX: مسح حالة المستخدم لأنه اختار من الأزرار — عشان الرسالة العادية اللي بعد كده متتعاملش كأنها اختيار بحث
+        _clear_user_state(wa_id)
         # 🔴 FIX: بدل ما نحمل صوت مباشرة، نعرض اختيار الجودة (فيديو أو صوت)
         await _show_quality_selection_for_search(wa_id, r['url'], r['title'], wa_user_id, contact_name, message_id, is_admin, search_type="audio")
     

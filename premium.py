@@ -189,9 +189,23 @@ def init_premium_tables():
                     FOREIGN KEY (user_id) REFERENCES user_profiles(user_id) ON DELETE CASCADE
                 );
             """)
+            _execute("""
+                CREATE TABLE IF NOT EXISTS premium_history (
+                    id SERIAL PRIMARY KEY,
+                    user_id BIGINT NOT NULL,
+                    action TEXT NOT NULL,
+                    plan_before TEXT DEFAULT 'free',
+                    plan_after TEXT DEFAULT 'free',
+                    granted_by TEXT DEFAULT NULL,
+                    expires TEXT DEFAULT NULL,
+                    created_at TEXT DEFAULT (NOW() AT TIME ZONE 'UTC'::text),
+                    FOREIGN KEY (user_id) REFERENCES user_profiles(user_id) ON DELETE CASCADE
+                );
+            """)
             _execute("CREATE INDEX IF NOT EXISTS idx_usage_user_date ON usage_tracking(user_id, date);")
             _execute("CREATE INDEX IF NOT EXISTS idx_workspace_user ON workspace_items(user_id, item_type);")
             _execute("CREATE INDEX IF NOT EXISTS idx_alerts_user ON smart_alerts(user_id, active);")
+            _execute("CREATE INDEX IF NOT EXISTS idx_premium_history_user ON premium_history(user_id, created_at DESC);")
         else:
             _execute("""
                 CREATE TABLE IF NOT EXISTS premium_users (
@@ -244,9 +258,23 @@ def init_premium_tables():
                     FOREIGN KEY (user_id) REFERENCES user_profiles(user_id)
                 );
             """)
+            _execute("""
+                CREATE TABLE IF NOT EXISTS premium_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    action TEXT NOT NULL,
+                    plan_before TEXT DEFAULT 'free',
+                    plan_after TEXT DEFAULT 'free',
+                    granted_by TEXT DEFAULT NULL,
+                    expires TEXT DEFAULT NULL,
+                    created_at TEXT DEFAULT (datetime('now')),
+                    FOREIGN KEY (user_id) REFERENCES user_profiles(user_id)
+                );
+            """)
             _execute("CREATE INDEX IF NOT EXISTS idx_usage_user_date ON usage_tracking(user_id, date);")
             _execute("CREATE INDEX IF NOT EXISTS idx_workspace_user ON workspace_items(user_id, item_type);")
             _execute("CREATE INDEX IF NOT EXISTS idx_alerts_user ON smart_alerts(user_id, active);")
+            _execute("CREATE INDEX IF NOT EXISTS idx_premium_history_user ON premium_history(user_id, created_at DESC);")
 
         # Migration: إضافة عمود deep_searches لو مش موجود
         _migrate_add_deep_searches()
@@ -397,10 +425,255 @@ def get_premium_info(user_id: int) -> dict:
     return result
 
 
+def _log_premium_history(user_id: int, action: str, plan_before: str = "free", plan_after: str = "free",
+                          granted_by: str = None, expires: str = None):
+    """تسجيل حدث Premium في سجل التاريخ
+    
+    Args:
+        action: "grant" أو "revoke" أو "expire" أو "renew"
+        plan_before: الخطة قبل التغيير
+        plan_after: الخطة بعد التغيير
+        granted_by: مين فعّل الشيل
+        expires: تاريخ الانتهاء (لو grant/renew)
+    """
+    try:
+        now = datetime.now(CAIRO_TZ).isoformat()
+        phs = ["%s"] * 7 if _is_postgres() else ["?"] * 7
+        _execute(
+            f"""INSERT INTO premium_history 
+            (user_id, action, plan_before, plan_after, granted_by, expires, created_at) 
+            VALUES ({phs[0]}, {phs[1]}, {phs[2]}, {phs[3]}, {phs[4]}, {phs[5]}, {phs[6]})""",
+            (user_id, action, plan_before, plan_after, granted_by, expires, now)
+        )
+    except Exception as e:
+        logger.warning(f"⚠️ Could not log premium history for user {user_id}: {e}")
+
+
+def get_premium_history(user_id: int, limit: int = 20) -> list:
+    """الحصول على سجل تاريخ Premium للمستخدم
+    
+    Returns: List of dicts with: action, plan_before, plan_after, granted_by, expires, created_at
+    """
+    ph1, ph2 = ("%s", "%s") if _is_postgres() else ("?", "?")
+    rows = _execute(
+        f"SELECT action, plan_before, plan_after, granted_by, expires, created_at "
+        f"FROM premium_history WHERE user_id = {ph1} ORDER BY created_at DESC LIMIT {ph2}",
+        (user_id, limit),
+        fetch=True
+    )
+    if rows:
+        return [
+            {
+                "action": r[0],
+                "plan_before": r[1],
+                "plan_after": r[2],
+                "granted_by": r[3],
+                "expires": r[4],
+                "created_at": r[5],
+            }
+            for r in rows
+        ]
+    return []
+
+
+def get_user_stats(user_id: int) -> dict:
+    """الحصول على إحصائيات شاملة عن المستخدم — بدون بيانات حساسة
+    
+    ⚠️ البيانات الحساسة اللي مش بتترجع:
+    - محتوى المحادثات (conversations)
+    - ذكريات المستخدم (user_memories) 
+    - المفضلات التفصيلية (favorites content)
+    - عناصر Workspace التفصيلية (workspace content)
+    
+    بيرجع بس إحصائيات عامة وعددات — بدون محتوى فعلي
+    """
+    from memory import _ensure_user_in_db, get_user, get_interests, get_favorite_companies
+    _ensure_user_in_db(user_id)
+    
+    result = {
+        "user_id": user_id,
+        "found": False,
+    }
+    
+    try:
+        # ═══ بيانات أساسية ═══
+        user_data = get_user(user_id)
+        if not user_data:
+            return result
+        result["found"] = True
+        
+        result["name"] = user_data.get("name", "")
+        result["profile_name"] = user_data.get("profile_name", "")  # 🔴 الاسم الأصلي من البروفايل (منفصل عن الاسم المفضل)
+        result["language"] = user_data.get("language", "ar")
+        result["platform"] = user_data.get("platform", "telegram")
+        result["created_at"] = user_data.get("created_at", "")
+        result["last_interaction"] = user_data.get("last_interaction", "")
+        result["subscribed"] = user_data.get("subscribed", False)
+        result["news_time"] = user_data.get("news_time", "09:00")
+        result["notification_enabled"] = bool(user_data.get("notification_enabled", 1))
+        
+        # ═══ إحصائيات الاستخدام العام ═══
+        result["commands_used"] = user_data.get("commands_used", 0)
+        result["chat_count"] = user_data.get("chat_count", 0)
+        
+        # ═══ معلومات الخطة الحالية ═══
+        premium_info = get_premium_info(user_id)
+        result["plan"] = premium_info["plan"]
+        result["is_premium"] = premium_info["is_premium"]
+        result["premium_since"] = premium_info["premium_since"]
+        result["premium_expires"] = premium_info["premium_expires"]
+        result["premium_remaining_days"] = premium_info["remaining_days"]
+        result["premium_expires_display"] = premium_info["expires_display"]
+        result["premium_granted_by"] = premium_info["granted_by"]
+        
+        # ═══ كم مدة على الخطة الحالية ═══
+        if premium_info["premium_since"]:
+            try:
+                since_dt = datetime.fromisoformat(premium_info["premium_since"])
+                now = datetime.now(CAIRO_TZ)
+                days_on_plan = (now - since_dt).days
+                result["days_on_current_plan"] = days_on_plan
+                if days_on_plan > 30:
+                    months = days_on_plan // 30
+                    remaining_days = days_on_plan % 30
+                    result["time_on_current_plan"] = f"{months} شهر و {remaining_days} يوم"
+                else:
+                    result["time_on_current_plan"] = f"{days_on_plan} يوم"
+            except Exception:
+                result["days_on_current_plan"] = 0
+                result["time_on_current_plan"] = "مش محدد"
+        else:
+            result["days_on_current_plan"] = 0
+            result["time_on_current_plan"] = "مش محدد"
+        
+        # ═══ كم مدة على البوت ═══
+        if result["created_at"]:
+            try:
+                created_dt = datetime.fromisoformat(result["created_at"])
+                now = datetime.now(CAIRO_TZ)
+                days_on_bot = (now - created_dt).days
+                result["days_on_bot"] = days_on_bot
+                if days_on_bot >= 365:
+                    years = days_on_bot // 365
+                    remaining = days_on_bot % 365
+                    months = remaining // 30
+                    result["time_on_bot"] = f"{years} سنة و {months} شهر"
+                elif days_on_bot >= 30:
+                    months = days_on_bot // 30
+                    remaining = days_on_bot % 30
+                    result["time_on_bot"] = f"{months} شهر و {remaining} يوم"
+                else:
+                    result["time_on_bot"] = f"{days_on_bot} يوم"
+            except Exception:
+                result["days_on_bot"] = 0
+                result["time_on_bot"] = "مش محدد"
+        else:
+            result["days_on_bot"] = 0
+            result["time_on_bot"] = "مش محدد"
+        
+        # ═══ تاريخ Premium ═══
+        history = get_premium_history(user_id, limit=50)
+        result["premium_grant_count"] = len([h for h in history if h["action"] == "grant"])
+        result["premium_revoke_count"] = len([h for h in history if h["action"] == "revoke"])
+        result["premium_history"] = history[:10]  # آخر 10 أحداث بس
+        
+        # ═══ استخدام اليوم ═══
+        result["today_usage"] = get_usage(user_id)
+        
+        # ═══ إجمالي الاستخدام عبر الوقت (من usage_tracking) ═══
+        ph = "%s" if _is_postgres() else "?"
+        total_row = _execute(
+            f"SELECT "
+            f"COALESCE(SUM(ai_messages), 0), "
+            f"COALESCE(SUM(pdf_analyses), 0), "
+            f"COALESCE(SUM(image_analyses), 0), "
+            f"COALESCE(SUM(youtube_summaries), 0), "
+            f"COALESCE(SUM(searches), 0), "
+            f"COALESCE(SUM(deep_searches), 0), "
+            f"COALESCE(SUM(image_generations), 0), "
+            f"COALESCE(SUM(image_edits), 0), "
+            f"COUNT(*) "
+            f"FROM usage_tracking WHERE user_id = {ph}",
+            (user_id,), fetchone=True
+        )
+        if total_row:
+            result["total_usage"] = {
+                "ai_messages": total_row[0],
+                "pdf_analyses": total_row[1],
+                "image_analyses": total_row[2],
+                "youtube_summaries": total_row[3],
+                "searches": total_row[4],
+                "deep_searches": total_row[5],
+                "image_generations": total_row[6],
+                "image_edits": total_row[7],
+                "active_days": total_row[8],
+            }
+        else:
+            result["total_usage"] = {"ai_messages": 0, "pdf_analyses": 0, "image_analyses": 0,
+                                      "youtube_summaries": 0, "searches": 0, "deep_searches": 0,
+                                      "image_generations": 0, "image_edits": 0, "active_days": 0}
+        
+        # ═══ اهتمامات ═══
+        result["interests"] = get_interests(user_id)
+        result["favorite_companies"] = get_favorite_companies(user_id)
+        
+        # ═══ عدد المواضيع المتعلمة ═══
+        from memory import get_learning_progress
+        learning = get_learning_progress(user_id)
+        result["learning_topics_count"] = len(learning)
+        
+        # ═══ عدد المفضلات ═══
+        ph = "%s" if _is_postgres() else "?"
+        fav_row = _execute(
+            f"SELECT COUNT(*) FROM favorites WHERE user_id = {ph}",
+            (user_id,), fetchone=True
+        )
+        result["favorites_count"] = fav_row[0] if fav_row else 0
+        
+        # ═══ عدد عناصر Workspace ═══
+        result["workspace_count"] = get_workspace_count(user_id)
+        
+        # ═══ عدد التنبيهات الذكية ═══
+        alerts = get_user_alerts(user_id)
+        result["smart_alerts_count"] = len(alerts)
+        
+        # ═══ حالة الحظر ═══
+        ph = "%s" if _is_postgres() else "?"
+        ban_row = _execute(
+            f"SELECT reason, banned_at, banned_by, warning_count FROM banned_users WHERE user_id = {ph}",
+            (user_id,), fetchone=True
+        )
+        if ban_row:
+            result["banned"] = True
+            result["ban_reason"] = ban_row[0]
+            result["ban_date"] = ban_row[1]
+            result["banned_by"] = ban_row[2]
+            result["warning_count"] = ban_row[3]
+        else:
+            result["banned"] = False
+            result["warning_count"] = 0
+        
+        # ═══ حالة الأدمن ═══
+        try:
+            from admin import is_admin
+            result["is_admin"] = is_admin(user_id)
+        except Exception:
+            result["is_admin"] = False
+        
+    except Exception as e:
+        logger.error(f"❌ Error getting user stats for {user_id}: {e}")
+        result["error"] = str(e)
+    
+    return result
+
+
 def grant_premium(user_id: int, granted_by: str = "admin", expires: str = None, plan: str = "premium"):
     """Grant premium to a user"""
     from memory import _ensure_user_in_db
     _ensure_user_in_db(user_id)
+    
+    # 🔴 تسجيل الخطة القديمة قبل التغيير (عشان الـ history)
+    old_plan = get_user_plan(user_id)
     
     now = datetime.now(CAIRO_TZ).isoformat()
     ph1, ph2, ph3, ph4 = ("%s", "%s", "%s", "%s") if _is_postgres() else ("?", "?", "?", "?")
@@ -421,6 +694,10 @@ def grant_premium(user_id: int, granted_by: str = "admin", expires: str = None, 
             f"INSERT INTO premium_users (user_id, plan, premium_since, premium_expires, granted_by) VALUES ({ph1}, {ph2}, {ph3}, {ph4}, {ph5})",
             (user_id, plan, now, expires, granted_by)
         )
+    
+    # 🔴 تسجيل في premium_history
+    _log_premium_history(user_id, action="grant", plan_before=old_plan, plan_after=plan, granted_by=granted_by, expires=expires)
+    
     logger.info(f"⭐ Premium granted to user {user_id} (plan: {plan})")
     # ⚡ مسح الكاش عشان التغيير يظهر فوراً
     _plan_cache.pop(user_id, None)
@@ -429,11 +706,18 @@ def grant_premium(user_id: int, granted_by: str = "admin", expires: str = None, 
 
 def revoke_premium(user_id: int):
     """Revoke premium from a user"""
+    # 🔴 تسجيل الخطة القديمة قبل الشيل (عشان الـ history)
+    old_plan = get_user_plan(user_id)
+    
     ph = "%s" if _is_postgres() else "?"
     _execute(
         f"UPDATE premium_users SET plan = {ph}, premium_expires = NULL WHERE user_id = {ph}",
         ("free", user_id)
     )
+    
+    # 🔴 تسجيل في premium_history
+    _log_premium_history(user_id, action="revoke", plan_before=old_plan, plan_after="free")
+    
     logger.info(f"❌ Premium revoked for user {user_id}")
     # ⚡ مسح الكاش عشان التغيير يظهر فوراً
     _plan_cache.pop(user_id, None)

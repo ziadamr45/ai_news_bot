@@ -38,12 +38,14 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     user_name = update.effective_user.first_name or "صديقي"
+    # 🔴 حفظ الاسم الأصلي من البروفايل (منفصل عن الاسم المفضل اللي ممكن المستخدم يقوله بعدين)
+    full_profile_name = ((update.effective_user.first_name or "") + " " + (update.effective_user.last_name or "")).strip()
 
     # ═══ Bug Fix: Check if user is new BEFORE calling update_user ═══
     new_user = is_new_user(user_id)
 
     lang = get_language(user_id)
-    update_user(user_id, {"name": user_name})
+    update_user(user_id, {"name": user_name, "profile_name": full_profile_name or user_name})
 
     increment_command_count(user_id)
 

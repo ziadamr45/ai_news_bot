@@ -3,7 +3,7 @@ Image Search Module 🔍🖼️
 بحث عن صور وتحميلها
 
 🔴 كيف بيشتغل:
-1. بيبحث في Pexels + Pixabay + Unsplash في نفس الوقت (parallel)
+1. بيبحث في Bing + Pexels + Pixabay + Unsplash في نفس الوقت (parallel)
 2. بيدمج النتائج وبيخلطها عشان التنوع
 3. بيرجع قائمة صور فيها: رابط، صورة مصغرة، حجم، مصدر، مصور
 4. بيقدر يحمّل الصور ويبعتها
@@ -13,9 +13,11 @@ Image Search Module 🔍🖼️
 - تحديد عدد الصور المطلوبة (1-15)
 - تحميل الصور وإرسالها مباشرة
 - Parallel search = أسرع = نتائج أكتر
-- مصادر احترافية (Pexels · Pixabay · Unsplash)
+- Bing Image Search = صور أشخاص وشخصيات حقيقية (مش ستوك بس)
+- Pexels · Pixabay · Unsplash = صور ستوك احترافية
 
 🔴 محتاج API keys:
+- BING_SEARCH_API_KEY — من azure.microsoft.com (مجاني 1000 طلب/شهر)
 - PEXELS_API_KEY — من pexels.com/api (مجاني)
 - PIXABAY_API_KEY — من pixabay.com/api/docs (مجاني)
 - UNSPLASH_ACCESS_KEY — من unsplash.com/developers (مجاني)
@@ -280,22 +282,107 @@ async def search_images_pixabay(query: str, count: int = 3) -> Optional[List[Dic
 
 
 # ═══════════════════════════════════════
-# بحث صور — Parallel Search (Pexels + Pixabay + Unsplash)
+# Bing Image Search API (الأفضل للأشخاص والشخصيات المحددة)
+# ═══════════════════════════════════════
+
+async def search_images_bing(query: str, count: int = 3) -> Optional[List[Dict]]:
+    """بحث صور باستخدام Bing Image Search API
+    
+    🔴 الأفضل للأشخاص والشخصيات المحددة لأنه بيفهرس الويب كله
+    مش زي Pexels/Pixabay اللي بيشتغلوا بصور ستوك بس
+    
+    🔴 محتاج BING_SEARCH_API_KEY في الـ env vars
+    مجاني: 1000 طلب/شهر من azure.microsoft.com
+    
+    🔴 كيف تجيب الـ API key:
+    1. روح azure.microsoft.com
+    2. اعمل حساب مجاني
+    3. أنشئ resource من نوع "Bing Search v7"
+    4. خد الـ Key 1 أو Key 2
+    5. حطه في BING_SEARCH_API_KEY
+    """
+    bing_key = os.environ.get("BING_SEARCH_API_KEY", "")
+    if not bing_key:
+        return None
+    
+    try:
+        import aiohttp
+        
+        url = "https://api.bing.microsoft.com/v7.0/images/search"
+        params = {
+            "q": query,
+            "count": min(count, 30),
+            "offset": 0,
+            "mkt": "ar-SA" if any('\u0600' <= c <= '\u06FF' for c in query) else "en-US",
+            "safeSearch": "Moderate",
+            "imageType": "Photo",
+            "size": "Large",
+        }
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                url, params=params,
+                timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT),
+                headers={"Ocp-Apim-Subscription-Key": bing_key},
+            ) as resp:
+                if resp.status != 200:
+                    logger.warning(f"Bing Image API failed: HTTP {resp.status}")
+                    return None
+                
+                data = await resp.json()
+                results_raw = data.get("value", [])
+                
+                results = []
+                for item in results_raw[:count]:
+                    # 🔴 Bing بيرجع thumbnail و contentUrl و hostPageUrl
+                    thumbnail = item.get("thumbnailUrl", "")
+                    content_url = item.get("contentUrl", "")
+                    host_page = item.get("hostPageUrl", "")
+                    
+                    # نفضل الـ contentUrl (صورة مباشرة) على الـ hostPageUrl
+                    best_url = content_url or host_page or thumbnail
+                    
+                    results.append({
+                        "url": best_url,
+                        "thumbnail": thumbnail,
+                        "full_url": content_url or best_url,
+                        "width": item.get("width", 0),
+                        "height": item.get("height", 0),
+                        "description": item.get("name", ""),
+                        "author": item.get("copyright", ""),
+                        "source": "Bing",
+                        "download_url": content_url or best_url,
+                        "host_page": host_page,
+                    })
+                
+                return results
+        
+    except Exception as e:
+        logger.warning(f"Bing Image search error: {e}")
+        return None
+
+
+# ═══════════════════════════════════════
+# بحث صور — Parallel Search (Bing + Pexels + Pixabay + Unsplash)
 # ═══════════════════════════════════════
 
 async def search_images(query: str, count: int = 3) -> Optional[List[Dict]]:
-    """بحث صور — Parallel search من Pexels + Pixabay + Unsplash
+    """بحث صور — Parallel search من Bing + Pexels + Pixabay + Unsplash
     
-    🔴 FIX: DuckDuckGo اتحل مكانه بحث متوازي من APIs احترافية
+    🔴 FIX v2: أضفنا Bing Image Search API!
+    - Bing — بيفهرس الويب كله، الأفضل للأشخاص والشخصيات المحددة (محتاج BING_SEARCH_API_KEY)
     - Pexels API — صور عالية الجودة، مجاني (محتاج PEXELS_API_KEY)
     - Pixabay API — صور مجانية كتير، مجاني (محتاج PIXABAY_API_KEY)
     - Unsplash API — صور احترافية، مجاني (محتاج UNSPLASH_ACCESS_KEY)
     
-    🔴 الميزات عن DuckDuckGo:
-    1. صور عالية الجودة فعلاً (مش صورة واحدة مش لاقية)
-    2. كل صورة ليها مصدر واضح (Pexels/Pixabay/Unsplash)
-    3. بحث متوازي = أسرع
-    4. كل APIs ليها روابط تحميل مباشرة
+    🔴 ليه Bing مهم:
+    Pexels/Pixabay/Unsplash دول مواقع صور ستوك — صور عامة واحترافية بس مش صور
+    أشخاص حقيقيين. لو المستخدم بيدور على "محمد صلاح" أو "ال أهرامات" أو
+    أي حاجة محددة، Bing هيلاقيها لأنه بيفهرس الويب كله مش ستوك بس.
+    
+    🔴 أولوية النتائج:
+    - بنحط نتائج Bing الأول (لأنها الأكثر دقة للبحث عن أشخاص/أشياء محددة)
+    - بعدين بنخلط مع Pexels/Pixabay/Unsplash عشان التنوع
     
     Args:
         query: كلمة البحث
@@ -306,11 +393,12 @@ async def search_images(query: str, count: int = 3) -> Optional[List[Dict]]:
     """
     count = max(MIN_IMAGE_COUNT, min(count, MAX_IMAGE_COUNT))
     
-    # 🔴 FIX: بنبحث في الـ 3 APIs في نفس الوقت (parallel) بدل fallback chain
+    # 🔴 FIX v2: بنبحث في الـ 4 APIs في نفس الوقت (parallel) بدل fallback chain
     # كل API بيرجع count نتائج، وبندمجهم وبنختار أفضل count
     import asyncio
     
     search_tasks = [
+        ("Bing", search_images_bing),
         ("Pexels", search_images_pexels),
         ("Pixabay", search_images_pixabay),
         ("Unsplash", search_images_unsplash),
@@ -323,8 +411,10 @@ async def search_images(query: str, count: int = 3) -> Optional[List[Dict]]:
     
     results_list = await asyncio.gather(*tasks, return_exceptions=True)
     
-    # بنجمع كل النتائج الناجحة
-    all_results = []
+    # بنجمع كل النتائج الناجحة — بنحط Bing الأول عشان الأولوية
+    bing_results = []
+    stock_results = []
+    
     for i, result in enumerate(results_list):
         name = search_tasks[i][0]
         if isinstance(result, Exception):
@@ -332,15 +422,18 @@ async def search_images(query: str, count: int = 3) -> Optional[List[Dict]]:
             continue
         if result and len(result) > 0:
             logger.info(f"🖼️ Image search ({name}): {len(result)} results for '{query}'")
-            all_results.extend(result)
+            if name == "Bing":
+                bing_results.extend(result)
+            else:
+                stock_results.extend(result)
         else:
             logger.debug(f"🖼️ Image search ({name}): no results")
     
+    # 🔴 بنحط نتائج Bing الأول (أكثر دقة للأشخاص والشخصيات)
+    # بعدين نخلط مع نتائج الستوك عشان التنوع
+    all_results = bing_results + stock_results
+    
     if all_results:
-        # 🔴 نخلط النتائج عشان مش تكون كلها من مصدر واحد
-        import random
-        random.shuffle(all_results)
-        
         # 🔴 نزيل التكرار بناءً على الـ URL
         seen_urls = set()
         unique_results = []

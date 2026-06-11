@@ -654,6 +654,18 @@ def _ensure_user_in_db(user_id: int, platform: str = "telegram"):
     except Exception:
         pass  # العمود موجود بالفعل
 
+    # Migration: إضافة عمود profile_name لو مش موجود (لتخزين الاسم الأصلي من الحساب منفصل عن الاسم المفضل)
+    try:
+        if _is_postgres():
+            _execute("ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS profile_name TEXT DEFAULT ''")
+        else:
+            try:
+                _execute("SELECT profile_name FROM user_profiles LIMIT 1", fetchone=True)
+            except Exception:
+                _execute("ALTER TABLE user_profiles ADD COLUMN profile_name TEXT DEFAULT ''")
+    except Exception:
+        pass  # العمود موجود بالفعل
+
     row = _execute("SELECT user_id FROM user_profiles WHERE user_id = %s" if _is_postgres() else "SELECT user_id FROM user_profiles WHERE user_id = ?", (user_id,), fetchone=True)
     if not row:
         now = datetime.now().isoformat()
@@ -726,7 +738,7 @@ def get_user(user_id: int) -> Dict:
 
 # أسماء الأعمدة المسموح بها — حماية من SQL Injection
 _ALLOWED_USER_COLUMNS = frozenset({
-    'name', 'language', 'news_time', 'sources', 'subscribed',
+    'name', 'profile_name', 'language', 'news_time', 'sources', 'subscribed',
     'response_length', 'notification_enabled', 'interests',
     'favorite_companies', 'last_interaction', 'commands_used',
     'chat_count', 'last_news_delivery', 'wa_phone'

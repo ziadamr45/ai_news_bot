@@ -382,7 +382,8 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 → <code>/revoke user_id</code> — شيل Premium
 → <code>/resetlimit user_id</code> — إعادة تعيين الحدود المجانية
 → <code>/broadcast رسالة</code> — بث لكل المشتركين
-→ <code>/userinfo user_id</code> — معلومات يوزر
+→ <code>/userinfo user_id</code> — معلومات يوزر شاملة (بدون بيانات حساسة)
+→ <code>/userstats user_id</code> — إحصائيات يوزر مفصلة
 → <code>/admin</code> — اللوحة دي
 """
 
@@ -888,7 +889,14 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def userinfo_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    أمر /userinfo — معلومات يوزر معين
+    أمر /userinfo — معلومات يوزر شاملة (بدون بيانات حساسة)
+    
+    ⚠️ البيانات الحساسة اللي مش بتتعرض:
+    - محتوى المحادثات
+    - ذكريات المستخدم (user_memories)
+    - المفضلات التفصيلية
+    - عناصر Workspace التفصيلية
+    
     الاستخدام: /userinfo 123456789
     """
     user_id = update.effective_user.id
@@ -901,8 +909,16 @@ async def userinfo_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args or []
     if not args:
         await update.message.reply_text(
-            "👤 <b>معلومات يوزر</b>\n\n"
-            "الاستخدام: <code>/userinfo user_id</code>\n"
+            "👤 <b>معلومات مستخدم شاملة</b>\n\n"
+            "الاستخدام: <code>/userinfo user_id</code>\n\n"
+            "💡 الأمر ده بيرجع كل المعلومات العامة عن المستخدم:\n"
+            "→ الاسم (من البروفايل + الاسم المفضل)\n"
+            "→ الخطة والاشتراكات وتاريخها\n"
+            "→ كم مدة على البوت وعلى الخطة\n"
+            "→ إحصائيات الاستخدام\n\n"
+            "🔒 <b>مش بيرجع بيانات حساسة:</b>\n"
+            "→ محتوى المحادثات\n"
+            "→ ذكريات المستخدم\n\n"
             "مثال: <code>/userinfo 123456789</code>",
             parse_mode="HTML"
         )
@@ -915,62 +931,132 @@ async def userinfo_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     try:
-        from memory import get_user, get_interests, get_favorite_companies, get_learning_progress
-        from premium import get_user_plan, get_usage, get_premium_info
-        import json
-
-        user_data = get_user(target_id)
-        plan = get_user_plan(target_id)
-        usage = get_usage(target_id)
-        interests = get_interests(target_id)
-        companies = get_favorite_companies(target_id)
-        learning = get_learning_progress(target_id)
+        from premium import get_user_stats
         
-        # 🔴 معلومات Premium مفصلة
-        premium_info = get_premium_info(target_id)
+        stats = get_user_stats(target_id)
         
-        plan_display = "⭐ Premium" if plan in ("premium", "premium_plus") else "🆓 Free"
+        if not stats.get("found"):
+            await update.message.reply_text("❌ المستخدم ده مش موجود في قاعدة البيانات.")
+            return
         
-        if premium_info["is_premium"]:
-            premium_details = f"""
-⭐ <b>Premium:</b> {plan_display}
-📅 <b>مفعل من:</b> {premium_info['premium_since'][:10] if premium_info['premium_since'] else 'مش محدد'}
-⏰ <b>المتبقي:</b> {premium_info['expires_display']}
-🔑 <b>بواسطة:</b> {premium_info['granted_by'] or 'مش محدد'}"""
+        # ═══ الأسماء ═══
+        name = stats.get("name", "")
+        profile_name = stats.get("profile_name", "")  # 🔴 الاسم الأصلي من البروفايل
+        
+        # عرض الاسم — لو فيه اسم مفضل مختلف عن اسم البروفايل، نعرض الاتين
+        if name and profile_name and name != profile_name:
+            name_display = f"{name} (اسم البروفايل: {profile_name})"
+        elif name:
+            name_display = name
+        elif profile_name:
+            name_display = profile_name
         else:
-            premium_details = f"\n⭐ <b>Premium:</b> 🆓 Free"
-
-        info = f"""👤 <b>معلومات المستخدم</b>
+            name_display = "مش محدد"
+        
+        # ═══ معلومات أساسية ═══
+        plan_display = "⭐ Premium" if stats.get("is_premium") else "🆓 Free"
+        if stats.get("plan") == "premium_plus":
+            plan_display = "⭐ Premium+"
+        
+        platform_display = "📱 تليجرام" if stats.get("platform") == "telegram" else "📱 واتساب"
+        lang_display = "🇪🇬 العربية" if stats.get("language") == "ar" else "🇬🇧 English"
+        
+        # ═══ معلومات Premium ═══
+        if stats.get("is_premium"):
+            premium_section = f"""
+⭐ <b>الخطة الحالية:</b> {plan_display}
+📅 <b>مفعل من:</b> {stats.get('premium_since', 'مش محدد')[:10] if stats.get('premium_since') else 'مش محدد'}
+⏰ <b>المتبقي:</b> {stats.get('premium_expires_display', '—')}
+⏱️ <b>على الخطة دي من:</b> {stats.get('time_on_current_plan', 'مش محدد')}
+🔑 <b>بواسطة:</b> {stats.get('premium_granted_by') or 'مش محدد'}"""
+        else:
+            premium_section = f"""
+⭐ <b>الخطة الحالية:</b> {plan_display}"""
+        
+        # ═══ تاريخ Premium ═══
+        grant_count = stats.get("premium_grant_count", 0)
+        revoke_count = stats.get("premium_revoke_count", 0)
+        history = stats.get("premium_history", [])
+        
+        premium_history_text = f"\n🔄 <b>عدد مرات الاشتراك:</b> {grant_count}"
+        if revoke_count > 0:
+            premium_history_text += f"\n❌ <b>عدد مرات الإلغاء:</b> {revoke_count}"
+        
+        if history:
+            premium_history_text += "\n\n📜 <b>آخر أحداث Premium:</b>"
+            for h in history[:5]:
+                action_emoji = "✅" if h["action"] == "grant" else "❌" if h["action"] == "revoke" else "🔄"
+                action_text = "تفعيل" if h["action"] == "grant" else "إلغاء" if h["action"] == "revoke" else h["action"]
+                date = h.get("created_at", "")[:16] if h.get("created_at") else "مش محدد"
+                by = h.get("granted_by", "") or ""
+                by_text = f" (بواسطة: {by})" if by and by != "None" else ""
+                premium_history_text += f"\n  {action_emoji} {action_text} — {date}{by_text}"
+        
+        # ═══ إحصائيات الاستخدام ═══
+        total = stats.get("total_usage", {})
+        today = stats.get("today_usage", {})
+        
+        # ═══ حالة الحظر ═══
+        if stats.get("banned"):
+            ban_section = f"""
+🚫 <b>محظور!</b>
+📝 السبب: {stats.get('ban_reason', 'مش محدد')}
+📅 من: {stats.get('ban_date', '')[:16] if stats.get('ban_date') else 'مش محدد'}
+🔑 بواسطة: {stats.get('banned_by', '')}"""
+        else:
+            ban_section = ""
+        
+        # ═══ تحذيرات ═══
+        warnings = stats.get("warning_count", 0)
+        warn_section = f"\n⚠️ <b>تحذيرات:</b> {warnings}/3" if warnings > 0 else ""
+        
+        # ═══ أدمن ═══
+        admin_section = "\n👑 <b>أدمن:</b> نعم" if stats.get("is_admin") else ""
+        
+        # ═══ بناء الرسالة النهائية ═══
+        info = f"""👤 <b>معلومات المستخدم الشاملة</b>
 ━━━━━━━━━━━━━━━━━
+🔒 <i>بدون بيانات حساسة — محادثات وذكريات المستخدم محمية</i>
 
 🆔 <b>ID:</b> <code>{target_id}</code>
-📝 <b>الاسم:</b> {user_data.get('name', 'مش محدد')}
-🌐 <b>اللغة:</b> {'العربية' if user_data.get('language') == 'ar' else 'English'}
-{premium_details}
-📬 <b>مشترك أخبار:</b> {'نعم' if user_data.get('subscribed') else 'لا'}
-⏰ <b>وقت الأخبار:</b> {user_data.get('news_time', '09:00')}
-💬 <b>محادثات:</b> {user_data.get('chat_count', 0)}
-⚡ <b>أوامر:</b> {user_data.get('commands_used', 0)}
+📝 <b>الاسم:</b> {name_display}
+📱 <b>المنصة:</b> {platform_display}
+🌐 <b>اللغة:</b> {lang_display}
+⏱️ <b>على البوت من:</b> {stats.get('time_on_bot', 'مش محدد')}
+{premium_section}
+{premium_history_text}
+{ban_section}{warn_section}{admin_section}
 
 📊 <b>استخدام اليوم:</b>
-→ رسائل AI: {usage.get('ai_messages', 0)}
-→ تحليلات PDF: {usage.get('pdf_analyses', 0)}
-→ تحليلات صور: {usage.get('image_analyses', 0)}
-→ ملخصات YouTube: {usage.get('youtube_summaries', 0)}
-→ عمليات بحث: {usage.get('searches', 0)}
+→ رسائل AI: {today.get('ai_messages', 0)}
+→ تحليلات PDF: {today.get('pdf_analyses', 0)}
+→ تحليلات صور: {today.get('image_analyses', 0)}
+→ ملخصات YouTube: {today.get('youtube_summaries', 0)}
+→ عمليات بحث: {today.get('searches', 0)}
 
-🎯 <b>اهتمامات:</b> {', '.join(interests[:10]) if interests else 'لا يوجد'}
-🏢 <b>شركات مفضلة:</b> {', '.join(companies[:5]) if companies else 'لا يوجد'}
-📚 <b>مواضيع متعلمة:</b> {len(learning)} موضوع
+📈 <b>الإجمالي عبر الوقت:</b>
+→ رسائل AI: {total.get('ai_messages', 0)}
+→ تحليلات PDF: {total.get('pdf_analyses', 0)}
+→ تحليلات صور: {total.get('image_analyses', 0)}
+→ ملخصات YouTube: {total.get('youtube_summaries', 0)}
+→ عمليات بحث: {total.get('searches', 0)}
+→ بحث عميق: {total.get('deep_searches', 0)}
+→ إنشاء صور: {total.get('image_generations', 0)}
+→ تعديل صور: {total.get('image_edits', 0)}
+📅 أيام نشاط: {total.get('active_days', 0)}
 
-📅 <b>تاريخ التسجيل:</b> {user_data.get('created_at', 'مش محدد')}
-📅 <b>آخر تفاعل:</b> {user_data.get('last_interaction', 'مش محدد')}
+💬 <b>محادثات:</b> {stats.get('chat_count', 0)}
+⚡ <b>أوامر:</b> {stats.get('commands_used', 0)}
+🎯 <b>اهتمامات:</b> {', '.join(stats.get('interests', [])[:8]) if stats.get('interests') else 'لا يوجد'}
+
+📅 <b>تاريخ التسجيل:</b> {stats.get('created_at', 'مش محدد')[:16] if stats.get('created_at') else 'مش محدد'}
+📅 <b>آخر تفاعل:</b> {stats.get('last_interaction', 'مش محدد')[:16] if stats.get('last_interaction') else 'مش محدد'}
 """
 
         keyboard = InlineKeyboardMarkup([
             [
                 InlineKeyboardButton(
-                    "⭐ فعّل Premium" if plan != "premium" else "❌ شيل Premium",
+                    "⭐ فعّل Premium" if not stats.get("is_premium") else "❌ شيل Premium",
                     callback_data=f"admin_toggle_premium_{target_id}"
                 ),
             ],
@@ -982,6 +1068,7 @@ async def userinfo_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(info, parse_mode="HTML", reply_markup=keyboard)
 
     except Exception as e:
+        logger.error(f"Error in userinfo_command: {e}")
         await update.message.reply_text(f"❌ حصل خطأ: {e}")
 
 
@@ -1288,7 +1375,8 @@ def get_admin_help_text() -> str:
 ✅ <code>/unban user_id</code> — إلغاء حظر
 ⚠️ <code>/warn user_id [سبب]</code> — تحذير (3 تحذيرات = حظر)
 📢 <code>/broadcast رسالة</code> — بث لكل المشتركين
-👤 <code>/userinfo user_id</code> — معلومات يوزر
+👤 <code>/userinfo user_id</code> — معلومات يوزر شاملة (بدون بيانات حساسة)
+📊 <code>/userstats user_id</code> — إحصائيات يوزر مفصلة
 👑 <code>/addadmin user_id</code> — إضافة أدمن جديد
 👑 <code>/removeadmin user_id</code> — شيل أدمن
 👑 <code>/listadmins</code> — قائمة كل الأدمنز
@@ -1698,4 +1786,195 @@ async def listadmins_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
         await update.message.reply_text(text, parse_mode="HTML")
     except Exception as e:
+        await update.message.reply_text(f"❌ حصل خطأ: {e}")
+
+
+# ═══════════════════════════════════════
+# أمر إحصائيات المستخدم الشاملة - User Stats Command
+# ═══════════════════════════════════════
+
+async def userstats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    أمر /userstats — إحصائيات شاملة عن مستخدم (بدون بيانات حساسة)
+    
+    ⚠️ البيانات الحساسة اللي مش بتتعرض:
+    - محتوى المحادثات
+    - ذكريات المستخدم (user_memories)
+    - المفضلات التفصيلية
+    - عناصر Workspace التفصيلية
+    
+    الاستخدام: /userstats 123456789
+    """
+    user_id = update.effective_user.id
+    username = update.effective_user.username or ""
+
+    if not is_admin(user_id, username):
+        await update.message.reply_text("❌ هذا الأمر للمطور فقط.")
+        return
+
+    args = context.args or []
+    if not args:
+        await update.message.reply_text(
+            "📊 <b>إحصائيات مستخدم شاملة</b>\n\n"
+            "الاستخدام: <code>/userstats user_id</code>\n\n"
+            "💡 الأمر ده بيرجع كل المعلومات العامة عن المستخدم:\n"
+            "→ الخطة والاشتراكات\n"
+            "→ تاريخ Premium (كم مرة اشترك)\n"
+            "→ إحصائيات الاستخدام الإجمالي\n"
+            "→ حالة الحظر والتحذيرات\n\n"
+            "🔒 <b>مش بيرجع بيانات حساسة:</b>\n"
+            "→ محتوى المحادثات\n"
+            "→ ذكريات المستخدم\n"
+            "→ المفضلات التفصيلية\n"
+            "→ محتوى Workspace\n\n"
+            "مثال: <code>/userstats 123456789</code>",
+            parse_mode="HTML"
+        )
+        return
+
+    try:
+        target_id = int(args[0])
+    except ValueError:
+        await update.message.reply_text("❌ user_id لازم يكون رقم.")
+        return
+
+    try:
+        from premium import get_user_stats
+        
+        stats = get_user_stats(target_id)
+        
+        if not stats.get("found"):
+            await update.message.reply_text("❌ المستخدم ده مش موجود في قاعدة البيانات.")
+            return
+        
+        # ═══ معلومات أساسية ═══
+        plan_display = "⭐ Premium" if stats.get("is_premium") else "🆓 Free"
+        if stats.get("plan") == "premium_plus":
+            plan_display = "⭐ Premium+"
+        
+        platform_display = "📱 تليجرام" if stats.get("platform") == "telegram" else "📱 واتساب"
+        lang_display = "🇪🇬 العربية" if stats.get("language") == "ar" else "🇬🇧 English"
+        
+        # ═══ معلومات Premium ═══
+        if stats.get("is_premium"):
+            premium_section = f"""
+⭐ <b>الخطة الحالية:</b> {plan_display}
+📅 <b>مفعل من:</b> {stats.get('premium_since', 'مش محدد')[:10] if stats.get('premium_since') else 'مش محدد'}
+⏰ <b>المتبقي:</b> {stats.get('premium_expires_display', '—')}
+⏱️ <b>على الخطة دي من:</b> {stats.get('time_on_current_plan', 'مش محدد')}
+🔑 <b>بواسطة:</b> {stats.get('premium_granted_by') or 'مش محدد'}"""
+        else:
+            premium_section = f"""
+⭐ <b>الخطة الحالية:</b> {plan_display}"""
+
+        # ═══ تاريخ Premium ═══
+        grant_count = stats.get("premium_grant_count", 0)
+        revoke_count = stats.get("premium_revoke_count", 0)
+        history = stats.get("premium_history", [])
+        
+        premium_history_text = f"\n🔄 <b>عدد مرات الاشتراك:</b> {grant_count}"
+        if revoke_count > 0:
+            premium_history_text += f"\n❌ <b>عدد مرات الإلغاء:</b> {revoke_count}"
+        
+        if history:
+            premium_history_text += "\n\n📜 <b>آخر أحداث Premium:</b>"
+            for h in history[:5]:
+                action_emoji = "✅" if h["action"] == "grant" else "❌" if h["action"] == "revoke" else "🔄"
+                action_text = "تفعيل" if h["action"] == "grant" else "إلغاء" if h["action"] == "revoke" else h["action"]
+                date = h.get("created_at", "")[:16] if h.get("created_at") else "مش محدد"
+                by = h.get("granted_by", "") or ""
+                by_text = f" (بواسطة: {by})" if by and by != "None" else ""
+                premium_history_text += f"\n  {action_emoji} {action_text} — {date}{by_text}"
+
+        # ═══ إحصائيات الاستخدام الإجمالي ═══
+        total = stats.get("total_usage", {})
+        today = stats.get("today_usage", {})
+        
+        usage_section = f"""
+📊 <b>إحصائيات الاستخدام:</b>
+
+📅 <b>اليوم:</b>
+→ رسائل AI: {today.get('ai_messages', 0)}
+→ تحليلات PDF: {today.get('pdf_analyses', 0)}
+→ تحليلات صور: {today.get('image_analyses', 0)}
+→ ملخصات YouTube: {today.get('youtube_summaries', 0)}
+→ عمليات بحث: {today.get('searches', 0)}
+
+📈 <b>الإجمالي عبر الوقت:</b>
+→ رسائل AI: {total.get('ai_messages', 0)}
+→ تحليلات PDF: {total.get('pdf_analyses', 0)}
+→ تحليلات صور: {total.get('image_analyses', 0)}
+→ ملخصات YouTube: {total.get('youtube_summaries', 0)}
+→ عمليات بحث: {total.get('searches', 0)}
+→ بحث عميق: {total.get('deep_searches', 0)}
+→ إنشاء صور: {total.get('image_generations', 0)}
+→ تعديل صور: {total.get('image_edits', 0)}
+📅 أيام نشاط: {total.get('active_days', 0)}"""
+
+        # ═══ حالة الحظر ═══
+        if stats.get("banned"):
+            ban_section = f"""
+🚫 <b>محظور!</b>
+📝 السبب: {stats.get('ban_reason', 'مش محدد')}
+📅 من: {stats.get('ban_date', '')[:16] if stats.get('ban_date') else 'مش محدد'}
+🔑 بواسطة: {stats.get('banned_by', '')}"""
+        else:
+            ban_section = ""
+        
+        # ═══ تحذيرات ═══
+        warnings = stats.get("warning_count", 0)
+        warn_section = f"\n⚠️ <b>تحذيرات:</b> {warnings}/3" if warnings > 0 else ""
+
+        # ═══ أدمن ═══
+        admin_section = "\n👑 <b>أدمن:</b> نعم" if stats.get("is_admin") else ""
+
+        # ═══ معلومات عامة ═══
+        interests = stats.get("interests", [])
+        companies = stats.get("favorite_companies", [])
+        
+        general_section = f"""
+🎯 <b>اهتمامات:</b> {', '.join(interests[:8]) if interests else 'لا يوجد'}
+🏢 <b>شركات مفضلة:</b> {', '.join(companies[:5]) if companies else 'لا يوجد'}
+📚 <b>مواضيع متعلمة:</b> {stats.get('learning_topics_count', 0)} موضوع
+⭐ <b>مفضلات:</b> {stats.get('favorites_count', 0)} عنصر
+🗂️ <b>عناصر Workspace:</b> {stats.get('workspace_count', 0)} عنصر
+🔔 <b>تنبيهات ذكية:</b> {stats.get('smart_alerts_count', 0)}"""
+
+        # ═══ بناء الرسالة النهائية ═══
+        info = f"""📊 <b>إحصائيات المستخدم الشاملة</b>
+━━━━━━━━━━━━━━━━━
+🔒 <i>بدون بيانات حساسة — محادثات وذكريات المستخدم محمية</i>
+
+👤 <b>معلومات أساسية:</b>
+🆔 <b>ID:</b> <code>{target_id}</code>
+📝 <b>الاسم:</b> {stats.get('name') or 'مش محدد'}
+{platform_display} | {lang_display}
+📅 <b>على البوت من:</b> {stats.get('time_on_bot', 'مش محدد')} ({stats.get('days_on_bot', 0)} يوم)
+📅 <b>تاريخ التسجيل:</b> {stats.get('created_at', 'مش محدد')[:16] if stats.get('created_at') else 'مش محدد'}
+📅 <b>آخر تفاعل:</b> {stats.get('last_interaction', 'مش محدد')[:16] if stats.get('last_interaction') else 'مش محدد'}
+
+💬 <b>محادثات:</b> {stats.get('chat_count', 0)}
+⚡ <b>أوامر:</b> {stats.get('commands_used', 0)}
+📬 <b>مشترك أخبار:</b> {'نعم ✅' if stats.get('subscribed') else 'لا ❌'}
+{admin_section}
+{ban_section}{warn_section}
+{premium_section}
+{premium_history_text}
+{usage_section}
+{general_section}
+
+━━━━━━━━━━━━━━━━━
+🤖 <i>My Bro — Admin User Stats</i>"""
+
+        # Send the message (split if too long)
+        if len(info) > 4000:
+            from formatters import smart_split_message
+            chunks = smart_split_message(info)
+            for chunk in chunks:
+                await update.message.reply_text(chunk, parse_mode="HTML")
+        else:
+            await update.reply_text(info, parse_mode="HTML")
+
+    except Exception as e:
+        logger.error(f"Error in userstats_command: {e}")
         await update.message.reply_text(f"❌ حصل خطأ: {e}")
