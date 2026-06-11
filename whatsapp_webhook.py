@@ -1246,14 +1246,15 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                      quality: str = "best", force_audio: bool = False):
     """Download a video and send it via WhatsApp — with yt-dlp FIRST then fallbacks
     
-    🔴 FIX v9: Cobalt API كـ fallback تالت (بعد player_client وقبل Piped)
+    🔴 FIX v9: Cobalt API كـ fallback تالت + Apify كـ fallback رابع
     1. yt-dlp + deno + remote_components (الأفضل)
     2. yt-dlp player_client fallback (android → ios → mweb → tv → web)
-    3. 🟠 Cobalt API (fallback تالت — أسرع وأضمن من Piped)
-    4. Piped API (fallback)
-    5. Invidious API (fallback)
-    6. Cobalt JWT (fallback)
-    7. Cloudflare Worker proxy (آخر محاولة)
+    3. 🟠 Cobalt API (fallback تالت — أسرع وأضمن)
+    4. 🔵 Apify (fallback رابع — سيرفرات مختلفة عن YouTube خالص)
+    5. Piped API (fallback)
+    6. Invidious API (fallback)
+    7. Cobalt JWT (fallback)
+    8. Cloudflare Worker proxy (آخر محاولة)
     
     WhatsApp has a 100MB media size limit. For larger files, we send the download link instead.
     
@@ -1674,15 +1675,135 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                 except Exception as video_send_err:
                                     logger.warning(f"⚠️ Cobalt video send failed: {video_send_err}")
                     
-                    logger.warning(f"⚠️ Cobalt (3rd fallback) failed, trying Piped...")
+                    logger.warning(f"⚠️ Cobalt (3rd fallback) failed, trying Apify...")
                 except ImportError:
-                    logger.warning("⚠️ Cobalt download handler not available, trying Piped...")
+                    logger.warning("⚠️ Cobalt download handler not available, trying Apify...")
                 except asyncio.TimeoutError:
-                    logger.warning(f"⚠️ Cobalt timed out, trying Piped...")
+                    logger.warning(f"⚠️ Cobalt timed out, trying Apify...")
                 except Exception as cobalt_err:
-                    logger.warning(f"⚠️ Cobalt error: {cobalt_err}, trying Piped...")
+                    logger.warning(f"⚠️ Cobalt error: {cobalt_err}, trying Apify...")
             
-            # ═══ المرحلة 4: Piped API Fallback (لليوتيوب بس) ═══
+            # ═══ المرحلة 4: Apify — fallback رابع (سيرفرات مختلفة عن YouTube خالص) ═══
+            # 🔵 Apify بيستخدم actors عشان يحمل الفيديو — مش بيتأثر بـ bot detection
+            if info is None and is_youtube:
+                try:
+                    from apify_download import download_youtube_apify
+                    
+                    logger.info(f"🔵 WhatsApp Apify: Attempting download as 4th fallback for {url[:80]}")
+                    
+                    try:
+                        await _send_whatsapp_message(wa_id, "🔵 جاري التحميل عبر Apify...")
+                    except:
+                        pass
+                    
+                    apify_result = await asyncio.wait_for(
+                        download_youtube_apify(url, quality, tmpdir),
+                        timeout=150
+                    )
+                    
+                    if apify_result and apify_result.get("success") and apify_result.get("filepath"):
+                        logger.info(f"🔵 WhatsApp Apify (4th fallback) succeeded! File: {apify_result['filepath']}")
+                        
+                        apify_file = apify_result["filepath"]
+                        apify_size = apify_result.get("size", os.path.getsize(apify_file) if os.path.exists(apify_file) else 0)
+                        apify_title = apify_result.get("title", "YouTube Video")
+                        apify_height = apify_result.get("height", 720)
+                        apify_size_mb = apify_size / (1024 * 1024)
+                        size_str = f"{apify_size_mb:.1f}MB"
+                        
+                        if apify_file and os.path.exists(apify_file):
+                            # 🛡️ Safety check
+                            try:
+                                from content_safety import comprehensive_media_safety_check
+                                af_file_type = "audio" if is_audio_only else "video"
+                                is_safe_af, block_msg_af, _ = await comprehensive_media_safety_check(
+                                    title=apify_title, file_path=apify_file, file_type=af_file_type,
+                                    platform="whatsapp", user_id=str(wa_user_id), lang="ar",
+                                )
+                                if not is_safe_af:
+                                    await _send_whatsapp_message(wa_id, block_msg_af)
+                                    try: os.remove(apify_file)
+                                    except: pass
+                                    await feedback.error()
+                                    return
+                            except Exception:
+                                pass  # Fail-open
+                            
+                            if is_audio_only or quality == "audio":
+                                try:
+                                    with open(apify_file, 'rb') as af:
+                                        media_response = requests.post(
+                                            f"{WHATSAPP_API_URL}/{WHATSAPP_PHONE_NUMBER_ID}/media",
+                                            headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
+                                            files={"file": (f"{apify_title[:50]}.mp3", af, "audio/mpeg")},
+                                            data={"messaging_product": "whatsapp", "type": "audio"},
+                                            timeout=120
+                                        )
+                                        if media_response.status_code == 200:
+                                            media_id = media_response.json().get("id")
+                                            await _send_whatsapp_audio(wa_id, media_id)
+                                            await feedback.success()
+                                            try: os.remove(apify_file)
+                                            except: pass
+                                            return
+                                except Exception as audio_send_err:
+                                    logger.warning(f"⚠️ Apify audio send failed: {audio_send_err}")
+                            else:
+                                # 🔴 استخدام Supabase للملفات الكبيرة
+                                if apify_size_mb > 100:
+                                    try:
+                                        from supabase_storage import upload_and_get_link
+                                        cloud_msg = await upload_and_get_link(
+                                            file_path=apify_file,
+                                            filename=f"{apify_title[:50]}.mp4",
+                                            content_type="video/mp4",
+                                            platform="whatsapp",
+                                            title=apify_title,
+                                            lang="ar",
+                                        )
+                                        if cloud_msg:
+                                            await _send_whatsapp_message(wa_id, cloud_msg)
+                                            await feedback.success()
+                                            try: os.remove(apify_file)
+                                            except: pass
+                                            return
+                                    except Exception as sup_err:
+                                        logger.error(f"☁️ Supabase upload error: {sup_err}")
+                                    await _send_whatsapp_message(wa_id, f"❌ فشل إرسال الفيديو من Apify ({size_str}). جرب تاني!")
+                                    await feedback.success()
+                                    try: os.remove(apify_file)
+                                    except: pass
+                                    return
+                                
+                                try:
+                                    with open(apify_file, 'rb') as vf:
+                                        media_response = requests.post(
+                                            f"{WHATSAPP_API_URL}/{WHATSAPP_PHONE_NUMBER_ID}/media",
+                                            headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
+                                            files={"file": (f"{apify_title[:50]}.mp4", vf, "video/mp4")},
+                                            data={"messaging_product": "whatsapp", "type": "video"},
+                                            timeout=180
+                                        )
+                                        if media_response.status_code == 200:
+                                            media_id = media_response.json().get("id")
+                                            tech_info = f"{apify_height}p | {size_str} | Apify"
+                                            await _send_whatsapp_video(wa_id, media_id, caption=f"🎬 {apify_title[:200]}\n📥 {tech_info}")
+                                            await feedback.success()
+                                            try: os.remove(apify_file)
+                                            except: pass
+                                            return
+                                except Exception as video_send_err:
+                                    logger.warning(f"⚠️ Apify video send failed: {video_send_err}")
+                    
+                    logger.warning(f"⚠️ Apify (4th fallback) failed, trying Piped...")
+                except ImportError:
+                    logger.warning("⚠️ Apify module not available, trying Piped...")
+                except asyncio.TimeoutError:
+                    logger.warning(f"⚠️ Apify timed out, trying Piped...")
+                except Exception as apify_err:
+                    logger.warning(f"⚠️ Apify error: {apify_err}, trying Piped...")
+            
+            # ═══ المرحلة 5: Piped API Fallback (لليوتيوب بس) ═══
             # Piped = واجهة بديلة لليوتيوب مفتوحة المصدر — مختلفة عن Invidious
             # بيستخدم NewPipe Extractor — أحياناً بيشتغل لما Invidious يبقى منطفي
             if info is None and is_youtube:
@@ -1792,7 +1913,7 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                 except Exception as piped_err:
                     logger.warning(f"⚠️ Piped error: {piped_err}, trying Invidious...")
             
-            # ═══ المرحلة 5: Invidious API Fallback (لليوتيوب بس) ═══
+            # ═══ المرحلة 6: Invidious API Fallback (لليوتيوب بس) ═══
             # Invidious = واجهة بديلة لليوتيوب مفتوحة المصدر
             if info is None and is_youtube:
                 try:
@@ -1896,7 +2017,7 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                 except Exception as inv_err:
                     logger.warning(f"⚠️ Invidious error: {inv_err}, trying Cobalt JWT...")
             
-            # ═══ المرحلة 6: Cobalt JWT — آخر fallback قبل Cloudflare Worker ═══
+            # ═══ المرحلة 7: Cobalt JWT — آخر fallback قبل Cloudflare Worker ═══
             # 🔴 ده JWT شخصي من cobalt.tools — بنستخدمه كـ آخر حل لو كل حاجة فشلت
             if info is None and is_youtube:
                 try:
@@ -2007,7 +2128,7 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                 except Exception as jwt_err:
                     logger.warning(f"⚠️ Cobalt JWT error: {jwt_err}")
             
-            # ═══ المرحلة 7: Cloudflare Worker Proxy Fallback (آخر محاولة) ═══
+            # ═══ المرحلة 8: Cloudflare Worker Proxy Fallback (آخر محاولة) ═══
             # لو yt-dlp فشل على Railway (IPs محجوبة)، نجرب عبر Cloudflare Worker
             if info is None:
                 from config import CLOUDFLARE_WORKER_URL

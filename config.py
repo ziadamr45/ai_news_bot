@@ -539,6 +539,12 @@ RAPIDAPI_KEY = os.environ.get("RAPIDAPI_KEY", "")
 # بنستخدمه كـ آخر محاولة لو كل الطرق التانية فشلت
 COBALT_JWT = os.environ.get("COBALT_JWT", "")
 
+# Apify — fallback رابع لتحميل فيديوهات اليوتيوب
+# 🔵 Apify هو منصة scraping قوية — بنستخدم actor لتحميل الفيديوهات
+# لما yt-dlp و Cobalt يفشلوا، Apify بيكون الحل الأضمن
+# 🔴 ميزة: مش بيتأثر بـ YouTube bot detection خالص — سيرفرات مختلفة تماماً
+APIFY_API_KEY = os.environ.get("APIFY_API_KEY", "")  # apify_api_...
+
 # Invidious API — واجهة بديلة لليوتيوب (fallback بين RapidAPI و yt-dlp)
 # 🟣 الميزة: مجاني ومفتوح — مش بيتأثر بـ YouTube bot detection خالص
 # الطلبات بتروح لسيرفرات Invidious مش من الـ IP بتاعك

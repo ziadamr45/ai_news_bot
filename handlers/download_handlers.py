@@ -1786,15 +1786,16 @@ def _get_ydl_opts(quality: str, output_template: str, platform: str = "",
 async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: str, user_id: int, status_msg=None):
     """تحميل فيديو أو صوت — مُحسّن v9 مع yt-dlp كأولوية
     
-    🔴 FIX v9: Cobalt API كـ fallback تالت (بعد player_client وقبل no-cookies)
+    🔴 FIX v9: Cobalt API كـ fallback تالت + Apify كـ fallback رابع
     1. yt-dlp + deno + remote_components (الأفضل)
     2. yt-dlp player_client fallback (android → ios → mweb → tv → web)
     3. 🟠 Cobalt API (fallback تالت — أسرع وأضمن من yt-dlp بدون كوكيز)
-    4. yt-dlp بدون كوكيز
-    5. Invidious API (fallback)
-    6. Piped API (fallback — زي Invidious بس سيرفرات مختلفة)
-    7. Cobalt JWT (fallback)
-    8. Cloudflare Worker (آخر محاولة)
+    4. 🔵 Apify (fallback رابع — سيرفرات مختلفة عن YouTube خالص)
+    5. yt-dlp بدون كوكيز
+    6. Invidious API (fallback)
+    7. Piped API (fallback — زي Invidious بس سيرفرات مختلفة)
+    8. Cobalt JWT (fallback)
+    9. Cloudflare Worker (آخر محاولة)
     """
     # تحديد الرسالة
     if hasattr(update_or_query, 'message'):
@@ -1924,11 +1925,12 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
         # 1. yt-dlp + deno + remote_components (الأفضل)
         # 2. yt-dlp player_client fallback (android → ios → mweb → tv → web)
         # 3. 🟠 Cobalt API (fallback تالت — أسرع وأضمن)
-        # 4. yt-dlp بدون كوكيز
-        # 5. Invidious API (fallback)
-        # 6. Piped API (fallback)
-        # 7. Cobalt JWT (fallback)
-        # 8. Cloudflare Worker (آخر محاولة)
+        # 4. 🔵 Apify (fallback رابع — سيرفرات مختلفة عن YouTube)
+        # 5. yt-dlp بدون كوكيز
+        # 6. Invidious API (fallback)
+        # 7. Piped API (fallback)
+        # 8. Cobalt JWT (fallback)
+        # 9. Cloudflare Worker (آخر محاولة)
         # ═══════════════════════════════════════════════════════════════
         
         info = None
@@ -2120,13 +2122,135 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                             except: pass
                             return  # ✅ Cobalt (3rd fallback) نجح!
                         
-                        logger.warning(f"⚠️ Cobalt (3rd fallback) also failed, trying yt-dlp without cookies...")
+                        logger.warning(f"⚠️ Cobalt (3rd fallback) also failed, trying Apify...")
                     except Exception as cobalt_3rd_err:
-                        logger.warning(f"⚠️ Cobalt (3rd fallback) error: {cobalt_3rd_err}, trying yt-dlp without cookies...")
+                        logger.warning(f"⚠️ Cobalt (3rd fallback) error: {cobalt_3rd_err}, trying Apify...")
                 
-                # ═══ المحاولة 4: كل الطرق فشلت — نجرب بدون كوكيز ═══
+                # ═══ المحاولة 4: Apify — fallback رابع (سيرفرات مختلفة عن YouTube خالص) ═══
+                # 🔵 Apify بيستخدم actors عشان يحمل الفيديو — مش بيتأثر بـ bot detection
                 if info is None:
-                    logger.info("🔄 All methods failed (including Cobalt), trying WITHOUT cookies...")
+                    logger.info("🔵 Cobalt failed, trying Apify as 4th fallback...")
+                    try:
+                        await status_msg.edit_text(
+                            "🔵 جاري التحميل عبر Apify..." if lang == "ar"
+                            else "🔵 Downloading via Apify..."
+                        )
+                    except:
+                        pass
+                    
+                    try:
+                        from apify_download import download_youtube_apify
+                        
+                        apify_result = await asyncio.wait_for(
+                            download_youtube_apify(url, quality, tmpdir),
+                            timeout=150  # Apify بيستنى الـ actor يخلص
+                        )
+                        
+                        if apify_result and apify_result.get("success") and apify_result.get("filepath"):
+                            logger.info(f"🔵 Apify (4th fallback) succeeded! File: {apify_result['filepath']}")
+                            
+                            af_file_path = apify_result["filepath"]
+                            af_file_size = apify_result.get("size", os.path.getsize(af_file_path))
+                            af_title = apify_result.get("title", "YouTube Video")
+                            af_height = apify_result.get("height", 720)
+                            
+                            af_size_mb = af_file_size / (1024 * 1024)
+                            af_size_str = f"{af_size_mb:.1f}MB"
+                            
+                            # 🛡️ Safety check on Apify downloaded media
+                            try:
+                                af_file_type = "audio" if quality == "audio" else "video"
+                                is_safe_af, block_msg_af, _reason_af = await comprehensive_media_safety_check(
+                                    title=af_title, file_path=af_file_path, file_type=af_file_type,
+                                    platform="telegram", user_id=str(user_id), lang=lang,
+                                )
+                                if not is_safe_af:
+                                    await message.reply_text(block_msg_af, parse_mode="HTML")
+                                    try: os.remove(af_file_path)
+                                    except: pass
+                                    return
+                            except Exception:
+                                pass  # Fail-open
+                            
+                            increment_usage(user_id, "youtube_summaries")
+                            try: track_event("media_downloads")
+                            except: pass
+                            
+                            await status_msg.delete()
+                            
+                            if quality == "audio":
+                                try:
+                                    with open(af_file_path, 'rb') as f:
+                                        caption = f"📥 {'تم تحميل الصوت!' if lang == 'ar' else 'Audio downloaded!'}\n🎵 {af_title[:200]}\n📁 {af_size_str} | Apify"
+                                        await message.reply_audio(
+                                            audio=f, filename=f"{af_title[:50]}.mp3",
+                                            caption=caption,
+                                            parse_mode="HTML",
+                                        )
+                                except Exception as send_err:
+                                    logger.warning(f"⚠️ Apify audio send failed: {send_err}")
+                                    # 🔴 لو الإرسال فشل — نجرب Supabase
+                                    if af_file_size > TELEGRAM_MAX_FREE:
+                                        try:
+                                            from supabase_storage import upload_and_get_link
+                                            cloud_msg = await upload_and_get_link(
+                                                file_path=af_file_path, filename=f"{af_title[:50]}.mp3",
+                                                content_type="audio/mpeg", platform="telegram",
+                                                title=af_title, lang=lang,
+                                            )
+                                            if cloud_msg:
+                                                await message.reply_text(cloud_msg, parse_mode="HTML")
+                                        except:
+                                            pass
+                                    if lang == "ar":
+                                        await message.reply_text(f"❌ فشل إرسال الصوت ({af_size_str}). جرب تاني!")
+                                    else:
+                                        await message.reply_text(f"❌ Failed to send audio ({af_size_str}). Try again!")
+                            else:
+                                try:
+                                    with open(af_file_path, 'rb') as f:
+                                        tech_info = f"{af_height}p | {af_size_str} | Apify"
+                                        caption = f"📥 {'تم تحميل الفيديو!' if lang == 'ar' else 'Video downloaded!'}\n🎬 {af_title[:200]}\n📊 {tech_info}"
+                                        await message.reply_video(
+                                            video=f, filename=f"{af_title[:50]}.mp4",
+                                            caption=caption,
+                                            parse_mode="HTML",
+                                            supports_streaming=True,
+                                        )
+                                except Exception as send_err:
+                                    logger.warning(f"⚠️ Apify video send failed (likely too large): {send_err}")
+                                    # 🔴 لو الإرسال فشل — نجرب Supabase
+                                    try:
+                                        from supabase_storage import upload_and_get_link
+                                        cloud_msg = await upload_and_get_link(
+                                            file_path=af_file_path, filename=f"{af_title[:50]}.mp4",
+                                            content_type="video/mp4", platform="telegram",
+                                            title=af_title, lang=lang,
+                                        )
+                                        if cloud_msg:
+                                            await message.reply_text(cloud_msg, parse_mode="HTML", disable_web_page_preview=False)
+                                    except:
+                                        pass
+                                    if lang == "ar":
+                                        await message.reply_text(f"❌ فشل إرسال الفيديو ({af_size_str}). جرب تاني!")
+                                    else:
+                                        await message.reply_text(f"❌ Failed to send video ({af_size_str}). Try again!")
+                            
+                            try: os.remove(af_file_path)
+                            except: pass
+                            return  # ✅ Apify (4th fallback) نجح!
+                        
+                        logger.warning(f"⚠️ Apify (4th fallback) also failed, trying yt-dlp without cookies...")
+                    except ImportError:
+                        logger.warning("⚠️ Apify module not available, trying yt-dlp without cookies...")
+                    except asyncio.TimeoutError:
+                        logger.warning(f"⚠️ Apify timed out, trying yt-dlp without cookies...")
+                    except Exception as apify_err:
+                        logger.warning(f"⚠️ Apify error: {apify_err}, trying yt-dlp without cookies...")
+                
+                # ═══ المحاولة 5: كل الطرق فشلت — نجرب بدون كوكيز ═══
+                if info is None:
+                    logger.info("🔄 All methods failed (including Cobalt & Apify), trying WITHOUT cookies...")
                     
                     try:
                         await status_msg.edit_text(
