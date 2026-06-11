@@ -3,7 +3,7 @@ Image Search Module 🔍🖼️
 بحث عن صور وتحميلها
 
 🔴 كيف بيشتغل:
-1. بيبحث في Bing + Pexels + Pixabay + Unsplash في نفس الوقت (parallel)
+1. بيبحث في DuckDuckGo + Bing + Pexels + Pixabay + Unsplash في نفس الوقت (parallel)
 2. بيدمج النتائج وبيخلطها عشان التنوع
 3. بيرجع قائمة صور فيها: رابط، صورة مصغرة، حجم، مصدر، مصور
 4. بيقدر يحمّل الصور ويبعتها
@@ -13,11 +13,12 @@ Image Search Module 🔍🖼️
 - تحديد عدد الصور المطلوبة (1-15)
 - تحميل الصور وإرسالها مباشرة
 - Parallel search = أسرع = نتائج أكتر
-- Bing Image Search = صور أشخاص وشخصيات حقيقية (مش ستوك بس)
+- DuckDuckGo = صور أشخاص وشخصيات حقيقية من الويب (مجاني!)
+- Bing = صور من الويب (optional — لو متوفر API key)
 - Pexels · Pixabay · Unsplash = صور ستوك احترافية
 
-🔴 محتاج API keys:
-- BING_SEARCH_API_KEY — من azure.microsoft.com (مجاني 1000 طلب/شهر)
+🔴 محتاج API keys (اختياري — DuckDuckGo مش محتاج أي حاجة!):
+- BING_SEARCH_API_KEY — من azure.microsoft.com (optional — محتاج فيزا)
 - PEXELS_API_KEY — من pexels.com/api (مجاني)
 - PIXABAY_API_KEY — من pixabay.com/api/docs (مجاني)
 - UNSPLASH_ACCESS_KEY — من unsplash.com/developers (مجاني)
@@ -48,20 +49,26 @@ _USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHT
 
 
 # ═══════════════════════════════════════
-# DuckDuckGo Image Search — 🔴 تم الاستغناء عنه!
-# DuckDuckGo بيرجع صورة واحدة مش مرتبطة بالمطلوب
-# بدله بنستخدم Pexels + Pixabay + Unsplash (بحث متوازي)
+# DuckDuckGo Image Search (بحث الويب — مجاني ومش محتاج API key!)
+# 🔴 الأفضل للأشخاص والشخصيات المحددة لأنه بيفهرس الويب كله
+# مش زي Pexels/Pixabay اللي بيشتغلوا بصور ستوك بس
 # ═══════════════════════════════════════
 
 async def search_images_duckduckgo(query: str, count: int = 3) -> Optional[List[Dict]]:
     """بحث صور باستخدام DuckDuckGo Images — لا يحتاج API key
     
-    🔴 ده البحث الأساسي لأنه:
-    1. مجاني ومش محتاج API key
-    2. ddgs موجود في requirements.txt
-    3. بيرجع روابط صور مباشرة (مش صفحات ويب)
+    🔴 ده البحث الأساسي للأشخاص والشخصيات لأنه:
+    1. مجاني ومش محتاج API key أو فيزا
+    2. بيفهرس الويب كله (مش ستوك بس) — يلاقي صور أشخاص حقيقيين
+    3. ddgs موجود في requirements.txt
+    4. بيرجع روابط صور مباشرة (مش صفحات ويب)
     
-    🔴 FIX v2:
+    🔴 الفرق عن Pexels/Pixabay/Unsplash:
+    دول مواقع صور ستوك — صور عامة واحترافية بس مش صور أشخاص حقيقيين.
+    لو المستخدم بيدور على "محمد صلاح" بيجيب صور ستوك عن كورة.
+    DuckDuckGo بيفهرس الويب كله فهيلاقي صورة محمد صلاح نفسه.
+    
+    🔴 FIX v3:
     - بنطلب count * 3 نتائج عشان لو فشل تحميل بعض الصور يفضل فيه بدائل
     - بنفعل safesearch=on عشان نمنع الصور غير المناسبة
     - بنرجع كل النتائج مش بس count عشان الهاندلر يكمل يحمل لحد ما يوصل للعدد المطلوب
@@ -363,26 +370,27 @@ async def search_images_bing(query: str, count: int = 3) -> Optional[List[Dict]]
 
 
 # ═══════════════════════════════════════
-# بحث صور — Parallel Search (Bing + Pexels + Pixabay + Unsplash)
+# بحث صور — Parallel Search (DuckDuckGo + Bing + Pexels + Pixabay + Unsplash)
 # ═══════════════════════════════════════
 
 async def search_images(query: str, count: int = 3) -> Optional[List[Dict]]:
-    """بحث صور — Parallel search من Bing + Pexels + Pixabay + Unsplash
+    """بحث صور — Parallel search من DuckDuckGo + Bing + Pexels + Pixabay + Unsplash
     
-    🔴 FIX v2: أضفنا Bing Image Search API!
-    - Bing — بيفهرس الويب كله، الأفضل للأشخاص والشخصيات المحددة (محتاج BING_SEARCH_API_KEY)
-    - Pexels API — صور عالية الجودة، مجاني (محتاج PEXELS_API_KEY)
-    - Pixabay API — صور مجانية كتير، مجاني (محتاج PIXABAY_API_KEY)
-    - Unsplash API — صور احترافية، مجاني (محتاج UNSPLASH_ACCESS_KEY)
+    🔴 FIX v3: DuckDuckGo Images هو البحث الأساسي للويب!
+    - DuckDuckGo — بيفهرس الويب كله، الأفضل للأشخاص والشخصيات (مجاني، مش محتاج API key!)
+    - Bing — لو متوفر BING_SEARCH_API_KEY (optional — محتاج فيزا على Azure)
+    - Pexels API — صور ستوك عالية الجودة (محتاج PEXELS_API_KEY)
+    - Pixabay API — صور ستوك مجانية كتير (محتاج PIXABAY_API_KEY)
+    - Unsplash API — صور ستوك احترافية (محتاج UNSPLASH_ACCESS_KEY)
     
-    🔴 ليه Bing مهم:
+    🔴 ليه DuckDuckGo مهم:
     Pexels/Pixabay/Unsplash دول مواقع صور ستوك — صور عامة واحترافية بس مش صور
     أشخاص حقيقيين. لو المستخدم بيدور على "محمد صلاح" أو "ال أهرامات" أو
-    أي حاجة محددة، Bing هيلاقيها لأنه بيفهرس الويب كله مش ستوك بس.
+    أي حاجة محددة، DuckDuckGo هيلاقيها لأنه بيفهرس الويب كله مش ستوك بس.
     
     🔴 أولوية النتائج:
-    - بنحط نتائج Bing الأول (لأنها الأكثر دقة للبحث عن أشخاص/أشياء محددة)
-    - بعدين بنخلط مع Pexels/Pixabay/Unsplash عشان التنوع
+    - بنحط نتائج DuckDuckGo/Bing الأول (أكثر دقة للبحث عن أشخاص/أشياء محددة)
+    - بعدين بنخلط مع نتائج الستوك عشان التنوع
     
     Args:
         query: كلمة البحث
@@ -398,7 +406,8 @@ async def search_images(query: str, count: int = 3) -> Optional[List[Dict]]:
     import asyncio
     
     search_tasks = [
-        ("Bing", search_images_bing),
+        ("DuckDuckGo", search_images_duckduckgo),
+        ("Bing", search_images_bing),  # optional — لو متوفر BING_SEARCH_API_KEY
         ("Pexels", search_images_pexels),
         ("Pixabay", search_images_pixabay),
         ("Unsplash", search_images_unsplash),
@@ -411,9 +420,9 @@ async def search_images(query: str, count: int = 3) -> Optional[List[Dict]]:
     
     results_list = await asyncio.gather(*tasks, return_exceptions=True)
     
-    # بنجمع كل النتائج الناجحة — بنحط Bing الأول عشان الأولوية
-    bing_results = []
-    stock_results = []
+    # بنجمع كل النتائج الناجحة — بنحط نتائج الويب الأول (DuckDuckGo/Bing)
+    web_results = []  # DuckDuckGo + Bing = نتائج من الويب (أشخاص وشخصيات)
+    stock_results = []  # Pexels + Pixabay + Unsplash = صور ستوك
     
     for i, result in enumerate(results_list):
         name = search_tasks[i][0]
@@ -422,16 +431,16 @@ async def search_images(query: str, count: int = 3) -> Optional[List[Dict]]:
             continue
         if result and len(result) > 0:
             logger.info(f"🖼️ Image search ({name}): {len(result)} results for '{query}'")
-            if name == "Bing":
-                bing_results.extend(result)
+            if name in ("DuckDuckGo", "Bing"):
+                web_results.extend(result)
             else:
                 stock_results.extend(result)
         else:
             logger.debug(f"🖼️ Image search ({name}): no results")
     
-    # 🔴 بنحط نتائج Bing الأول (أكثر دقة للأشخاص والشخصيات)
+    # 🔴 بنحط نتائج الويب الأول (أكثر دقة للأشخاص والشخصيات)
     # بعدين نخلط مع نتائج الستوك عشان التنوع
-    all_results = bing_results + stock_results
+    all_results = web_results + stock_results
     
     if all_results:
         # 🔴 نزيل التكرار بناءً على الـ URL
