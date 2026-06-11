@@ -52,8 +52,9 @@ SAFETY_TOTAL_TIMEOUT = 45    # timeout كلي للفحص الشامل
 
 # 🔴 الوضع الصارم — لو timeout يحصل نحظر بدل ما نفوت
 # "strict" = نحظر لو أي فحص timeout (أحياطي — أقوى حماية)
-# "open" = نفوت لو timeout (أسرع — الافتراضي)
-SAFETY_TIMEOUT_MODE = os.environ.get("CONTENT_SAFETY_TIMEOUT_MODE", "strict").lower()
+# "open" = نفوت لو timeout (أسرع — أفضل تجربة مستخدم)
+# ⚡ تم التغيير من strict → open: لأن timeout بيحصل كتير على Railway وبيحظر فيديوهات عادية
+SAFETY_TIMEOUT_MODE = os.environ.get("CONTENT_SAFETY_TIMEOUT_MODE", "open").lower()
 
 def _timeout_blocked(reason: str = "") -> bool:
     """هل نحظر عند timeout حسب الوضع المختار"""
@@ -77,13 +78,15 @@ BLOCKED_KEYWORDS_AR = [
     "booty", "naked", "nude", "nsfw",
     # محتوى جنسي
     "اغتصاب", "rape", "تحرش", "harassment", "جنسية", "جنسي",
-    "شهوة", "شبق", "مثير", "اغراء", "إغراء",
+    "شهوة", "شبق", "اغراء", "إغراء",
     "xxx", "xxxx", "18+", "عمر 18",
     # محتوى haram / غير أخلاقي
-    "حرام", "فاحش", "فاحشة", "رذيلة", "خليع", "خلاعة",
+    "فاحش", "فاحشة", "رذيلة", "خليع", "خلاعة",
     "مومس", "بغاء", "دعارة",
+    # ⚡ تم شيل "مثير" لأنها بتتحبس في محتوى عادي (فيديو مثير للاهتمام)
+    # ⚡ تم شيل "حرام" لأنها كلمة واسعة ومش دايماً بتشير لمحتوى سيء
+    # ⚡ تم شيل "رقص شرقي" و "رقص مثير" لأن رقص شرقي عادي مش محظور
     # موسيقى / فيديو غير مناسب
-    "موسيقى هاري", "رقص شرقي", "رقص مثير",
     "twerk", "striptease", "lap dance",
     # أنماط إضافية
     "شرموط", "قحبة", "عاهرة", "شرموطة",
@@ -224,24 +227,27 @@ async def _check_query_with_ai(query: str) -> tuple[bool, str]:
 
         system_prompt = """You are a content safety classifier. Your job is to determine if a user's search query is requesting inappropriate, explicit, or adult content.
 
-You must classify the query as BLOCKED if it requests or implies any of the following:
-- Nudity, naked people, nude photos
-- Pornography or sexual content
+You must classify the query as BLOCKED ONLY if it clearly and explicitly requests:
+- Pornography or explicit sexual content
+- Nudity or naked people
 - Explicit sexual acts or body parts
-- Adult/18+ content
-- Haram or immoral content
-- Provocative or revealing images/videos
-- Inappropriate music videos (sexual dancing, provocative)
-- Escorts, prostitution, or sexual services
+- Adult/18+ content (clearly adult websites)
+- Prostitution or sexual services
 
 You must classify as SAFE if:
-- The query is about normal topics (music, education, news, etc.)
+- The query is about normal topics (music, entertainment, news, education, sports)
+- The query is about dancing, exercise, fitness, or fashion
+- The query mentions a song, artist, or music video
 - The query has innocent intent even with ambiguous words
 - The query is about medical, educational, or artistic content
+- The query is about movies, TV shows, or pop culture
+- You are unsure — when in doubt, classify as SAFE
+
+IMPORTANT: Be permissive. Only block clearly explicit content. Normal entertainment, music, and cultural content should ALWAYS be SAFE.
 
 Respond with ONLY one word: BLOCKED or SAFE
 If BLOCKED, add a brief reason on the same line after a colon.
-Example: BLOCKED: requesting nude content
+Example: BLOCKED: requesting pornographic content
 Example: SAFE"""
 
         result = await asyncio.wait_for(
@@ -419,13 +425,16 @@ def _has_suspicious_words(text: str) -> bool:
     """كشف هل النص فيه كلمات مشبوهة بس مش كافية للحظر المباشر"""
     text_lower = text.lower()
 
+    # ⚡ تم تقليص القائمة: شيلنا كلمات زي "dance" و "رقص" و "model" و "hot"
+    # لأنها بتتحبس في فيديوهات عادية (أغاني، تمارين، موضة)
+    # بنسيب الكلمات اللي فعلاً بتشير لمحتوى مشبوه
     suspicious = [
-        "hot", "sexy", "بنت", "ست", "مرا", "حريم",
-        "dance", "رقص", "رقاصة", "model", "موديل",
-        "bikini", "بيكيني", "swimwear", "ملابس بحر",
+        "sexy", "حريم",
+        "رقاصة",
+        "bikini", "بيكيني",
         "lingerie", "ملابس داخلية",
-        "strip", "massage", "مساج",
-        "boob", "butt", "thigh", "فخذ",
+        "striptease", "strip club",
+        "boob", "butt",
     ]
 
     for word in suspicious:
@@ -447,17 +456,23 @@ async def _check_result_with_ai(title: str, description: str, channel: str) -> t
 
         system_prompt = """You are a content safety classifier for search results. Determine if this search result contains or leads to inappropriate content.
 
-BLOCK if it involves:
-- Pornography, nudity, or sexual content
-- Explicit or 18+ material
-- Provocative/revealing media
-- Inappropriate music videos (sexual dancing, provocative content)
-- Haram or immoral content
+BLOCK ONLY if it clearly involves:
+- Pornography or explicit sexual content
+- Nudity or explicit material
+- Clearly adult/18+ websites
+- Prostitution or sexual services
 
 SAFE if:
-- Normal music, entertainment, education
+- Normal music, entertainment, education, sports
+- Music videos with dancing (even if energetic)
+- Fashion, modeling, or beauty content
+- Fitness, exercise, or workout videos
 - Innocent content with ambiguous words
 - Medical, artistic, or educational content
+- Movies, TV shows, or pop culture
+- You are unsure — when in doubt, classify as SAFE
+
+IMPORTANT: Be permissive. Only block clearly explicit content. Normal entertainment should ALWAYS be SAFE.
 
 Respond with ONLY: BLOCKED or SAFE
 If BLOCKED, add reason after colon."""
@@ -550,19 +565,26 @@ async def check_image_safety(
             return True, "", 100
 
         # تحليل الصورة بالـ VLM
-        prompt = """Analyze this image for content safety. Check for:
-1. Nudity or partial nudity (exposed private parts, see-through clothing)
-2. Sexual content or suggestive poses
-3. Explicit or pornographic material
-4. Provocative or revealing clothing in a sexual context
-5. Adult/18+ content
+        prompt = """Analyze this image for content safety. Check ONLY for clearly explicit content:
+1. Full nudity or exposed private parts (not just revealing clothing)
+2. Explicit sexual acts or pornography
+3. Clearly adult/18+ content
+
+Do NOT flag as unsafe:
+- People in swimsuits, sportswear, or normal clothing
+- Dancing, fitness, or exercise
+- Fashion or modeling photos
+- Cultural or artistic content
+- Beach/pool scenes
 
 Rate the safety from 0 to 100:
-- 100: Completely safe, appropriate for all ages
-- 80-99: Generally safe, minor concerns
-- 60-79: Borderline, some suggestive elements
-- 40-59: Unsafe, clearly inappropriate content
-- 0-39: Highly unsafe, explicit content
+- 90-100: Completely safe, normal content
+- 70-89: Generally safe, minor skin exposure but not sexual
+- 50-69: Borderline but still safe
+- 30-49: Unsafe, clearly inappropriate
+- 0-29: Explicit/pornographic content
+
+Be PERMISSIVE. When in doubt, score higher. Normal entertainment and cultural content should score 80+.
 
 Respond in EXACTLY this format:
 SCORE: <number>
