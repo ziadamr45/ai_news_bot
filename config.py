@@ -66,60 +66,60 @@ OPENROUTER_BASE_URL = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.
 # ═══════════════════════════════════════
 
 # 🧠 Chat - المحادثة الذكية
-# FREE: DeepSeek V4 Flash → Llama 3.3 70B → Mistral Small → Nemo → SambaNova
-# PREMIUM: DeepSeek V4 Pro → Kimi K2.6 → GLM 5.1 → MiniMax M2.7 → Mistral Large → Medium
+# FREE: Mistral Small → Mistral Nemo → Llama 3.3 70B → DeepSeek V4 Flash (heavy) → SambaNova
+# PREMIUM: Mistral Large → Mistral Medium → Kimi K2.6 → MiniMax M2.7 → GLM 5.1 → DeepSeek V4 Pro (heavy) → SambaNova
 FREE_CHAT_MODELS = [
-    # ⭐ NVIDIA DeepSeek V4 Flash — أساسي للمجاني (سريع وقوي)
-    {"provider": "nvidia", "model": "deepseek-ai/deepseek-v4-flash", "api_key": NVIDIA_DEEPSEEK_V4_FLASH_KEY},
+    # ⭐ Mistral Small — أساسي للمجاني (سريع ومجاني دائم)
+    {"provider": "mistral", "model": "mistral-small-latest"},
+    # ⭐ Mistral Nemo — fallback سريع
+    {"provider": "mistral", "model": "open-mistral-nemo"},
     # ⭐ NVIDIA Llama 3.3 70B — fallback قوي
     {"provider": "nvidia", "model": "meta/llama-3.3-70b-instruct", "api_key": NVIDIA_LLAMA_33_70B_KEY},
-    # ⭐ Mistral Small — سريع ومجاني دائم
-    {"provider": "mistral", "model": "mistral-small-latest"},
-    # ⭐ Mistral Nemo — fallback
-    {"provider": "mistral", "model": "open-mistral-nemo"},
+    # ⭐ NVIDIA DeepSeek V4 Flash — للحواج الثقيلة بس (تحليل عميق، محتوى معقد)
+    {"provider": "nvidia", "model": "deepseek-ai/deepseek-v4-flash", "api_key": NVIDIA_DEEPSEEK_V4_FLASH_KEY},
     # ⭐ SambaNova fallback
     {"provider": "sambanova", "model": "DeepSeek-V3.1"},
 ]
 
 PREMIUM_CHAT_MODELS = [
-    # ⭐ NVIDIA DeepSeek V4 Pro — أقوى نموذج (أساسي للبريميوم)
-    {"provider": "nvidia", "model": "deepseek-ai/deepseek-v4-pro", "api_key": NVIDIA_DEEPSEEK_V4_PRO_KEY},
+    # ⭐ Mistral Large — أساسي للبريميوم (سريع وضمان الرد)
+    {"provider": "mistral", "model": "mistral-large-latest"},
+    # ⭐ Mistral Medium — fallback سريع
+    {"provider": "mistral", "model": "mistral-medium-latest"},
     # ⭐ NVIDIA Kimi K2.6 — نموذج ذكي جداً
     {"provider": "nvidia", "model": "moonshotai/kimi-k2.6", "api_key": NVIDIA_KIMI_K26_KEY},
-    # ⭐ NVIDIA GLM 5.1 — نموذج صيني قوي
-    {"provider": "nvidia", "model": "thudm/glm-5.1", "api_key": NVIDIA_GLM_51_KEY},
     # ⭐ NVIDIA MiniMax M2.7 — نموذج متقدم
     {"provider": "nvidia", "model": "minimaxai/minimax-m2.7", "api_key": NVIDIA_MINIMAX_M27_KEY},
-    # ⭐ Mistral Large — fallback قوي
-    {"provider": "mistral", "model": "mistral-large-latest"},
-    # ⭐ Mistral Medium — fallback أخف
-    {"provider": "mistral", "model": "mistral-medium-latest"},
+    # ⭐ NVIDIA GLM 5.1 — نموذج صيني قوي
+    {"provider": "nvidia", "model": "thudm/glm-5.1", "api_key": NVIDIA_GLM_51_KEY},
+    # ⭐ NVIDIA DeepSeek V4 Pro — للحواج الثقيلة بس (تحليل عميق، محتوى معقد)
+    {"provider": "nvidia", "model": "deepseek-ai/deepseek-v4-pro", "api_key": NVIDIA_DEEPSEEK_V4_PRO_KEY},
 ]
 
 # Default (backward compatibility)
 CHAT_MODELS = PREMIUM_CHAT_MODELS
 
 # ⚡ Simple - الرسائل البسيطة (تحيات، أسئلة قصيرة، أسئلة هوية)
-# FREE: Step 3.7 Flash → Llama 3.3 70B → Mistral Small → SambaNova
-# PREMIUM: DeepSeek V4 Pro → Step 3.7 Flash → Mistral Small
+# FREE: Mistral Small → Llama 3.3 70B → Step 3.7 Flash → SambaNova
+# PREMIUM: Mistral Small → Step 3.7 Flash → Mistral Medium
 FREE_SIMPLE_MODELS = [
-    # ⚡ NVIDIA Step 3.7 Flash — أسرع رد
-    {"provider": "nvidia", "model": "stepfun-ai/step-3.7-flash", "api_key": NVIDIA_STEP_37_FLASH_KEY},
+    # ⚡ Mistral Small — أسرع رد فوري
+    {"provider": "mistral", "model": "mistral-small-latest"},
     # ⚡ NVIDIA Llama 3.3 70B
     {"provider": "nvidia", "model": "meta/llama-3.3-70b-instruct", "api_key": NVIDIA_LLAMA_33_70B_KEY},
-    # ⚡ Mistral Small — سريع
-    {"provider": "mistral", "model": "mistral-small-latest"},
+    # ⚡ NVIDIA Step 3.7 Flash
+    {"provider": "nvidia", "model": "stepfun-ai/step-3.7-flash", "api_key": NVIDIA_STEP_37_FLASH_KEY},
     # ⚡ SambaNova fallback
     {"provider": "sambanova", "model": "Meta-Llama-3.3-70B-Instruct"},
 ]
 
 PREMIUM_SIMPLE_MODELS = [
-    # ⚡ NVIDIA DeepSeek V4 Pro — سريع وقوي
-    {"provider": "nvidia", "model": "deepseek-ai/deepseek-v4-pro", "api_key": NVIDIA_DEEPSEEK_V4_PRO_KEY},
-    # ⚡ NVIDIA Step 3.7 Flash — أسرع رد
-    {"provider": "nvidia", "model": "stepfun-ai/step-3.7-flash", "api_key": NVIDIA_STEP_37_FLASH_KEY},
-    # ⚡ Mistral Small — رد فوري
+    # ⚡ Mistral Small — أسرع رد فوري
     {"provider": "mistral", "model": "mistral-small-latest"},
+    # ⚡ NVIDIA Step 3.7 Flash — سريع
+    {"provider": "nvidia", "model": "stepfun-ai/step-3.7-flash", "api_key": NVIDIA_STEP_37_FLASH_KEY},
+    # ⚡ Mistral Medium — fallback
+    {"provider": "mistral", "model": "mistral-medium-latest"},
 ]
 
 # Default
@@ -259,10 +259,10 @@ PREMIUM_IMAGE_EDIT_MODELS = [
 # إعدادات السرعة - Speed Settings
 # ═══════════════════════════════════════
 
-REQUEST_TIMEOUT = 120  # Timeout for regular AI requests (increased from 60 → 120)
-FAST_TIMEOUT = 30      # Timeout for simple/greeting messages (increased from 15 → 30)
-MAX_RETRIES = 3        # Maximum retry attempts (increased from 2 → 3)
-RETRY_DELAY = 2        # Delay between retries in seconds
+REQUEST_TIMEOUT = 20      # Timeout for regular AI requests (fast fail → next model)
+FAST_TIMEOUT = 15         # Timeout for simple/greeting messages
+MAX_RETRIES = 2           # Maximum retry attempts
+RETRY_DELAY = 1           # Delay between retries in seconds
 
 # Image generation timeout (longer because image generation takes more time)
 IMAGE_GEN_TIMEOUT = 180  # 3 minutes for image generation (Flux takes longer)

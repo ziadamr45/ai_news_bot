@@ -1,10 +1,10 @@
 """
 مدير المزودين - Provider Manager
 الخطه الشامله مع per-model API keys:
-🧠 Chat Free: DeepSeek V4 Flash → Llama 3.3 70B → Mistral Small → Nemo → SambaNova
-🧠 Chat Premium: DeepSeek V4 Pro → Kimi K2.6 → GLM 5.1 → MiniMax M2.7 → Mistral Large → Medium
-⚡ Simple Free: Step 3.7 Flash → Llama 3.3 70B → Mistral Small → SambaNova
-⚡ Simple Premium: DeepSeek V4 Pro → Step 3.7 Flash → Mistral Small
+🧠 Chat Free: Mistral Small → Mistral Nemo → Llama 3.3 70B → DeepSeek V4 Flash (heavy) → SambaNova
+🧠 Chat Premium: Mistral Large → Mistral Medium → Kimi K2.6 → MiniMax M2.7 → GLM 5.1 → DeepSeek V4 Pro (heavy)
+⚡ Simple Free: Mistral Small → Llama 3.3 70B → Step 3.7 Flash → SambaNova
+⚡ Simple Premium: Mistral Small → Step 3.7 Flash → Mistral Medium
 🔥 Deep Search Premium: DeepSeek V4 Pro → Kimi K2.6 → MiniMax M2.7 → Mistral Large
 👨‍💻 Coding Free: Step 3.7 Flash → Codestral → Mistral Small → SambaNova
 👨‍💻 Coding Premium: GLM 5.1 → DeepSeek V4 Pro → Kimi K2.6 → Codestral → Mistral Large
@@ -138,7 +138,7 @@ class ProviderManager:
         cooldown = self._model_cooldowns.get(model_id, 0)
         return cooldown <= time.time()
 
-    def _set_model_cooldown(self, model_id: str, error: str, cooldown_seconds: int = 5):
+    def _set_model_cooldown(self, model_id: str, error: str, cooldown_seconds: int = 3):
         """تعيين فترة تبريد لموديل معين بعد خطأ"""
         self._model_cooldowns[model_id] = time.time() + cooldown_seconds
         logger.warning(f"⏳ Model {model_id} on cooldown for {cooldown_seconds}s: {error[:80]}")
@@ -288,7 +288,7 @@ class ProviderManager:
         actual_api_key = api_key or provider.get("api_key", "")
         if not actual_api_key:
             logger.warning(f"❌ No API key for {provider_name}/{model}")
-            self._set_model_cooldown(model, "No API key", 30)
+            self._set_model_cooldown(model, "No API key", 10)
             return None
 
         url = f"{provider['base_url']}/chat/completions"
@@ -320,9 +320,9 @@ class ProviderManager:
                 logger.warning(f"❌ API error from {provider_name}/{model}: {error_msg[:100]}")
 
                 if "429" in str(error_msg) or "rate limit" in str(error_msg).lower():
-                    self._set_model_cooldown(model, f"Rate limited: {error_msg}", 10)
+                    self._set_model_cooldown(model, f"Rate limited: {error_msg}", 5)
                 else:
-                    self._set_model_cooldown(model, f"API error: {error_msg[:60]}", 5)
+                    self._set_model_cooldown(model, f"API error: {error_msg[:60]}", 3)
                 return None
 
             if "choices" in data and len(data["choices"]) > 0:
@@ -351,20 +351,20 @@ class ProviderManager:
 
         except requests.exceptions.Timeout:
             logger.warning(f"⏱️ Timeout ({timeout}s) for {provider_name}/{model}")
-            self._set_model_cooldown(model, "Timeout", 5)
+            self._set_model_cooldown(model, "Timeout", 3)
             return None
 
         except requests.exceptions.RequestException as e:
             error_str = str(e)
             if "403" in error_str or "401" in error_str:
                 logger.error(f"🔒 Auth error for {provider_name}/{model}")
-                self._set_model_cooldown(model, f"Auth error: {error_str[:80]}", 60)
+                self._set_model_cooldown(model, f"Auth error: {error_str[:80]}", 15)
             elif "429" in error_str:
                 logger.warning(f"🚫 Rate limited for {provider_name}/{model}")
-                self._set_model_cooldown(model, "Rate limit", 10)
+                self._set_model_cooldown(model, "Rate limit", 5)
             elif "404" in error_str:
                 logger.warning(f"❓ Model not found: {provider_name}/{model}")
-                self._set_model_cooldown(model, "Model not found", 30)
+                self._set_model_cooldown(model, "Model not found", 10)
             else:
                 logger.warning(f"❌ Request error for {provider_name}/{model}: {error_str[:100]}")
                 self._set_model_cooldown(model, f"Request error: {error_str[:80]}", 3)
@@ -543,22 +543,22 @@ class ProviderManager:
             if task_type == "simple":
                 timeout = FAST_TIMEOUT
             elif task_type == "deep_search":
-                timeout = 180  # increased from 120 → 180
+                timeout = 30
             elif task_type == "summary":
-                timeout = 90   # increased from 60 → 90
+                timeout = 25
             else:
                 if user_id:
                     try:
                         from premium import is_premium
                         from admin import is_admin
                         if is_admin(user_id) or is_premium(user_id):
-                            timeout = 240  # increased from 180 → 240
+                            timeout = 30
                         else:
-                            timeout = 90   # increased from 45 → 90
+                            timeout = 20
                     except Exception:
-                        timeout = 90
+                        timeout = 20
                 else:
-                    timeout = 90
+                    timeout = 20
 
         # ⚡ حاول أول 2 مسارات بالتوازي
         parallel_routes = routes[:2]
@@ -656,22 +656,22 @@ class ProviderManager:
             if task_type == "simple":
                 timeout = FAST_TIMEOUT
             elif task_type == "deep_search":
-                timeout = 180  # increased from 120 → 180
+                timeout = 30
             elif task_type == "summary":
-                timeout = 90   # increased from 60 → 90
+                timeout = 25
             else:
                 if user_id:
                     try:
                         from premium import is_premium
                         from admin import is_admin
                         if is_admin(user_id) or is_premium(user_id):
-                            timeout = 240  # increased from 180 → 240
+                            timeout = 30
                         else:
-                            timeout = 90   # increased from 45 → 90
+                            timeout = 20
                     except Exception:
-                        timeout = 90
+                        timeout = 20
                 else:
-                    timeout = 90
+                    timeout = 20
 
         # ⚡ حاول أول 2 مسارات بالتوازي
         parallel_routes = routes[:2]
