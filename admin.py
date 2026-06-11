@@ -1119,6 +1119,16 @@ async def ban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🚫 <b>تم حظر المستخدم</b>\n\n👤 ID: <code>{target_id}</code>\n📝 السبب: {reason}",
         parse_mode="HTML"
     )
+    
+    # 🔴 إرسال إشعار للمستخدم المستهدف
+    try:
+        await context.bot.send_message(
+            chat_id=target_id,
+            text=f"🚫 <b>تم حظرك من استخدام البوت</b>\n📝 السبب: {reason}\n\nلو تعتقد إن ده غلطة، تواصل مع @ziadamr",
+            parse_mode="HTML"
+        )
+    except Exception:
+        pass
 
 
 async def unban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1140,6 +1150,16 @@ async def unban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from memory import unban_user
     unban_user(target_id)
     await update.message.reply_text(f"✅ تم إلغاء حظر المستخدم <code>{target_id}</code>", parse_mode="HTML")
+    
+    # 🔴 إرسال إشعار للمستخدم المستهدف
+    try:
+        await context.bot.send_message(
+            chat_id=target_id,
+            text="✅ <b>تم إلغاء الحظر!</b>\n\nتقدر تستخدم البوت تاني عادي.",
+            parse_mode="HTML"
+        )
+    except Exception:
+        pass
 
 
 async def warn_command(update: Update, context: ContextTypes.DEFAULT_TYPE):

@@ -5605,6 +5605,24 @@ async def _handle_admin_with_args(wa_id: str, content: str, wa_user_id: int, con
 
             grant_premium(target_id, granted_by=f"admin_{wa_user_id}", expires=expires)
             await _send_whatsapp_message(wa_id, f"✅ تم تفعيل Premium!\n\n📱 المستخدم: {_wa_phone_to_display(phone)}\n⭐ الخطة: Premium\n⏰ المدة: {expires_display}")
+            
+            # 🔴 إرسال إشعار للمستخدم المستهدف
+            try:
+                target_wa_id = phone.lstrip('+').strip()
+                await _send_whatsapp_message(target_wa_id,
+                    f"⭐ مبروك! تم تفعيل Premium!\n\n"
+                    f"أنت دلوقتي مشترك Premium في My Bro!\n"
+                    f"استمتع بكل المزايا:\n"
+                    f"• رسائل AI غير محدودة\n"
+                    f"• تحليل PDF غير محدود\n"
+                    f"• تحليل صور غير محدود\n"
+                    f"• بحث غير محدود 🔍\n"
+                    f"• وضع الدراسة 📚\n"
+                    f"• ذاكرة طويلة المدى 🧠\n\n"
+                    f"⏰ المدة: {expires_display}"
+                )
+            except Exception as e:
+                logger.info(f"Could not notify WA user {phone}: {e}")
 
         elif cmd in ("/revoke",):
             if not args:
@@ -5615,6 +5633,16 @@ async def _handle_admin_with_args(wa_id: str, content: str, wa_user_id: int, con
             from premium import revoke_premium
             revoke_premium(target_id)
             await _send_whatsapp_message(wa_id, f"✅ تم شيل Premium من {_wa_phone_to_display(phone)}")
+            
+            # 🔴 إرسال إشعار للمستخدم المستهدف
+            try:
+                target_wa_id = phone.lstrip('+').strip()
+                await _send_whatsapp_message(target_wa_id,
+                    "❌ تم إلغاء اشتراك Premium.\n\n"
+                    "لو تعتقد إن ده غلطة، تواصل مع الأدمن."
+                )
+            except Exception as e:
+                logger.info(f"Could not notify WA user {phone}: {e}")
 
         elif cmd in ("/resetlimit",):
             if not args:
@@ -5626,6 +5654,15 @@ async def _handle_admin_with_args(wa_id: str, content: str, wa_user_id: int, con
             success = reset_user_usage(target_id)
             if success:
                 await _send_whatsapp_message(wa_id, f"✅ تم إعادة تعيين حدود {_wa_phone_to_display(phone)}")
+                # 🔴 إرسال إشعار للمستخدم المستهدف
+                try:
+                    target_wa_id = phone.lstrip('+').strip()
+                    await _send_whatsapp_message(target_wa_id,
+                        "🔄 تم إعادة تعيين حدود الاستخدام بتاعتك!\n\n"
+                        "تقدر تستخدم البوت تاني عادي."
+                    )
+                except Exception as e:
+                    logger.info(f"Could not notify WA user {phone}: {e}")
             else:
                 await _send_whatsapp_message(wa_id, f"❌ فشل في إعادة التعيين")
 
@@ -5639,6 +5676,15 @@ async def _handle_admin_with_args(wa_id: str, content: str, wa_user_id: int, con
             from memory import ban_user
             ban_user(target_id, reason=reason, banned_by=f"admin_{wa_user_id}")
             await _send_whatsapp_message(wa_id, f"🚫 تم حظر {_wa_phone_to_display(phone)}\n📝 السبب: {reason}")
+            
+            # 🔴 إرسال إشعار للمستخدم المستهدف
+            try:
+                target_wa_id = phone.lstrip('+').strip()
+                await _send_whatsapp_message(target_wa_id,
+                    f"🚫 تم حظرك من استخدام البوت.\n📝 السبب: {reason}\n\nلو تعتقد إن ده غلطة، تواصل مع الأدمن."
+                )
+            except Exception as e:
+                logger.info(f"Could not notify WA user {phone}: {e}")
 
         elif cmd in ("/unban",):
             if not args:
@@ -5649,6 +5695,15 @@ async def _handle_admin_with_args(wa_id: str, content: str, wa_user_id: int, con
             from memory import unban_user
             unban_user(target_id)
             await _send_whatsapp_message(wa_id, f"✅ تم إلغاء حظر {_wa_phone_to_display(phone)}")
+            
+            # 🔴 إرسال إشعار للمستخدم المستهدف
+            try:
+                target_wa_id = phone.lstrip('+').strip()
+                await _send_whatsapp_message(target_wa_id,
+                    "✅ تم إلغاء الحظر! تقدر تستخدم البوت تاني عادي."
+                )
+            except Exception as e:
+                logger.info(f"Could not notify WA user {phone}: {e}")
 
         elif cmd in ("/userinfo",):
             if not args:
