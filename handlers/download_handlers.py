@@ -38,11 +38,10 @@ from premium import (
 from dashboard import track_event
 from handlers.dedup import _is_duplicate_update
 
-# 🔴 Supabase Storage — رفع الملفات الكبيرة تلقائياً
-from supabase_storage import (
-    should_use_supabase,
-    upload_file as supabase_upload,
-    format_download_link as supabase_download_link,
+from content_safety import (
+    check_query_safety,
+    comprehensive_media_safety_check,
+    get_block_message,
 )
 
 logger = logging.getLogger(__name__)
@@ -899,91 +898,31 @@ def _retrieve_url(key: str) -> str:
 # كيبورد اختيار الجودة
 # ═══════════════════════════════════════
 
-def _get_quality_keyboard(url: str, lang: str = "ar", mode: str = "all") -> InlineKeyboardMarkup:
-    """أزرار اختيار جودة الفيديو/الصوت
-    
-    🔴 mode:
-    - "video": جودات الفيديو بس (لما المستخدم يبحث بـ /video)
-    - "audio": جودات الصوت بس (لما المستخدم يبحث بـ /audio)
-    - "all": كل الخيارات فيديو + صوت (لما المستخدم يبعت رابط مباشر بـ /download)
-    """
+def _get_quality_keyboard(url: str, lang: str = "ar") -> InlineKeyboardMarkup:
+    """أزرار اختيار جودة الفيديو"""
     url_key = _store_url(url)
-    
-    if mode == "video":
-        # 🔴 فيديو بس — بدون زر صوت
-        if lang == "ar":
-            keyboard = [
-                [
-                    InlineKeyboardButton("🎬 أعلى جودة", callback_data=f"dl_v_b_{url_key}"),
-                    InlineKeyboardButton("📹 جودة متوسطة", callback_data=f"dl_v_m_{url_key}"),
-                ],
-                [
-                    InlineKeyboardButton("📱 جودة منخفضة", callback_data=f"dl_v_l_{url_key}"),
-                ],
-            ]
-        else:
-            keyboard = [
-                [
-                    InlineKeyboardButton("🎬 Best Quality", callback_data=f"dl_v_b_{url_key}"),
-                    InlineKeyboardButton("📹 Medium Quality", callback_data=f"dl_v_m_{url_key}"),
-                ],
-                [
-                    InlineKeyboardButton("📱 Low Quality", callback_data=f"dl_v_l_{url_key}"),
-                ],
-            ]
-    
-    elif mode == "audio":
-        # 🔴 صوت بس — جودات صوت مختلفة
-        if lang == "ar":
-            keyboard = [
-                [
-                    InlineKeyboardButton("🎵 صوت عالي الجودة MP3", callback_data=f"dl_a_h_{url_key}"),
-                ],
-                [
-                    InlineKeyboardButton("🎵 صوت متوسط الجودة MP3", callback_data=f"dl_a_m_{url_key}"),
-                ],
-                [
-                    InlineKeyboardButton("🎵 صوت منخفض الجودة MP3", callback_data=f"dl_a_l_{url_key}"),
-                ],
-            ]
-        else:
-            keyboard = [
-                [
-                    InlineKeyboardButton("🎵 High Quality MP3", callback_data=f"dl_a_h_{url_key}"),
-                ],
-                [
-                    InlineKeyboardButton("🎵 Medium Quality MP3", callback_data=f"dl_a_m_{url_key}"),
-                ],
-                [
-                    InlineKeyboardButton("🎵 Low Quality MP3", callback_data=f"dl_a_l_{url_key}"),
-                ],
-            ]
-    
+    if lang == "ar":
+        keyboard = [
+            [
+                InlineKeyboardButton("🎬 أعلى جودة", callback_data=f"dl_v_b_{url_key}"),
+                InlineKeyboardButton("📹 جودة متوسطة", callback_data=f"dl_v_m_{url_key}"),
+            ],
+            [
+                InlineKeyboardButton("📱 جودة منخفضة", callback_data=f"dl_v_l_{url_key}"),
+                InlineKeyboardButton("🎵 صوت بس MP3", callback_data=f"dl_a_{url_key}"),
+            ],
+        ]
     else:
-        # 🔴 كل الخيارات — فيديو + صوت (للرابط المباشر /download)
-        if lang == "ar":
-            keyboard = [
-                [
-                    InlineKeyboardButton("🎬 أعلى جودة", callback_data=f"dl_v_b_{url_key}"),
-                    InlineKeyboardButton("📹 جودة متوسطة", callback_data=f"dl_v_m_{url_key}"),
-                ],
-                [
-                    InlineKeyboardButton("📱 جودة منخفضة", callback_data=f"dl_v_l_{url_key}"),
-                    InlineKeyboardButton("🎵 صوت بس MP3", callback_data=f"dl_a_{url_key}"),
-                ],
-            ]
-        else:
-            keyboard = [
-                [
-                    InlineKeyboardButton("🎬 Best Quality", callback_data=f"dl_v_b_{url_key}"),
-                    InlineKeyboardButton("📹 Medium Quality", callback_data=f"dl_v_m_{url_key}"),
-                ],
-                [
-                    InlineKeyboardButton("📱 Low Quality", callback_data=f"dl_v_l_{url_key}"),
-                    InlineKeyboardButton("🎵 Audio Only MP3", callback_data=f"dl_a_{url_key}"),
-                ],
-            ]
-    
+        keyboard = [
+            [
+                InlineKeyboardButton("🎬 Best Quality", callback_data=f"dl_v_b_{url_key}"),
+                InlineKeyboardButton("📹 Medium Quality", callback_data=f"dl_v_m_{url_key}"),
+            ],
+            [
+                InlineKeyboardButton("📱 Low Quality", callback_data=f"dl_v_l_{url_key}"),
+                InlineKeyboardButton("🎵 Audio Only MP3", callback_data=f"dl_a_{url_key}"),
+            ],
+        ]
     return InlineKeyboardMarkup(keyboard)
 
 
@@ -1044,6 +983,16 @@ async def download_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def _process_download_request(update: Update, context: ContextTypes.DEFAULT_TYPE, url: str, lang: str, user_id: int):
     """معالجة طلب التحميل"""
+    # 🛡️ Safety check on URL
+    try:
+        is_safe, reason = await check_query_safety(url, platform="telegram", user_id=str(user_id))
+        if not is_safe:
+            msg = get_block_message(lang, reason)
+            await update.message.reply_text(msg, parse_mode="HTML")
+            return
+    except Exception:
+        pass  # Fail-open
+    
     platform = _detect_platform(url)
     direct_type = _is_direct_media_url(url)
     
@@ -1093,6 +1042,20 @@ async def _download_direct_image(update: Update, url: str, lang: str, user_id: i
                     await status_msg.edit_text("❌ فشل تحميل الصورة." if lang == "ar" else "❌ Failed to download image.")
                     return
                 image_bytes = await resp.read()
+        
+        # 🛡️ Safety check on image
+        try:
+            from content_safety import check_image_safety
+            is_safe_img, reason_img, _score = await check_image_safety(
+                image_bytes=image_bytes, platform="telegram", user_id=str(user_id)
+            )
+            if not is_safe_img:
+                msg = get_block_message(lang, reason_img)
+                await status_msg.edit_text(msg, parse_mode="HTML")
+                return
+        except Exception:
+            pass  # Fail-open
+        
         increment_usage(user_id, "image_analyses")
         try: track_event("media_downloads")
         except: pass
@@ -1123,11 +1086,25 @@ async def _download_direct_audio(update: Update, url: str, lang: str, user_id: i
                     await status_msg.edit_text("❌ فشل تحميل الصوت." if lang == "ar" else "❌ Failed to download audio.")
                     return
                 audio_bytes = await resp.read()
+        
+        # 🛡️ Safety check on audio
+        from urllib.parse import urlparse, unquote
+        filename = os.path.basename(unquote(urlparse(url).path)) or "audio.mp3"
+        try:
+            from content_safety import check_audio_safety
+            is_safe_audio, reason_audio, _score = await check_audio_safety(
+                title=filename, platform="telegram", user_id=str(user_id)
+            )
+            if not is_safe_audio:
+                msg = get_block_message(lang, reason_audio)
+                await status_msg.edit_text(msg, parse_mode="HTML")
+                return
+        except Exception:
+            pass  # Fail-open
+        
         increment_usage(user_id, "youtube_summaries")
         try: track_event("media_downloads")
         except: pass
-        from urllib.parse import urlparse, unquote
-        filename = os.path.basename(unquote(urlparse(url).path)) or "audio.mp3"
         await status_msg.delete()
         await update.message.reply_audio(
             audio=io.BytesIO(audio_bytes), filename=filename,
@@ -1680,14 +1657,6 @@ def _get_ydl_opts(quality: str, output_template: str, platform: str = "",
     
     # 🔴 FIX v4: إعدادات حسب نوع المحتوى
     if quality == "audio":
-        # 🔴 FIX: استخدام _audio_quality_variant لتحديد جودة الصوت
-        # audio = 320kbps (افتراضي), audio_medium = 192kbps, audio_low = 128kbps
-        _audio_bitrate = "320"  # افتراضي: أعلى جودة
-        if _audio_quality_variant == "audio_medium":
-            _audio_bitrate = "192"
-        elif _audio_quality_variant == "audio_low":
-            _audio_bitrate = "128"
-        
         if ffmpeg_ok:
             opts = {
                 **common_opts,
@@ -1695,7 +1664,7 @@ def _get_ydl_opts(quality: str, output_template: str, platform: str = "",
                 'postprocessors': [{
                     'key': 'FFmpegExtractAudio',
                     'preferredcodec': 'mp3',
-                    'preferredquality': _audio_bitrate,
+                    'preferredquality': '192',
                 }],
             }
         else:
@@ -1827,15 +1796,6 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
     7. Cobalt Self-Hosted (fallback)
     8. Cloudflare Worker (آخر محاولة)
     """
-    # 🔴 FIX: توحيد جودات الصوت — audio_medium و audio_low يتعاملوا زي audio
-    # الفرق في الجودة بيتحكم فيه yt-dlp من خلال الـ format option
-    if quality in ("audio_medium", "audio_low"):
-        # نحفظ الجودة الأصلية عشان نستخدمها في اختيار الـ bitrate
-        _audio_quality_variant = quality
-        quality = "audio"
-    else:
-        _audio_quality_variant = None
-    
     # تحديد الرسالة
     if hasattr(update_or_query, 'message'):
         message = update_or_query.message
@@ -1880,6 +1840,21 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                 is_video = threads_result.get("is_video", True)
                 size_mb = file_size / (1024 * 1024)
                 size_str = f"{size_mb:.1f}MB"
+                
+                # 🛡️ Safety check on downloaded media
+                try:
+                    media_type = "video" if is_video else "image"
+                    is_safe_dl, block_msg_dl, _reason_dl = await comprehensive_media_safety_check(
+                        title=real_title, file_path=file_path, file_type=media_type,
+                        platform="telegram", user_id=str(user_id), lang=lang,
+                    )
+                    if not is_safe_dl:
+                        await message.reply_text(block_msg_dl, parse_mode="HTML")
+                        try: os.remove(file_path)
+                        except: pass
+                        return
+                except Exception:
+                    pass  # Fail-open
                 
                 increment_usage(user_id, "youtube_summaries")
                 try: track_event("media_downloads")
@@ -2102,6 +2077,21 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                     size_mb = file_size / (1024 * 1024)
                     size_str = f"{size_mb:.1f}MB"
                     
+                    # 🛡️ Safety check on Cobalt downloaded media
+                    try:
+                        cb_file_type = "audio" if quality == "audio" else "video"
+                        is_safe_cb, block_msg_cb, _reason_cb = await comprehensive_media_safety_check(
+                            title=video_title, file_path=file_path, file_type=cb_file_type,
+                            platform="telegram", user_id=str(user_id), lang=lang,
+                        )
+                        if not is_safe_cb:
+                            await message.reply_text(block_msg_cb, parse_mode="HTML")
+                            try: os.remove(file_path)
+                            except: pass
+                            return
+                    except Exception:
+                        pass  # Fail-open
+                    
                     increment_usage(user_id, "youtube_summaries")
                     try: track_event("media_downloads")
                     except: pass
@@ -2200,6 +2190,21 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                     
                     size_mb = file_size / (1024 * 1024)
                     size_str = f"{size_mb:.1f}MB"
+                    
+                    # 🛡️ Safety check on Invidious downloaded media
+                    try:
+                        inv_file_type = "audio" if quality == "audio" else "video"
+                        is_safe_inv, block_msg_inv, _reason_inv = await comprehensive_media_safety_check(
+                            title=real_title, file_path=file_path, file_type=inv_file_type,
+                            platform="telegram", user_id=str(user_id), lang=lang,
+                        )
+                        if not is_safe_inv:
+                            await message.reply_text(block_msg_inv, parse_mode="HTML")
+                            try: os.remove(file_path)
+                            except: pass
+                            return
+                    except Exception:
+                        pass  # Fail-open
                     
                     increment_usage(user_id, "youtube_summaries")
                     try: track_event("media_downloads")
@@ -2303,6 +2308,21 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                     
                     size_mb = file_size / (1024 * 1024)
                     size_str = f"{size_mb:.1f}MB"
+                    
+                    # 🛡️ Safety check on Piped downloaded media
+                    try:
+                        pp_file_type = "audio" if quality == "audio" else "video"
+                        is_safe_pp, block_msg_pp, _reason_pp = await comprehensive_media_safety_check(
+                            title=real_title, file_path=file_path, file_type=pp_file_type,
+                            platform="telegram", user_id=str(user_id), lang=lang,
+                        )
+                        if not is_safe_pp:
+                            await message.reply_text(block_msg_pp, parse_mode="HTML")
+                            try: os.remove(file_path)
+                            except: pass
+                            return
+                    except Exception:
+                        pass  # Fail-open
                     
                     increment_usage(user_id, "youtube_summaries")
                     try: track_event("media_downloads")
@@ -2443,6 +2463,21 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                         
                         size_mb = file_size / (1024 * 1024)
                         size_str = f"{size_mb:.1f}MB"
+                        
+                        # 🛡️ Safety check on Cobalt JWT downloaded media
+                        try:
+                            jwt_file_type = "audio" if quality == "audio" else "video"
+                            is_safe_jwt, block_msg_jwt, _reason_jwt = await comprehensive_media_safety_check(
+                                title=video_title, file_path=file_path, file_type=jwt_file_type,
+                                platform="telegram", user_id=str(user_id), lang=lang,
+                            )
+                            if not is_safe_jwt:
+                                await message.reply_text(block_msg_jwt, parse_mode="HTML")
+                                try: os.remove(file_path)
+                                except: pass
+                                return
+                        except Exception:
+                            pass  # Fail-open
                         
                         increment_usage(user_id, "youtube_summaries")
                         try: track_event("media_downloads")
@@ -2699,9 +2734,11 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
         
         logger.info(f"✅ Downloaded: {filename} ({filesize // (1024*1024)}MB, {quality_label}, codec={video_vcodec})")
         
-        # 🔴 FIX + Supabase: حدود الإرسال المباشر + رفع تلقائي للملفات الكبيرة
+        # 🔴 FIX: رفع الحد الأقصى من 50MB إلى 2GB
         # Telegram Premium bots: 2GB limit
-        # Telegram Free bots: 50MB limit — فوق كده بنرفع على Supabase
+        # Telegram Free bots: 50MB limit (but we try anyway — Telegram handles the rejection)
+        # If file is too large for direct send, we try sendVideo which streams the file
+        # 🔴 FIX: الحدود الحقيقية — بس نقول "كبير" لو عدى الحد فعلاً
         TELEGRAM_MAX_FREE = 50 * 1024 * 1024     # 50MB — بوت مجاني
         TELEGRAM_MAX_PREMIUM = 2000 * 1024 * 1024  # 2GB — بوت premium
         
@@ -2714,6 +2751,7 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                     await status_msg.edit_text(f"⏳ Trying lower quality...")
                 os.remove(filepath)
                 lower_quality = {"best": "medium", "medium": "low", "low": "audio"}.get(quality, "medium")
+                # 🔴 FIX: نمرر status_msg=None عشان ينشئ واحد جديد — القديم ممكن يكون اتمسح
                 return await _download_with_ytdlp(update_or_query, url, lower_quality, lang, user_id, status_msg=None)
             else:
                 if lang == "ar":
@@ -2722,78 +2760,26 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                     await status_msg.edit_text(f"❌ File too large ({filesize // (1024*1024)}MB). Maximum is 2GB.\n💡 Try downloading lower quality audio.")
                 return
         
-        # 🔴 Supabase: لو الملف أكبر من 50MB — نرفعه على Supabase ونرسل رابط
-        if should_use_supabase(filesize, "telegram"):
-            size_mb = filesize / (1024 * 1024)
-            size_str = f"{size_mb:.1f}MB"
-            title = info.get("title", filename) if info else filename
-            
-            logger.info(f"☁️ Telegram: File too large ({size_str}) — uploading to Supabase Storage")
-            
-            try:
-                if lang == "ar":
-                    await status_msg.edit_text("☁️ جاري رفع الملف على السحابة...")
-                else:
-                    await status_msg.edit_text("☁️ Uploading to cloud storage...")
-            except:
-                pass
-            
-            # تحديد نوع الملف
-            if quality == "audio":
-                content_type = "audio/mpeg"
-                safe_filename = re.sub(r'[<>:"/\\|?*]', '_', title[:80]) + '.mp3'
-            else:
-                content_type = "video/mp4"
-                safe_filename = re.sub(r'[<>:"/\\|?*]', '_', title[:80]) + '.mp4'
-            
-            supabase_result = await supabase_upload(
-                filepath, safe_filename, content_type, platform="telegram"
-            )
-            
-            if supabase_result and supabase_result.get("success"):
-                download_url = supabase_result["url"]
-                logger.info(f"☁️ Telegram: Supabase upload succeeded — URL: {download_url}")
-                
-                # تتبع الاستخدام
-                increment_usage(user_id, "youtube_summaries")
-                try: track_event("media_downloads")
-                except: pass
-                
-                # إرسال رابط التحميل
-                download_msg = supabase_download_link(
-                    download_url, title, size_mb, "telegram", lang=lang
-                )
-                await message.reply_text(download_msg)
-                
-                try: await status_msg.delete()
-                except: pass
-                try: os.remove(filepath)
-                except: pass
-                return
-            else:
-                # فشل الرفع على Supabase — نجرب جودة أقل
-                logger.warning(f"☁️ Telegram: Supabase upload failed, trying lower quality")
-                
-                if quality != "audio" and quality != "low":
-                    try: os.remove(filepath)
-                    except: pass
-                    lower_quality = {"best": "medium", "medium": "low", "low": "audio"}.get(quality, "medium")
-                    try: await status_msg.edit_text("⏳ جاري تجربة جودة أقل..." if lang == "ar" else "⏳ Trying lower quality...")
-                    except: pass
-                    return await _download_with_ytdlp(update_or_query, url, lower_quality, lang, user_id, status_msg=None)
-                else:
-                    if lang == "ar":
-                        await message.reply_text(f"❌ فشل رفع الملف على السحابة. جرب تاني!")
-                    else:
-                        await message.reply_text(f"❌ Failed to upload file to cloud. Try again!")
-                    try: await status_msg.delete()
-                    except: pass
-                    return
-        
         # تتبع
         increment_usage(user_id, "youtube_summaries")
         try: track_event("media_downloads")
         except: pass
+        
+        # 🛡️ Safety check on downloaded media before sending
+        try:
+            dl_file_type = "audio" if quality == "audio" else "video"
+            dl_title = info.get("title", filename) if info else filename
+            is_safe_dl, block_msg_dl, _reason_dl = await comprehensive_media_safety_check(
+                title=dl_title, file_path=filepath, file_type=dl_file_type,
+                platform="telegram", user_id=str(user_id), lang=lang,
+            )
+            if not is_safe_dl:
+                await message.reply_text(block_msg_dl, parse_mode="HTML")
+                try: shutil.rmtree(tmpdir, ignore_errors=True)
+                except: pass
+                return
+        except Exception:
+            pass  # Fail-open
         
         # إرسال الملف
         title = info.get("title", filename) if info else filename
@@ -2849,53 +2835,22 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                 is_too_large = file_exceeds_limit and any(kw in err_str for kw in ["too large", "file is too big", "file too large", "exceeds", "413"])
                 logger.warning(f"⚠️ Video send failed: {send_err} | is_too_large={is_too_large} | file_size={filesize}")
         
-        # 🔴 FIX + Supabase: لو الإرسال فشل — نفرق بين "ملف كبير" و "خطأ تاني"
+        # 🔴 FIX: لو الإرسال فشل — نفرق بين "ملف كبير حقيقي" و "خطأ تاني"
         if send_failed and quality != "audio":
             if is_too_large:
-                # فعلاً الملف كبير (أكتر من 50MB) — نرفعه على Supabase أولاً
-                logger.info(f"☁️ Telegram: File too large ({size_str}), uploading to Supabase...")
+                # فعلاً الملف كبير (أكتر من 50MB) — نجرب جودة أقل بصمت
+                logger.info(f"📥 File too large ({size_str}), retrying with lower quality silently...")
                 
                 try:
-                    if lang == "ar":
-                        await status_msg.edit_text("☁️ جاري رفع الملف على السحابة...")
-                    else:
-                        await status_msg.edit_text("☁️ Uploading to cloud storage...")
-                except:
+                    os.remove(filepath)
+                except Exception:
                     pass
                 
-                # تحديد نوع الملف
-                if quality == "audio":
-                    sb_content_type = "audio/mpeg"
-                    sb_filename = re.sub(r'[<>:"/\\|?*]', '_', title[:80]) + '.mp3'
-                else:
-                    sb_content_type = "video/mp4"
-                    sb_filename = re.sub(r'[<>:"/\\|?*]', '_', title[:80]) + '.mp4'
-                
-                sb_result = await supabase_upload(
-                    filepath, sb_filename, sb_content_type, platform="telegram"
-                )
-                
-                if sb_result and sb_result.get("success"):
-                    download_url = sb_result["url"]
-                    logger.info(f"☁️ Telegram: Supabase upload succeeded — URL: {download_url}")
-                    
-                    download_msg = supabase_download_link(
-                        download_url, title, size_mb, "telegram", lang=lang
-                    )
-                    await message.reply_text(download_msg)
-                    
-                    try: os.remove(filepath)
-                    except: pass
-                    try: await status_msg.delete()
-                    except: pass
-                    return
-                else:
-                    # فشل الرفع — نجرب جودة أقل
-                    logger.warning(f"☁️ Telegram: Supabase upload failed, trying lower quality")
-                    try: os.remove(filepath)
-                    except: pass
-                    lower_quality = {"best": "medium", "medium": "low", "low": "audio"}.get(quality, "medium")
-                    return await _download_with_ytdlp(update_or_query, url, lower_quality, lang, user_id, status_msg=None)
+                lower_quality = {"best": "medium", "medium": "low", "low": "audio"}.get(quality, "medium")
+                # 🔴 FIX: نمرر status_msg=None عشان ينشئ واحد جديد — القديم ممكن يكون اتمسح
+                try: await status_msg.edit_text("⏳ جاري تجربة جودة أقل..." if lang == "ar" else "⏳ Trying lower quality...")
+                except: pass
+                return await _download_with_ytdlp(update_or_query, url, lower_quality, lang, user_id, status_msg=None)
             else:
                 # مشكلة تانية (مش حجم) — نجرب نبعته كـ document
                 logger.info(f"⚠️ Video send failed (not size), trying send as document...")
@@ -3023,20 +2978,8 @@ async def handle_download_callback(update: Update, context: ContextTypes.DEFAULT
         quality = quality_map.get(parts[2], "best")
         url_key = parts[3]
     elif dl_type == "a":
-        # 🔴 FIX: دعم جودات الصوت المختلفة
-        # dl_a_{key} = صوت عادي (للرابط المباشر /download)
-        # dl_a_h_{key} = صوت عالي الجودة (للبحث /audio)
-        # dl_a_m_{key} = صوت متوسط الجودة
-        # dl_a_l_{key} = صوت منخفض الجودة
-        if len(parts) >= 4 and parts[2] in ("h", "m", "l"):
-            # جودة صوت محددة من /audio search
-            audio_quality_map = {"h": "audio", "m": "audio_medium", "l": "audio_low"}
-            quality = audio_quality_map.get(parts[2], "audio")
-            url_key = parts[3]
-        else:
-            # صوت عادي من /download
-            quality = "audio"
-            url_key = parts[2]
+        quality = "audio"
+        url_key = parts[2]
     else:
         return
     

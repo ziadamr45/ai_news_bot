@@ -32,6 +32,15 @@ from memory import get_language, increment_command_count
 from premium import check_limit, increment_usage, premium_required_message, get_premium_keyboard
 from dashboard import track_event
 
+from content_safety import (
+    check_query_safety,
+    check_search_results_safety,
+    comprehensive_media_safety_check,
+    get_block_message,
+    get_no_safe_results_message,
+    should_enable_safe_search,
+)
+
 logger = logging.getLogger(__name__)
 
 # ═══════════════════════════════════════
@@ -101,6 +110,16 @@ async def video_search_command(update: Update, context: ContextTypes.DEFAULT_TYP
     try: track_event("video_search_requests")
     except: pass
     
+    # 🛡️ Safety check on query
+    try:
+        is_safe, reason = await check_query_safety(query, platform="telegram", user_id=str(user_id))
+        if not is_safe:
+            msg = get_block_message(lang, reason)
+            await update.message.reply_text(msg, parse_mode="HTML")
+            return
+    except Exception:
+        pass  # Fail-open: let content through if safety check fails
+    
     status_msg = await update.message.reply_text(
         f"🔍 جاري البحث في YouTube عن: {query}..." if lang == "ar"
         else f"🔍 Searching YouTube for: {query}..."
@@ -117,6 +136,15 @@ async def video_search_command(update: Update, context: ContextTypes.DEFAULT_TYP
                 else "❌ No results found. Try different keywords!"
             )
             return
+        
+        # 🛡️ Filter search results for safety
+        try:
+            results = await check_search_results_safety(results, platform="telegram", user_id=str(user_id))
+            if not results:
+                await status_msg.edit_text(get_no_safe_results_message(lang), parse_mode="HTML")
+                return
+        except Exception:
+            pass  # Fail-open
         
         # حفظ النتائج في cache
         cache_key = hashlib.md5(f"vs_{user_id}_{query}".encode()).hexdigest()[:12]
@@ -192,6 +220,16 @@ async def audio_search_command(update: Update, context: ContextTypes.DEFAULT_TYP
     try: track_event("audio_search_requests")
     except: pass
     
+    # 🛡️ Safety check on query
+    try:
+        is_safe, reason = await check_query_safety(query, platform="telegram", user_id=str(user_id))
+        if not is_safe:
+            msg = get_block_message(lang, reason)
+            await update.message.reply_text(msg, parse_mode="HTML")
+            return
+    except Exception:
+        pass  # Fail-open: let content through if safety check fails
+    
     status_msg = await update.message.reply_text(
         f"🔍 جاري البحث في YouTube عن: {query}..." if lang == "ar"
         else f"🔍 Searching YouTube for: {query}..."
@@ -208,6 +246,15 @@ async def audio_search_command(update: Update, context: ContextTypes.DEFAULT_TYP
                 else "❌ No results found. Try different keywords!"
             )
             return
+        
+        # 🛡️ Filter search results for safety
+        try:
+            results = await check_search_results_safety(results, platform="telegram", user_id=str(user_id))
+            if not results:
+                await status_msg.edit_text(get_no_safe_results_message(lang), parse_mode="HTML")
+                return
+        except Exception:
+            pass  # Fail-open
         
         # حفظ النتائج في cache
         cache_key = hashlib.md5(f"as_{user_id}_{query}".encode()).hexdigest()[:12]
@@ -284,6 +331,16 @@ async def photo_search_command(update: Update, context: ContextTypes.DEFAULT_TYP
     try: track_event("photo_search_requests")
     except: pass
     
+    # 🛡️ Safety check on query
+    try:
+        is_safe, reason = await check_query_safety(query, platform="telegram", user_id=str(user_id))
+        if not is_safe:
+            msg = get_block_message(lang, reason)
+            await update.message.reply_text(msg, parse_mode="HTML")
+            return
+    except Exception:
+        pass  # Fail-open: let content through if safety check fails
+    
     # ═══ حفظ الاستعلام في cache + عرض أزرار عدد الصور ═══
     # مثل الواتساب بالضبط — المستخدم يختار العدد الأول وبعدين ننفذ البحث
     cache_key = hashlib.md5(f"ps_{user_id}_{query}".encode()).hexdigest()[:12]
@@ -336,7 +393,7 @@ async def _execute_photo_search(query_obj, query_text: str, count: int, lang: st
             await query_obj.edit_message_text(f"🖼️ Searching for {count} images: {query_text}...")
         
         # 🔴 FIX: بنبحث عن عدد أكبر عشان نوفر بدائل لو فشل تحميل بعض الصور
-        # search_images داخلياً بيدمج نتائج Pexels + Pixabay + Unsplash
+        # search_images داخلياً بيزود count * 3 في DuckDuckGo
         results = await search_images(query_text, count=count)
         
         if not results:
@@ -377,6 +434,24 @@ async def _execute_photo_search(query_obj, query_text: str, count: int, lang: st
                         file_path = await download_image(thumb_url, output_dir=tmpdir)
                 
                 if file_path and os.path.exists(file_path) and os.path.getsize(file_path) > 100:
+                    # 🛡️ Safety check on image before sending
+                    image_is_safe = True
+                    try:
+                        from content_safety import check_image_safety
+                        is_safe_img, reason_img, _score = await check_image_safety(
+                            image_path=file_path, platform="telegram", user_id=str(user_id)
+                        )
+                        if not is_safe_img:
+                            image_is_safe = False
+                            logger.info(f"🛡️ Image {i+1} blocked by safety check: {reason_img}")
+                    except Exception:
+                        pass  # Fail-open
+                    
+                    if not image_is_safe:
+                        try: os.remove(file_path)
+                        except: pass
+                        continue  # Skip this image, don't count it
+                    
                     desc = r.get('description', '')[:80]
                     author = r.get('author', '')
                     source = r.get('source', '')
@@ -558,7 +633,7 @@ async def handle_search_callback(update: Update, context: ContextTypes.DEFAULT_T
         else:
             msg = f"📥 *Choose download quality*\n\n📺 {title[:100]}"
         
-        keyboard = _get_quality_keyboard(url, lang, mode="video")
+        keyboard = _get_quality_keyboard(url, lang)
         await query.edit_message_text(msg, parse_mode="Markdown", reply_markup=keyboard)
         
     elif action == "sa":
@@ -570,5 +645,5 @@ async def handle_search_callback(update: Update, context: ContextTypes.DEFAULT_T
         else:
             msg = f"🎵 *Choose download quality*\n\n📺 {title[:100]}"
         
-        keyboard = _get_quality_keyboard(url, lang, mode="audio")
+        keyboard = _get_quality_keyboard(url, lang)
         await query.edit_message_text(msg, parse_mode="Markdown", reply_markup=keyboard)

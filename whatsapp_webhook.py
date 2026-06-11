@@ -39,11 +39,13 @@ from datetime import datetime, timezone
 
 from aiohttp import web
 
-# 🔴 Supabase Storage — رفع الملفات الكبيرة تلقائياً
-from supabase_storage import (
-    should_use_supabase,
-    upload_file as supabase_upload,
-    format_download_link as supabase_download_link,
+from content_safety import (
+    check_query_safety,
+    check_search_results_safety,
+    comprehensive_media_safety_check,
+    get_block_message,
+    get_no_safe_results_message,
+    should_enable_safe_search,
 )
 
 logger = logging.getLogger(__name__)
@@ -1202,23 +1204,14 @@ async def _show_quality_selection_for_search(wa_id: str, url: str, title: str,
     display_title = title[:50] if title else "فيديو"
     body = f"📥 *اختار الجودة*\n\n📺 {display_title}\n🔗 المنصة: {platform_display}"
     
-    # 🔴 FIX: عرض الجودات حسب نوع البحث
-    # - /video → جودات فيديو بس (من غير صوت)
-    # - /audio → جودات صوت بس (من غير فيديو)
-    # - /download (رابط مباشر) → كل الخيارات (فيديو + صوت)
+    # 🔴 لو البحث كان صوت → نحط خيار الصوت كأول اختيار في القائمة
     if search_type == "audio":
-        # 🔴 صوت بس — بدون خيارات فيديو
         sections = [{
-            "title": "🎵 جودات الصوت",
+            "title": "🎵 صوت فقط",
             "rows": [
-                {"id": f"dl_a_h_{url_key}", "title": "🎵 صوت عالي الجودة", "description": "أفضل جودة صوت MP3"},
-                {"id": f"dl_a_m_{url_key}", "title": "🎵 صوت متوسط الجودة", "description": "توازن بين الجودة والحجم"},
-                {"id": f"dl_a_l_{url_key}", "title": "🎵 صوت منخفض الجودة", "description": "حجم صغير - الأسرع"},
+                {"id": f"dl_a_{url_key}", "title": "🎵 صوت بس MP3", "description": "استخراج الصوت فقط - الأسرع"},
             ],
-        }]
-    elif search_type == "video":
-        # 🔴 فيديو بس — بدون خيارات صوت
-        sections = [{
+        }, {
             "title": "🎬 جودة الفيديو",
             "rows": [
                 {"id": f"dl_v_b_{url_key}", "title": "🎬 أعلى جودة", "description": "1080p - أفضل جودة متاحة"},
@@ -1227,7 +1220,6 @@ async def _show_quality_selection_for_search(wa_id: str, url: str, title: str,
             ],
         }]
     else:
-        # 🔴 رابط مباشر (/download) — كل الخيارات
         sections = [{
             "title": "🎬 جودة الفيديو",
             "rows": [
@@ -1292,11 +1284,7 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
         tmpdir = tempfile.mkdtemp(prefix="mybro_wa_dl_")
         output_template = os.path.join(tmpdir, "%(title).80s.%(ext)s")
         
-        # 🔴 FIX v2: Threads — yt-dlp مش بيدعمه، نستخدم طريقة مخصصة
-        # بنسجل info وبنسيب المسار الرئيسي يكمل — كده الملف بيمر بنفس المعالجة
-        # (ffprobe + h264 re-encode + quality fallback) زي كل المنصات التانية
-        info = None  # 🔴 نعرف info هنا عشان Threads يقدر يسيبها للمسار الرئيسي
-        
+        # 🔴 FIX: Threads — yt-dlp مش بيدعمه، نستخدم طريقة مخصصة
         if is_threads:
             logger.info(f"🧵 WhatsApp: Threads detected — using custom download method")
             try:
@@ -1307,30 +1295,57 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
             threads_result = await _download_threads_media_wa(url, tmpdir)
             
             if threads_result and threads_result.get("success"):
+                file_path = threads_result["file_path"]
+                file_size = threads_result.get("file_size", os.path.getsize(file_path))
                 real_title = threads_result.get("title", "Threads Post")
-                is_video_threads = threads_result.get("is_video", True)
-                threads_file_size = threads_result.get("file_size", 0)
+                is_video = threads_result.get("is_video", True)
+                size_mb = file_size / (1024 * 1024)
                 
-                # 🔴 FIX v2: بنسجل info وبنسيب المسار الرئيسي يكمل الإرسال
-                # كده الملف بيمر بـ ffprobe check + h264 re-encode + quality fallback
-                # زي كل المنصات التانية — مش بنعمل send يدوي هنا
-                info = {
-                    "title": real_title,
-                    "duration": 0,
-                    "height": 720,
-                    "vcodec": "h264",
-                    "acodec": "aac",
-                    "requested_downloads": [{"height": 720, "vcodec": "h264", "acodec": "aac"}],
-                }
+                if is_video and size_mb <= 100:
+                    try:
+                        with open(file_path, 'rb') as vf:
+                            media_response = requests.post(
+                                f"{WHATSAPP_API_URL}/{WHATSAPP_PHONE_NUMBER_ID}/media",
+                                headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
+                                files={"file": (f"{real_title[:50]}.mp4", vf, "video/mp4")},
+                                data={"messaging_product": "whatsapp", "type": "video"},
+                                timeout=180
+                            )
+                            if media_response.status_code == 200:
+                                media_id = media_response.json().get("id")
+                                await _send_whatsapp_video(wa_id, media_id, caption=f"🧵 {real_title[:200]}\n📥 Threads")
+                                await feedback.success()
+                                try: os.remove(file_path)
+                                except: pass
+                                return
+                    except Exception as send_err:
+                        logger.warning(f"⚠️ Threads WA video send failed: {send_err}")
+                elif not is_video:
+                    try:
+                        with open(file_path, 'rb') as img_f:
+                            media_response = requests.post(
+                                f"{WHATSAPP_API_URL}/{WHATSAPP_PHONE_NUMBER_ID}/media",
+                                headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
+                                files={"file": (f"{real_title[:50]}.jpg", img_f, "image/jpeg")},
+                                data={"messaging_product": "whatsapp", "type": "image"},
+                                timeout=60
+                            )
+                            if media_response.status_code == 200:
+                                media_id = media_response.json().get("id")
+                                await _send_whatsapp_image(wa_id, media_id, caption=f"🧵 {real_title[:200]}\n📥 Threads")
+                                await feedback.success()
+                                try: os.remove(file_path)
+                                except: pass
+                                return
+                    except Exception as send_err:
+                        logger.warning(f"⚠️ Threads WA image send failed: {send_err}")
                 
-                # 🔴 الملف اتحمل في tmpdir — المسار الرئيسي هيلقيه هناك
-                threads_file_path = threads_result["file_path"]
-                if os.path.exists(threads_file_path):
-                    logger.info(f"✅ Threads WA download succeeded via {threads_result.get('method', 'unknown')} — "
-                               f"video={is_video_threads}, size={threads_file_size // 1024}KB, sending through main flow")
-                else:
-                    logger.warning(f"⚠️ Threads WA: Downloaded file not found at {threads_file_path}")
-                    info = None
+                # File too large or send failed
+                await _send_whatsapp_message(wa_id, f"❌ فشل إرسال الملف من Threads. جرب تاني!")
+                await feedback.error()
+                try: os.remove(file_path)
+                except: pass
+                return
             else:
                 logger.warning("🧵 Threads WA custom method failed, trying yt-dlp...")
         
@@ -1339,12 +1354,6 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
         # نفس ترتيب التليجرام بالظبط
         # ═══════════════════════════════════════════════════════════════
         
-        # 🔴 FIX v2: متغيرات مشتركة — لازم تكون معرفة قبل الـ try block
-        # عشان الكود اللي بعد كده (ffprobe + h264 re-encode) يقدر يستخدمها
-        # حتى لو Threads هو اللي حمّل الملف (مش yt-dlp)
-        is_audio_only = (quality == "audio")
-        is_facebook_family = platform in ("facebook", "instagram", "threads")
-        
         # ═══ المرحلة 1: yt-dlp + deno + remote_components (الأفضل!) ═══
         # 🔴 الكوكيز الوهمية اتشالت — بنستخدم headers نظيفة فقط
         # 🔴 بنستخدم cookies.txt لو موجود — الحل الأقوى
@@ -1352,6 +1361,12 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
         try:
             # yt-dlp options — with multi-quality support (like Telegram)
             # WhatsApp limit: ~100MB for media
+            
+            # Quality format strings (like Telegram's download_handlers)
+            is_audio_only = (quality == "audio")
+            
+            # 🔴 FIX v9: Facebook family format + acodec!=none + no filesize limit
+            is_facebook_family = platform in ("facebook", "instagram", "threads")
             
             if is_audio_only:
                 format_str = 'bestaudio/best'
@@ -1479,37 +1494,34 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
             
             # Download video — Multi-stage approach
             loop = asyncio.get_event_loop()
-            # 🔴 FIX v2: لو Threads حمّل الملف، info مش None — مش نعملش overwrite
-            # info معرّف قبل الـ Threads block — لو Threads نجح يبقى info فيه البيانات
+            info = None
             last_error = None
             
             # ═══ المرحلة 1: yt-dlp مباشر + deno + remote_components (الأفضل) ═══
-            # 🔴 FIX v2: نتخطى yt-dlp لو Threads حمّل الملف بالفعل
-            if info is None:
-                try:
-                    def _run_ytdlp():
-                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                            info = ydl.extract_info(url, download=True)
-                            return info
-                    
-                    info = await asyncio.wait_for(
-                        loop.run_in_executor(None, _run_ytdlp),
-                        timeout=300  # 5 minutes max
-                    )
-                    if info:
-                        logger.info(f"✅ yt-dlp download succeeded directly (deno + remote_components)")
-                except Exception as e:
-                    last_error = e
-                    logger.warning(f"⚠️ yt-dlp direct download failed: {e}")
-                    # 🔴 لو YouTube حجبنا — حدث yt-dlp فوراً
-                    err_str = str(e).lower()
-                    if any(kw in err_str for kw in ["sign in", "bot", "captcha", "confirm", "login", "403"]):
-                        logger.warning("🔴 YouTube bot detection in WA! Triggering yt-dlp update...")
-                        try:
-                            from handlers.download_handlers import trigger_ytdlp_update
-                            trigger_ytdlp_update()
-                        except Exception:
-                            pass
+            try:
+                def _run_ytdlp():
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        info = ydl.extract_info(url, download=True)
+                        return info
+                
+                info = await asyncio.wait_for(
+                    loop.run_in_executor(None, _run_ytdlp),
+                    timeout=300  # 5 minutes max
+                )
+                if info:
+                    logger.info(f"✅ yt-dlp download succeeded directly (deno + remote_components)")
+            except Exception as e:
+                last_error = e
+                logger.warning(f"⚠️ yt-dlp direct download failed: {e}")
+                # 🔴 لو YouTube حجبنا — حدث yt-dlp فوراً
+                err_str = str(e).lower()
+                if any(kw in err_str for kw in ["sign in", "bot", "captcha", "confirm", "login", "403"]):
+                    logger.warning("🔴 YouTube bot detection in WA! Triggering yt-dlp update...")
+                    try:
+                        from handlers.download_handlers import trigger_ytdlp_update
+                        trigger_ytdlp_update()
+                    except Exception:
+                        pass
             
             # ═══ المرحلة 2: yt-dlp player_client fallback chain (زي التليجرام) ═══
             if info is None:
@@ -1614,54 +1626,40 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                         )
                                         if media_response.status_code == 200:
                                             media_id = media_response.json().get("id")
-                                            # 🔴 FIX: نستخدم _send_whatsapp_document بدل _send_whatsapp_audio
-                                            # لأن _send_whatsapp_audio بتاخد bytes مش media_id
-                                            with open(target, 'rb') as af2:
-                                                audio_bytes = af2.read()
-                                            safe_audio_name = re.sub(r'[<>:"/\\|?*]', '_', piped_title[:50]) + '.mp3'
-                                            result = await _send_whatsapp_document(
-                                                wa_id, audio_bytes, safe_audio_name,
-                                                f"🎵 {piped_title[:200]}\n📥 Piped | MP3",
-                                                "audio/mpeg"
+                                            await _send_whatsapp_audio(wa_id, media_id)
+                                            await feedback.success()
+                                            try: os.remove(target)
+                                            except: pass
+                                            return
+                                except Exception as audio_send_err:
+                                    logger.warning(f"⚠️ Piped audio send failed: {audio_send_err}")
+                            else:
+                                if piped_size_mb <= 100:
+                                    try:
+                                        with open(target, 'rb') as vf:
+                                            media_response = requests.post(
+                                                f"{WHATSAPP_API_URL}/{WHATSAPP_PHONE_NUMBER_ID}/media",
+                                                headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
+                                                files={"file": (f"{piped_title[:50]}.mp4", vf, "video/mp4")},
+                                                data={"messaging_product": "whatsapp", "type": "video"},
+                                                timeout=180
                                             )
-                                            if "error" not in result:
+                                            if media_response.status_code == 200:
+                                                media_id = media_response.json().get("id")
+                                                await _send_whatsapp_video(wa_id, media_id, caption=f"🎬 {piped_title[:200]}\n📥 Piped | {piped_quality_label}")
                                                 await feedback.success()
                                                 try: os.remove(target)
                                                 except: pass
                                                 return
-                                            else:
-                                                logger.warning(f"⚠️ Piped audio doc send failed: {result.get('error')}")
-                                except Exception as audio_send_err:
-                                    logger.warning(f"⚠️ Piped audio send failed: {audio_send_err}")
-                                    # 🔴 FIX: لازم نعيد info لـ None عشان المراحل اللي بعد كده (Cobalt) تشتغل
-                                    info = None
+                                    except Exception as video_send_err:
+                                        logger.warning(f"⚠️ Piped video send failed: {video_send_err}")
+                                else:
+                                    # File too large for WhatsApp — send link
+                                    await _send_whatsapp_message(wa_id, f"❌ فشل إرسال الفيديو من Piped. جرب تاني!")
+                                    await feedback.success()
                                     try: os.remove(target)
                                     except: pass
-                            else:
-                                # 🔴 FIX: نستخدم _send_whatsapp_document بدل _send_whatsapp_video (مش موجودة!)
-                                try:
-                                    with open(target, 'rb') as vf:
-                                        file_bytes = vf.read()
-                                    safe_filename = re.sub(r'[<>:"/\\|?*]', '_', piped_title[:50]) + '.mp4'
-                                    caption = f"🎬 {piped_title[:200]}\n📥 Piped | {piped_quality_label}"
-                                    result = await _send_whatsapp_document(
-                                        wa_id, file_bytes, safe_filename, caption, "video/mp4"
-                                    )
-                                    if "error" not in result:
-                                        await feedback.success()
-                                        try: os.remove(target)
-                                        except: pass
-                                        return
-                                    else:
-                                        logger.warning(f"⚠️ Piped video doc send failed: {result.get('error')}")
-                                        info = None
-                                        try: os.remove(target)
-                                        except: pass
-                                except Exception as video_send_err:
-                                    logger.warning(f"⚠️ Piped video send failed: {video_send_err}")
-                                    info = None
-                                    try: os.remove(target)
-                                    except: pass
+                                    return
                     
                     logger.warning(f"⚠️ Piped failed, trying Invidious...")
                 except ImportError:
@@ -1721,40 +1719,51 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                             inv_size_mb = inv_size / (1024 * 1024)
                             inv_quality_label = inv_format.get("quality_label", quality)
                             
-                            # 🔴 FIX: نستخدم _send_whatsapp_document بدل _send_whatsapp_video/audio
-                            # لأن _send_whatsapp_video مش موجودة و _send_whatsapp_audio بتاخد bytes مش media_id
-                            try:
-                                with open(target, 'rb') as f:
-                                    file_bytes = f.read()
-                                
-                                if is_audio_only or quality == "audio":
-                                    safe_filename = re.sub(r'[<>:"/\\|?*]', '_', inv_title[:50]) + '.mp3'
-                                    caption = f"🎵 {inv_title[:200]}\n📥 Invidious | MP3"
-                                    result = await _send_whatsapp_document(
-                                        wa_id, file_bytes, safe_filename, caption, "audio/mpeg"
-                                    )
+                            if is_audio_only or quality == "audio":
+                                try:
+                                    with open(target, 'rb') as af:
+                                        media_response = requests.post(
+                                            f"{WHATSAPP_API_URL}/{WHATSAPP_PHONE_NUMBER_ID}/media",
+                                            headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
+                                            files={"file": (f"{inv_title[:50]}.mp3", af, "audio/mpeg")},
+                                            data={"messaging_product": "whatsapp", "type": "audio"},
+                                            timeout=120
+                                        )
+                                        if media_response.status_code == 200:
+                                            media_id = media_response.json().get("id")
+                                            await _send_whatsapp_audio(wa_id, media_id)
+                                            await feedback.success()
+                                            try: os.remove(target)
+                                            except: pass
+                                            return
+                                except Exception as audio_send_err:
+                                    logger.warning(f"⚠️ Invidious audio send failed: {audio_send_err}")
+                            else:
+                                if inv_size_mb <= 100:
+                                    try:
+                                        with open(target, 'rb') as vf:
+                                            media_response = requests.post(
+                                                f"{WHATSAPP_API_URL}/{WHATSAPP_PHONE_NUMBER_ID}/media",
+                                                headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
+                                                files={"file": (f"{inv_title[:50]}.mp4", vf, "video/mp4")},
+                                                data={"messaging_product": "whatsapp", "type": "video"},
+                                                timeout=180
+                                            )
+                                            if media_response.status_code == 200:
+                                                media_id = media_response.json().get("id")
+                                                await _send_whatsapp_video(wa_id, media_id, caption=f"🎬 {inv_title[:200]}\n📥 Invidious | {inv_quality_label}")
+                                                await feedback.success()
+                                                try: os.remove(target)
+                                                except: pass
+                                                return
+                                    except Exception as video_send_err:
+                                        logger.warning(f"⚠️ Invidious video send failed: {video_send_err}")
                                 else:
-                                    safe_filename = re.sub(r'[<>:"/\\|?*]', '_', inv_title[:50]) + '.mp4'
-                                    caption = f"🎬 {inv_title[:200]}\n📥 Invidious | {inv_quality_label}"
-                                    result = await _send_whatsapp_document(
-                                        wa_id, file_bytes, safe_filename, caption, "video/mp4"
-                                    )
-                                
-                                if "error" not in result:
+                                    await _send_whatsapp_message(wa_id, f"❌ فشل إرسال الفيديو من Invidious. جرب تاني!")
                                     await feedback.success()
                                     try: os.remove(target)
                                     except: pass
                                     return
-                                else:
-                                    logger.warning(f"⚠️ Invidious doc send failed: {result.get('error')}")
-                                    info = None
-                                    try: os.remove(target)
-                                    except: pass
-                            except Exception as send_err:
-                                logger.warning(f"⚠️ Invidious send error: {send_err}")
-                                info = None
-                                try: os.remove(target)
-                                except: pass
                     
                     logger.warning(f"⚠️ Invidious failed, trying Cobalt...")
                 except ImportError:
@@ -1794,39 +1803,52 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                         size_str = f"{cobalt_size_mb:.1f}MB"
                         
                         if cobalt_file and os.path.exists(cobalt_file):
-                            # 🔴 FIX: نستخدم _send_whatsapp_document بدل _send_whatsapp_video/audio
-                            # لأن _send_whatsapp_video مش موجودة و _send_whatsapp_audio بتاخد bytes مش media_id
-                            try:
-                                with open(cobalt_file, 'rb') as f:
-                                    file_bytes = f.read()
-                                
-                                if is_audio_only or quality == "audio":
-                                    safe_filename = re.sub(r'[<>:"/\\|?*]', '_', cobalt_title[:50]) + '.mp3'
-                                    caption = f"🎵 {cobalt_title[:200]}\n📥 Cobalt | MP3"
-                                    result = await _send_whatsapp_document(
-                                        wa_id, file_bytes, safe_filename, caption, "audio/mpeg"
-                                    )
+                            if is_audio_only or quality == "audio":
+                                try:
+                                    with open(cobalt_file, 'rb') as af:
+                                        media_response = requests.post(
+                                            f"{WHATSAPP_API_URL}/{WHATSAPP_PHONE_NUMBER_ID}/media",
+                                            headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
+                                            files={"file": (f"{cobalt_title[:50]}.mp3", af, "audio/mpeg")},
+                                            data={"messaging_product": "whatsapp", "type": "audio"},
+                                            timeout=120
+                                        )
+                                        if media_response.status_code == 200:
+                                            media_id = media_response.json().get("id")
+                                            await _send_whatsapp_audio(wa_id, media_id)
+                                            await feedback.success()
+                                            try: os.remove(cobalt_file)
+                                            except: pass
+                                            return
+                                except Exception as audio_send_err:
+                                    logger.warning(f"⚠️ Cobalt audio send failed: {audio_send_err}")
+                            else:
+                                if cobalt_size_mb <= 100:
+                                    try:
+                                        with open(cobalt_file, 'rb') as vf:
+                                            media_response = requests.post(
+                                                f"{WHATSAPP_API_URL}/{WHATSAPP_PHONE_NUMBER_ID}/media",
+                                                headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
+                                                files={"file": (f"{cobalt_title[:50]}.mp4", vf, "video/mp4")},
+                                                data={"messaging_product": "whatsapp", "type": "video"},
+                                                timeout=180
+                                            )
+                                            if media_response.status_code == 200:
+                                                media_id = media_response.json().get("id")
+                                                tech_info = f"{cobalt_height}p | {size_str} | Cobalt"
+                                                await _send_whatsapp_video(wa_id, media_id, caption=f"🎬 {cobalt_title[:200]}\n📥 {tech_info}")
+                                                await feedback.success()
+                                                try: os.remove(cobalt_file)
+                                                except: pass
+                                                return
+                                    except Exception as video_send_err:
+                                        logger.warning(f"⚠️ Cobalt video send failed: {video_send_err}")
                                 else:
-                                    safe_filename = re.sub(r'[<>:"/\\|?*]', '_', cobalt_title[:50]) + '.mp4'
-                                    tech_info = f"{cobalt_height}p | {size_str} | Cobalt"
-                                    caption = f"🎬 {cobalt_title[:200]}\n📥 {tech_info}"
-                                    result = await _send_whatsapp_document(
-                                        wa_id, file_bytes, safe_filename, caption, "video/mp4"
-                                    )
-                                
-                                if "error" not in result:
+                                    await _send_whatsapp_message(wa_id, f"❌ فشل إرسال الفيديو من Cobalt. جرب تاني!")
                                     await feedback.success()
                                     try: os.remove(cobalt_file)
                                     except: pass
                                     return
-                                else:
-                                    logger.warning(f"⚠️ Cobalt doc send failed: {result.get('error')}")
-                                    try: os.remove(cobalt_file)
-                                    except: pass
-                            except Exception as send_err:
-                                logger.warning(f"⚠️ Cobalt send error: {send_err}")
-                                try: os.remove(cobalt_file)
-                                except: pass
                     
                     logger.warning(f"⚠️ Cobalt failed, trying Cobalt JWT...")
                 except ImportError:
@@ -1892,38 +1914,52 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                 size_str = f"{jwt_size_mb:.1f}MB"
                                 
                                 if jwt_file and os.path.exists(jwt_file):
-                                    # 🔴 FIX: نستخدم _send_whatsapp_document بدل _send_whatsapp_video/audio
-                                    try:
-                                        with open(jwt_file, 'rb') as f:
-                                            file_bytes = f.read()
-                                        
-                                        if is_audio_jwt:
-                                            safe_filename = re.sub(r'[<>:"/\\|?*]', '_', jwt_title[:50]) + '.mp3'
-                                            caption = f"🎵 {jwt_title[:200]}\n📥 Cobalt JWT | MP3"
-                                            result = await _send_whatsapp_document(
-                                                wa_id, file_bytes, safe_filename, caption, "audio/mpeg"
-                                            )
+                                    if is_audio_jwt:
+                                        try:
+                                            with open(jwt_file, 'rb') as af:
+                                                media_response = requests.post(
+                                                    f"{WHATSAPP_API_URL}/{WHATSAPP_PHONE_NUMBER_ID}/media",
+                                                    headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
+                                                    files={"file": (f"{jwt_title[:50]}.mp3", af, "audio/mpeg")},
+                                                    data={"messaging_product": "whatsapp", "type": "audio"},
+                                                    timeout=120
+                                                )
+                                                if media_response.status_code == 200:
+                                                    media_id = media_response.json().get("id")
+                                                    await _send_whatsapp_audio(wa_id, media_id)
+                                                    await feedback.success()
+                                                    try: os.remove(jwt_file)
+                                                    except: pass
+                                                    return
+                                        except Exception as audio_send_err:
+                                            logger.warning(f"⚠️ Cobalt JWT audio send failed: {audio_send_err}")
+                                    else:
+                                        if jwt_size_mb <= 100:
+                                            try:
+                                                with open(jwt_file, 'rb') as vf:
+                                                    media_response = requests.post(
+                                                        f"{WHATSAPP_API_URL}/{WHATSAPP_PHONE_NUMBER_ID}/media",
+                                                        headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
+                                                        files={"file": (f"{jwt_title[:50]}.mp4", vf, "video/mp4")},
+                                                        data={"messaging_product": "whatsapp", "type": "video"},
+                                                        timeout=180
+                                                    )
+                                                    if media_response.status_code == 200:
+                                                        media_id = media_response.json().get("id")
+                                                        tech_info = f"{jwt_height}p | {size_str} | Cobalt JWT"
+                                                        await _send_whatsapp_video(wa_id, media_id, caption=f"🎬 {jwt_title[:200]}\n📥 {tech_info}")
+                                                        await feedback.success()
+                                                        try: os.remove(jwt_file)
+                                                        except: pass
+                                                        return
+                                            except Exception as video_send_err:
+                                                logger.warning(f"⚠️ Cobalt JWT video send failed: {video_send_err}")
                                         else:
-                                            safe_filename = re.sub(r'[<>:"/\\|?*]', '_', jwt_title[:50]) + '.mp4'
-                                            tech_info = f"{jwt_height}p | {size_str} | Cobalt JWT"
-                                            caption = f"🎬 {jwt_title[:200]}\n📥 {tech_info}"
-                                            result = await _send_whatsapp_document(
-                                                wa_id, file_bytes, safe_filename, caption, "video/mp4"
-                                            )
-                                        
-                                        if "error" not in result:
+                                            await _send_whatsapp_message(wa_id, f"❌ فشل إرسال الفيديو من Cobalt JWT. جرب تاني!")
                                             await feedback.success()
                                             try: os.remove(jwt_file)
                                             except: pass
                                             return
-                                        else:
-                                            logger.warning(f"⚠️ Cobalt JWT doc send failed: {result.get('error')}")
-                                            try: os.remove(jwt_file)
-                                            except: pass
-                                    except Exception as send_err:
-                                        logger.warning(f"⚠️ Cobalt JWT send error: {send_err}")
-                                        try: os.remove(jwt_file)
-                                        except: pass
                             
                             logger.warning(f"⚠️ Cobalt JWT failed, trying Cloudflare Worker...")
                         except asyncio.TimeoutError:
@@ -2194,13 +2230,33 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                 except Exception as e:
                     logger.warning(f"⚠️ Video check/conversion error: {e}")
             
-            # 🔴 FIX + Supabase: حدود الإرسال المباشر + رفع تلقائي للملفات الكبيرة
-            # واتساب بيقبل لحد ~100MB بشكل موثوق — فوق كده بنرفع على Supabase
-            WA_DIRECT_LIMIT = 100 * 1024 * 1024  # 100MB — حد الإرسال المباشر
-            WA_MAX_LIMIT = 500 * 1024 * 1024     # 500MB — أقصى حجم نحاول نرفعه على Supabase
+            # 🛡️ Safety: Comprehensive media safety check before sending
+            try:
+                media_type = "audio" if is_audio_only else "video"
+                is_safe, block_msg, safety_reason = await comprehensive_media_safety_check(
+                    title=title,
+                    file_path=video_file,
+                    file_type=media_type,
+                    platform="whatsapp",
+                    user_id=str(wa_user_id),
+                    lang="ar",
+                )
+                if not is_safe:
+                    await _send_whatsapp_message(wa_id, block_msg)
+                    try:
+                        shutil.rmtree(tmpdir, ignore_errors=True)
+                    except Exception:
+                        pass
+                    await feedback.error()
+                    return
+            except Exception as e:
+                logger.warning(f"🛡️ Media safety check failed (allowing): {e}")
             
-            if file_size <= WA_DIRECT_LIMIT:
-                # ✅ الملف ضمن الحد — إرسال مباشر
+            # 🔴 FIX: رفع الحد الأقصى — واتساب بيقبل لحد 512MB (تحديث 2025)
+            # بنحط 500MB كحد آمن عشان نبعت الملف مباشرة
+            MAX_WHATSAPP_MEDIA_SIZE = 500 * 1024 * 1024  # 500MB
+            
+            if file_size <= MAX_WHATSAPP_MEDIA_SIZE:
                 with open(video_file, 'rb') as f:
                     file_bytes = f.read()
                 
@@ -2230,7 +2286,9 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                     if quality != "audio" and quality != "low":
                         # نجرب جودة أقل بصمت
                         lower_quality = {"best": "medium", "medium": "low"}.get(quality, "low")
+                        # 🔴 FIX: منقولش "كبير" — نجرب جودة أقل بصمت
                         await _send_whatsapp_message(wa_id, "⏳ جاري تجربة جودة أقل...")
+                        # تنظيف وإعادة المحاولة
                         try:
                             shutil.rmtree(tmpdir, ignore_errors=True)
                         except Exception:
@@ -2238,74 +2296,16 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                         await feedback.complete()
                         return await _download_and_send_video(wa_id, url, wa_user_id, contact_name, message_id, is_admin, quality=lower_quality)
                     else:
+                        # لو حتى الجودة المنخفضة فشلت — نقول فشل إرسال بدون ذكر الحجم
                         await _send_whatsapp_message(wa_id, 
                             f"📥 *{title}*\n\n"
                             f"🔗 المنصة: {platform_display}\n\n"
                             f"❌ فشل إرسال الفيديو. جرب تاني!")
-            
-            elif should_use_supabase(file_size, "whatsapp"):
-                # 🔴 الملف أكبر من 100MB — نرفعه على Supabase ونرسل رابط تحميل
-                size_mb = file_size / (1024 * 1024)
-                logger.info(f"☁️ WhatsApp: File too large ({size_mb:.1f}MB) — uploading to Supabase Storage")
-                
-                try:
-                    await _send_whatsapp_message(wa_id, "☁️ جاري رفع الملف على السحابة...")
-                except:
-                    pass
-                
-                # تحديد نوع الملف
-                if is_audio_only:
-                    content_type = "audio/mpeg"
-                    safe_filename = re.sub(r'[<>:"/\\|?*]', '_', title) + '.mp3'
-                else:
-                    content_type = "video/mp4"
-                    safe_filename = re.sub(r'[<>:"/\\|?*]', '_', title) + '.mp4'
-                
-                supabase_result = await supabase_upload(
-                    video_file, safe_filename, content_type, platform="whatsapp"
-                )
-                
-                if supabase_result and supabase_result.get("success"):
-                    download_url = supabase_result["url"]
-                    logger.info(f"☁️ WhatsApp: Supabase upload succeeded — URL: {download_url}")
-                    
-                    # إرسال رابط التحميل
-                    download_msg = supabase_download_link(
-                        download_url, title, size_mb, "whatsapp", lang="ar"
-                    )
-                    await _send_whatsapp_message(wa_id, download_msg)
-                    
-                    # تتبع الاستخدام
-                    if not is_admin:
-                        try:
-                            from premium import increment_usage
-                            increment_usage(wa_user_id, "downloads")
-                        except Exception:
-                            pass
-                    await feedback.success()
-                else:
-                    # فشل الرفع على Supabase — نجرب جودة أقل
-                    logger.warning(f"☁️ WhatsApp: Supabase upload failed, trying lower quality")
-                    
-                    if quality != "audio" and quality != "low":
-                        lower_quality = {"best": "medium", "medium": "low"}.get(quality, "low")
-                        await _send_whatsapp_message(wa_id, "⏳ جاري تجربة جودة أقل...")
-                        try:
-                            shutil.rmtree(tmpdir, ignore_errors=True)
-                        except Exception:
-                            pass
-                        await feedback.complete()
-                        return await _download_and_send_video(wa_id, url, wa_user_id, contact_name, message_id, is_admin, quality=lower_quality)
-                    else:
-                        await _send_whatsapp_message(wa_id,
-                            f"📥 *{title}*\n\n"
-                            f"🔗 المنصة: {platform_display}\n\n"
-                            f"❌ فشل رفع الملف. جرب تاني!")
-            
             else:
-                # File exceeds 500MB — فوق حد Supabase كمان
+                # File actually exceeds 500MB limit — ده الحد الحقيقي
                 if quality != "audio" and quality != "low":
                     lower_quality = {"best": "medium", "medium": "low"}.get(quality, "low")
+                    # 🔴 FIX: منقولش حجم — نجرب جودة أقل بصمت
                     await _send_whatsapp_message(wa_id, "⏳ جاري تجربة جودة أقل...")
                     try:
                         shutil.rmtree(tmpdir, ignore_errors=True)
@@ -2314,7 +2314,7 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                     await feedback.complete()
                     return await _download_and_send_video(wa_id, url, wa_user_id, contact_name, message_id, is_admin, quality=lower_quality)
                 
-                # حتى الجودة المنخفضة كبيرة
+                # حتى الجودة المنخفضة كبيرة — ده الوحيد اللي نقول فيه كبير
                 duration = info.get('duration', 0)
                 duration_str = f"{int(duration // 60)}:{int(duration % 60):02d}" if duration else "غير معروف"
                 
@@ -2322,8 +2322,8 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                     f"📥 *{title}*\n\n"
                     f"🔗 المنصة: {platform_display}\n"
                     f"⏱️ المدة: {duration_str}\n\n"
-                    f"❌ الفيديو أكبر من الحد الأقصى.\n\n"
-                    f"💡 جرب جودة أقل أو استخدم التليجرام!")
+                    f"❌ الفيديو أكبر من الحد الأقصى (512MB).\n\n"
+                    f"💡 جرب التليجرام عشان تحمل الفيديو بحجمه الكامل!")
             
             # Increment usage
             if not is_admin:
@@ -4249,10 +4249,7 @@ async def _handle_incoming_message(message: dict, value: dict):
                     "dl_v_b_": "best",
                     "dl_v_m_": "medium",
                     "dl_v_l_": "low",
-                    "dl_a_h_": "audio",         # 🔴 FIX: جودات صوت مختلفة (من /audio search)
-                    "dl_a_m_": "audio_medium",
-                    "dl_a_l_": "audio_low",
-                    "dl_a_": "audio",            # صوت عادي (من /download رابط مباشر)
+                    "dl_a_": "audio",
                 }
                 for prefix, q in quality_map.items():
                     if interactive_id.startswith(prefix):
@@ -4677,6 +4674,15 @@ async def _handle_incoming_message(message: dict, value: dict):
             if url:
                 platform = _detect_platform(url)
                 if platform != "unknown":
+                    # 🛡️ Safety: Check URL/query before proceeding with download
+                    try:
+                        is_safe, reason = await check_query_safety(url, platform="whatsapp", user_id=str(wa_user_id))
+                        if not is_safe:
+                            await _send_whatsapp_message(wa_id, get_block_message("ar", reason))
+                            return
+                    except Exception as e:
+                        logger.warning(f"🛡️ URL safety check failed (allowing): {e}")
+                    
                     # User sent a video/social media URL — show quality selection!
                     logger.info(f"🔗 Auto-detected {platform} URL from {wa_id}: {url[:80]}")
                     await _show_quality_selection(wa_id, url, wa_user_id, contact_name, message_id, is_admin)
@@ -5150,6 +5156,15 @@ def _cleanup_wa_file(file_path: str):
 async def _handle_wa_video_search(wa_id: str, query: str, wa_user_id: int, 
                                    contact_name: str, message_id: str, is_admin: bool):
     """بحث يوتيوب + عرض نتائج + تحميل فيديو عبر WhatsApp"""
+    # 🛡️ Safety: Check query before searching
+    try:
+        is_safe, reason = await check_query_safety(query, platform="whatsapp", user_id=str(wa_user_id))
+        if not is_safe:
+            await _send_whatsapp_message(wa_id, get_block_message("ar", reason))
+            return
+    except Exception as e:
+        logger.warning(f"🛡️ Query safety check failed (allowing): {e}")
+    
     await _send_whatsapp_message(wa_id, f"🔍 جاري البحث في YouTube عن: {query}...")
     
     try:
@@ -5160,6 +5175,15 @@ async def _handle_wa_video_search(wa_id: str, query: str, wa_user_id: int,
         if not results:
             await _send_whatsapp_message(wa_id, "❌ مفيش نتائج. جرب كلمات بحث تانية!")
             return
+        
+        # 🛡️ Safety: Filter search results
+        try:
+            results = await check_search_results_safety(results, platform="whatsapp", user_id=str(wa_user_id))
+            if not results:
+                await _send_whatsapp_message(wa_id, get_no_safe_results_message("ar"))
+                return
+        except Exception as e:
+            logger.warning(f"🛡️ Search results safety check failed (allowing): {e}")
         
         # حفظ النتائج في cache
         cache_key = hashlib.md5(f"wa_{wa_id}_{query}".encode()).hexdigest()[:12]
@@ -5197,6 +5221,15 @@ async def _handle_wa_video_search(wa_id: str, query: str, wa_user_id: int,
 async def _handle_wa_audio_search(wa_id: str, query: str, wa_user_id: int,
                                    contact_name: str, message_id: str, is_admin: bool):
     """بحث يوتيوب + عرض نتائج + تحميل صوت عبر WhatsApp"""
+    # 🛡️ Safety: Check query before searching
+    try:
+        is_safe, reason = await check_query_safety(query, platform="whatsapp", user_id=str(wa_user_id))
+        if not is_safe:
+            await _send_whatsapp_message(wa_id, get_block_message("ar", reason))
+            return
+    except Exception as e:
+        logger.warning(f"🛡️ Query safety check failed (allowing): {e}")
+    
     await _send_whatsapp_message(wa_id, f"🔍 جاري البحث في YouTube عن: {query}...")
     
     try:
@@ -5207,6 +5240,15 @@ async def _handle_wa_audio_search(wa_id: str, query: str, wa_user_id: int,
         if not results:
             await _send_whatsapp_message(wa_id, "❌ مفيش نتائج. جرب كلمات بحث تانية!")
             return
+        
+        # 🛡️ Safety: Filter search results
+        try:
+            results = await check_search_results_safety(results, platform="whatsapp", user_id=str(wa_user_id))
+            if not results:
+                await _send_whatsapp_message(wa_id, get_no_safe_results_message("ar"))
+                return
+        except Exception as e:
+            logger.warning(f"🛡️ Search results safety check failed (allowing): {e}")
         
         cache_key = hashlib.md5(f"wa_{wa_id}_{query}".encode()).hexdigest()[:12]
         _wa_search_cache[cache_key] = {
@@ -5242,6 +5284,15 @@ async def _handle_wa_audio_search(wa_id: str, query: str, wa_user_id: int,
 async def _handle_wa_photo_search(wa_id: str, query: str, wa_user_id: int,
                                    contact_name: str, message_id: str, is_admin: bool):
     """بحث صور + اختيار عدد + إرسال عبر WhatsApp"""
+    # 🛡️ Safety: Check query before searching
+    try:
+        is_safe, reason = await check_query_safety(query, platform="whatsapp", user_id=str(wa_user_id))
+        if not is_safe:
+            await _send_whatsapp_message(wa_id, get_block_message("ar", reason))
+            return
+    except Exception as e:
+        logger.warning(f"🛡️ Query safety check failed (allowing): {e}")
+    
     # حفظ الاستعلام في cache
     cache_key = hashlib.md5(f"wa_ph_{wa_id}_{query}".encode()).hexdigest()[:12]
     _wa_search_cache[cache_key] = {
@@ -5313,6 +5364,20 @@ async def _execute_photo_search(wa_id: str, query: str, count: int, wa_user_id: 
             
             if not img_bytes:
                 continue
+            
+            # 🛡️ Safety: Check image before sending
+            try:
+                from content_safety import check_image_safety
+                img_is_safe, img_reason, img_score = await check_image_safety(
+                    image_bytes=img_bytes,
+                    platform="whatsapp",
+                    user_id=str(wa_user_id),
+                )
+                if not img_is_safe:
+                    logger.info(f"🛡️ Image {i+1} blocked by safety check: {img_reason}")
+                    continue  # Skip this image, move to next
+            except Exception as e:
+                logger.warning(f"🛡️ Image safety check failed (allowing): {e}")
             
             try:
                 img_b64 = base64.b64encode(img_bytes).decode('utf-8')
