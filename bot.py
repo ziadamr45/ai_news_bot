@@ -479,12 +479,12 @@ def main():
         logger.info("✅ WhatsApp webhook server already running from background thread")
 
         # ═══ تشغيل Cookie Auto-Rotation ═══
-        # 🍪 تدوير كوكيز YouTube تلقائياً كل 1-2 دقيقة (كوكيز حقيقية فقط — بدون كوكيز وهمية)
+        # 🍪 تدوير كوكيز YouTube — بس كوكيز مرفوعة من المستخدمين (لا كوكيز تلقائية)
         try:
             from cookie_rotator import start_cookie_rotation, get_cookie_rotation_status
             start_cookie_rotation()
             status = get_cookie_rotation_status()
-            logger.info(f"✅ Cookie auto-rotation started (real cookies only) — {status['total_cookies']} cookies loaded")
+            logger.info(f"✅ Cookie monitoring started (user uploads only, no auto) — {status['total_cookies']} cookies loaded")
         except Exception as e:
             logger.warning(f"⚠️ Cookie auto-rotation failed to start: {e}")
 

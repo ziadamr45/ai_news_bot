@@ -4046,21 +4046,21 @@ Send a cookies.txt file from your device and we'll add it to the bot to help wit
     # 🔴 للأدمن — عرض الحالة الكاملة
     status = _cookies_status()
     
-    # 🔴 حالة نظام تدوير الكوكيز التلقائي
+    # 🔴 حالة نظام الكوكيز — بس كوكيز مرفوعة (لا تلقائية)
     auto_rotation_status = ""
     try:
         from cookie_rotator import is_rotation_running, get_cookie_rotation_status
         rot_status = get_cookie_rotation_status()
         if is_rotation_running():
             auto_rotation_status = (
-                f"\n\n🔄 <b>Auto-Rotation:</b> ✅ شغال (كل {rot_status.get('rotation_interval', '?')})"
-                f"\n🤖 كوكيز تلقائية: {rot_status.get('auto_cookies', 0)}"
-                f"\n⏰ آخر تحديث: {rot_status.get('last_modified', 'غير معروف')}"
+                f"\n\n🔄 <b>مراقبة الكوكيز:</b> ✅ شغال"
+                f"\n⏰ آخر فحص: {rot_status.get('last_modified', 'غير معروف')}"
+                f"\n🔴 لا كوكيز تلقائية — بس كوكيز مرفوعة من المستخدمين"
             )
         else:
-            auto_rotation_status = "\n\n🔄 <b>Auto-Rotation:</b> ❌ مش شغال"
+            auto_rotation_status = "\n\n🔄 <b>مراقبة الكوكيز:</b> ❌ مش شغال"
     except ImportError:
-        auto_rotation_status = "\n\n🔄 <b>Auto-Rotation:</b> ❌ مش متاح"
+        auto_rotation_status = ""
     except Exception:
         auto_rotation_status = ""
     
