@@ -396,13 +396,10 @@ async def _download_threads_media(url: str, tmpdir: str, quality: str = "best") 
             logger.info(f"🧵 Threads: Trying data-sjs parsing for {attempt_url[:80]}")
             
             async with aiohttp.ClientSession() as session:
-                # 🔴 FIX v4: بنستخدم allow_redirects=False عشان نتجاهل الـ redirect
-                # لـ threads.com اللي بيروح لصفحة error
                 async with session.get(attempt_url, headers=headers, 
                                       timeout=aiohttp.ClientTimeout(total=30),
                                       allow_redirects=True) as resp:
                     final_url = str(resp.url)
-                    is_error_page = 'error=' in final_url
                     
                     if resp.status != 200:
                         logger.warning(f"🧵 Threads: Page returned status {resp.status}")
@@ -410,10 +407,10 @@ async def _download_threads_media(url: str, tmpdir: str, quality: str = "best") 
                     
                     html = await resp.text()
                     
-                    # 🔴 لو وصلنا لصفحة error → جرب الـ URL التاني
-                    if is_error_page:
-                        logger.warning(f"🧵 Threads: Got error page redirect: {final_url}")
-                        continue
+                    # 🔴 FIX: حتى لو الـ redirect راح لصفحة error،
+                    # Threads بيبعت البيانات في الـ HTML أصلاً!
+                    # صفحة error=? بتحتوي على الـ data-sjs scripts بالفيديو
+                    # لازم نحاول parse في كل الحالات
                     
                     if html and len(html) > 500:
                         html_data = html  # خزن للـ GraphQL
