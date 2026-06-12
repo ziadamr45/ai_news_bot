@@ -4,7 +4,7 @@
 🧠 Chat Free: Mistral Small → Mistral Nemo → Llama 3.3 70B → DeepSeek V4 Flash (heavy) → SambaNova
 🧠 Chat Premium: Mistral Large → Mistral Medium → Kimi K2.6 → MiniMax M2.7 → GLM 5.1 → DeepSeek V4 Pro (heavy)
 ⚡ Simple Free: Mistral Small → Llama 3.3 70B → Step 3.7 Flash → SambaNova
-⚡ Simple Premium: Mistral Small → Step 3.7 Flash → Mistral Medium
+⚡ Simple Premium: Mistral Large → Step 3.7 Flash → Mistral Medium
 🔥 Deep Search Premium: DeepSeek V4 Pro → Kimi K2.6 → MiniMax M2.7 → Mistral Large
 👨‍💻 Coding Free: Step 3.7 Flash → Codestral → Mistral Small → SambaNova
 👨‍💻 Coding Premium: GLM 5.1 → DeepSeek V4 Pro → Kimi K2.6 → Codestral → Mistral Large

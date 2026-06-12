@@ -101,7 +101,7 @@ CHAT_MODELS = PREMIUM_CHAT_MODELS
 
 # ⚡ Simple - الرسائل البسيطة (تحيات، أسئلة قصيرة، أسئلة هوية)
 # FREE: Mistral Small → Llama 3.3 70B → Step 3.7 Flash → SambaNova
-# PREMIUM: Mistral Small → Step 3.7 Flash → Mistral Medium
+# PREMIUM: Mistral Large → Step 3.7 Flash → Mistral Medium
 FREE_SIMPLE_MODELS = [
     # ⚡ Mistral Small — أسرع رد فوري
     {"provider": "mistral", "model": "mistral-small-latest"},
@@ -114,9 +114,9 @@ FREE_SIMPLE_MODELS = [
 ]
 
 PREMIUM_SIMPLE_MODELS = [
-    # ⚡ Mistral Small — أسرع رد فوري
-    {"provider": "mistral", "model": "mistral-small-latest"},
-    # ⚡ NVIDIA Step 3.7 Flash — سريع
+    # ⚡ Mistral Large — أساسي للبريميوم (حتى الرسائل البسيطة)
+    {"provider": "mistral", "model": "mistral-large-latest"},
+    # ⚡ NVIDIA Step 3.7 Flash — fallback سريع
     {"provider": "nvidia", "model": "stepfun-ai/step-3.7-flash", "api_key": NVIDIA_STEP_37_FLASH_KEY},
     # ⚡ Mistral Medium — fallback
     {"provider": "mistral", "model": "mistral-medium-latest"},
