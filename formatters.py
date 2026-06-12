@@ -538,7 +538,7 @@ def subscription_prompt(language: str = "ar") -> str:
         return """📬 <b>اشترك في الأخبار اليومية!</b>
 ━━━━━━━━━━━━━━━━━
 
-هابعتلك أهم أخبار الذكاء الاصطناعي كل يوم الساعة 9 الصبح بتوقيت القاهرة 🌅
+هابعتلك أهم أخبار الذكاء الاصطناعي كل يوم الساعة 12 الظهر بتوقيت القاهرة 🌅
 
 ✅ آخر أخبار AI من مصادر عالمية
 ✅ ملخص بالعربية مفهوم وبسيط
@@ -549,7 +549,7 @@ def subscription_prompt(language: str = "ar") -> str:
         return """📬 <b>Subscribe to Daily News!</b>
 ━━━━━━━━━━━━━━━━━
 
-I'll send you the most important AI news every day at 9 AM Cairo time 🌅
+I'll send you the most important AI news every day at 12:00 PM Cairo time 🌅
 
 ✅ Latest AI news from global sources
 ✅ Clear and simple summaries
@@ -563,13 +563,15 @@ def subscription_confirmed(language: str = "ar") -> str:
     if language == "ar":
         return """✅ <b>تم الاشتراك بنجاح!</b>
 
-📬 هابعتلك أخبار AI كل يوم الساعة 9 الصبح
-💡 ممكن تلغي الاشتراك أي وقت من ⚙️ الإعدادات"""
+📬 هابعتلك أخبار AI كل يوم الساعة 12 الظهر
+💡 ممكن تلغي الاشتراك أي وقت من ⚙️ الإعدادات
+⏰ ممكن تغير وقت الأخبار من ⚙️ الإعدادات > وقت الأخبار"""
     else:
         return """✅ <b>Subscribed successfully!</b>
 
-📬 I'll send you AI news every day at 9 AM
-💡 You can unsubscribe anytime from ⚙️ Settings"""
+📬 I'll send you AI news every day at 12:00 PM
+💡 You can unsubscribe anytime from ⚙️ Settings
+⏰ You can change news time from ⚙️ Settings > News Time"""
 
 
 def unsubscription_confirmed(language: str = "ar") -> str:
@@ -626,7 +628,7 @@ def subscribe_command_message(language: str = "ar") -> str:
         return """📬 <b>الاشتراك في الأخبار اليومية</b>
 ━━━━━━━━━━━━━━━━━
 
-هابعتلك أهم أخبار الذكاء الاصطناعي كل يوم الساعة 9 الصبح بتوقيت القاهرة 🌅
+هابعتلك أهم أخبار الذكاء الاصطناعي كل يوم الساعة 12 الظهر بتوقيت القاهرة 🌅
 
 ✅ آخر أخبار AI من مصادر عالمية
 ✅ ملخص بالعربية مفهوم وبسيط
@@ -637,7 +639,7 @@ def subscribe_command_message(language: str = "ar") -> str:
         return """📬 <b>Subscribe to Daily News</b>
 ━━━━━━━━━━━━━━━━━
 
-I'll send you the most important AI news every day at 9 AM Cairo time 🌅
+I'll send you the most important AI news every day at 12:00 PM Cairo time 🌅
 
 ✅ Latest AI news from global sources
 ✅ Clear and simple summaries
@@ -671,14 +673,14 @@ def subscribers_info(count: int, language: str = "ar") -> str:
 ━━━━━━━━━━━━━━━━━
 
 📬 عدد المشتركين في الأخبار اليومية: <b>{count}</b>
-⏰ موعد الإرسال: 9:00 صباحاً بتوقيت القاهرة
+⏰ موعد الإرسال: 12:00 الظهر بتوقيت القاهرة
 📰 المصادر: {len(__import__('config').RSS_FEEDS)} مصدر RSS عالمي"""
     else:
         return f"""📊 <b>Subscribers Info</b>
 ━━━━━━━━━━━━━━━━━
 
 📬 Daily news subscribers: <b>{count}</b>
-⏰ Send time: 9:00 AM Cairo time
+⏰ Send time: 12:00 PM Cairo time
 📰 Sources: {len(__import__('config').RSS_FEEDS)} global RSS feeds"""
 
 
@@ -700,14 +702,14 @@ def time_selection(current_time: str, language: str = "ar") -> str:
 الوقت الحالي: {current_time} (توقيت القاهرة)
 
 أرسل الوقت بالصيغة التالية:
-مثال: <code>09:00</code> أو <code>14:30</code>"""
+مثال: <code>12:00</code> أو <code>14:30</code>"""
     else:
         return f"""⏰ <b>Change News Time</b>
 
 Current time: {current_time} (Cairo time)
 
 Send the time in this format:
-Example: <code>09:00</code> or <code>14:30</code>"""
+Example: <code>12:00</code> or <code>14:30</code>"""
 
 
 def sources_selection(language: str = "ar") -> str:

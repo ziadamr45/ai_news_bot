@@ -509,7 +509,7 @@ def get_user_stats(user_id: int) -> dict:
         result["created_at"] = user_data.get("created_at", "")
         result["last_interaction"] = user_data.get("last_interaction", "")
         result["subscribed"] = user_data.get("subscribed", False)
-        result["news_time"] = user_data.get("news_time", "09:00")
+        result["news_time"] = user_data.get("news_time", "12:00")
         result["notification_enabled"] = bool(user_data.get("notification_enabled", 1))
         
         # ═══ إحصائيات الاستخدام العام ═══

@@ -16,7 +16,7 @@ from telegram.ext import ContextTypes
 from ai_engine import smart_chat
 from memory import (
     get_language, increment_chat_count, is_subscribed,
-    save_conversation, detect_interests,
+    save_conversation, detect_interests, set_news_time,
 )
 from formatters import clean_ai_response, smart_split_message
 from progress import ProgressManager, AI_STAGES
@@ -699,6 +699,38 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.error(f"Error in image_edit state: {e}")
             await progress.error("❌ حصل خطأ في تعديل الصورة." if lang == "ar" else "❌ Error editing image.")
+        return
+
+    # ═══════════════════════════════════════════════════════════════
+    # 🥈 الأولوية 1.7: تغيير وقت الأخبار — كشف نمط HH:MM
+    # ═══════════════════════════════════════════════════════════════
+    # لو المستخدم كتب وقت بصيغة HH:MM (زي 14:30 أو 09:00)
+    # ده معناه إنه عايز يغير وقت الأخبار اليومية
+    import re as _time_re
+    _time_match = _time_re.match(r'^([0-1]?[0-9]|2[0-3]):([0-5][0-9])$', user_text.strip())
+    if _time_match:
+        hour_str = _time_match.group(1).zfill(2)
+        minute_str = _time_match.group(2).zfill(2)
+        new_time = f"{hour_str}:{minute_str}"
+        
+        set_news_time(user_id, new_time)
+        
+        if lang == "ar":
+            await update.message.reply_text(
+                f"✅ <b>تم تغيير وقت الأخبار!</b>\n\n"
+                f"⏰ الوقت الجديد: <code>{new_time}</code> (توقيت القاهرة)\n"
+                f"📬 هابعتلك الأخبار كل يوم في الوقت ده.\n\n"
+                f"💡 ممكن تغيره تاني من ⚙️ الإعدادات",
+                parse_mode="HTML"
+            )
+        else:
+            await update.message.reply_text(
+                f"✅ <b>News time updated!</b>\n\n"
+                f"⏰ New time: <code>{new_time}</code> (Cairo time)\n"
+                f"📬 I'll send you news every day at this time.\n\n"
+                f"💡 You can change it again from ⚙️ Settings",
+                parse_mode="HTML"
+            )
         return
 
     # ═══════════════════════════════════════════════════════════════

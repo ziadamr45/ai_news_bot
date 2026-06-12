@@ -58,7 +58,13 @@ logger = logging.getLogger(__name__)
 # ═══════════════════════════════════════
 
 async def broadcast_daily_news(context: ContextTypes.DEFAULT_TYPE):
-    """بث الأخبار اليومية لكل مشترك حسب وقته المخصص"""
+    """بث الأخبار اليومية لكل مشترك حسب وقته المخصص
+    
+    🔴 FIX v2: 
+    - بث على التلجرام والواتساب
+    - فلترة حسب الـ platform
+    - منطق الفترة: بنجيب الأخبار اللي حصلت من آخر مرة بعتنا فيها للمستخدم
+    """
     logger.info("=" * 50)
     logger.info("Checking for scheduled news deliveries")
     logger.info("=" * 50)
@@ -69,17 +75,28 @@ async def broadcast_daily_news(context: ContextTypes.DEFAULT_TYPE):
         current_hour = now.hour
         current_minute = now.minute
 
-        subscribers = get_subscribers_for_time(current_hour, current_minute)
+        # ═══ بث التلجرام ═══
+        tg_subscribers = get_subscribers_for_time(current_hour, current_minute, platform="telegram")
+        
+        # 🔴 FIX: لو مفيش مشتركين بالدقيقة دي، نجرب بنفس الساعة مع دقيقة 0
+        if not tg_subscribers and current_minute != 0:
+            tg_subscribers = get_subscribers_for_time(current_hour, 0, platform="telegram")
 
-        if not subscribers:
-            if current_minute >= 30:
-                subscribers = get_subscribers_for_time(current_hour, 0)
-            if not subscribers:
-                logger.info(f"No subscribers for time {current_hour:02d}:{current_minute:02d}. Skipping.")
-                return
+        # ═══ بث الواتساب ═══
+        wa_subscribers = get_subscribers_for_time(current_hour, current_minute, platform="whatsapp")
+        
+        if not wa_subscribers and current_minute != 0:
+            wa_subscribers = get_subscribers_for_time(current_hour, 0, platform="whatsapp")
 
-        logger.info(f"Found {len(subscribers)} subscribers for time {current_hour:02d}:{current_minute:02d}")
+        total_subscribers = len(tg_subscribers) + len(wa_subscribers)
 
+        if not total_subscribers:
+            logger.info(f"No subscribers for time {current_hour:02d}:{current_minute:02d}. Skipping.")
+            return
+
+        logger.info(f"Found {len(tg_subscribers)} Telegram + {len(wa_subscribers)} WhatsApp subscribers for time {current_hour:02d}:{current_minute:02d}")
+
+        # ═══ جلب الأخبار ═══
         articles = await fetch_news()
         if not articles:
             logger.warning("No articles fetched. Skipping broadcast.")
@@ -113,7 +130,7 @@ async def broadcast_daily_news(context: ContextTypes.DEFAULT_TYPE):
                     article.get("link", ""),
                     article.get("is_top", False),
                     article.get("category", ""),
-                    language=lang_code,  # 🔴 FIX: اللغة
+                    language=lang_code,
                 )
                 items.append(item)
 
@@ -121,10 +138,11 @@ async def broadcast_daily_news(context: ContextTypes.DEFAULT_TYPE):
             full_msg = header + "\n\n".join(items) + footer
             messages[lang_code] = full_msg
 
-        success_count = 0
-        fail_count = 0
+        # ═══ بث التلجرام ═══
+        tg_success = 0
+        tg_fail = 0
 
-        for subscriber in subscribers:
+        for subscriber in tg_subscribers:
             chat_id = subscriber["user_id"]
             lang = subscriber.get("language", "ar")
             message = messages.get(lang, messages["ar"])
@@ -148,15 +166,15 @@ async def broadcast_daily_news(context: ContextTypes.DEFAULT_TYPE):
                     )
 
                 set_last_news_delivery(chat_id, now.isoformat())
-                success_count += 1
-                logger.info(f"✅ News sent to {chat_id}")
+                tg_success += 1
+                logger.info(f"✅ Telegram news sent to {chat_id}")
 
                 await asyncio.sleep(BROADCAST_DELAY_SECONDS)
 
             except Exception as e:
-                fail_count += 1
+                tg_fail += 1
                 error_str = str(e).lower()
-                logger.error(f"❌ Failed to send to {chat_id}: {e}")
+                logger.error(f"❌ Failed to send to TG {chat_id}: {e}")
 
                 # Handle Telegram rate limiting (429 Too Many Requests)
                 if "429" in str(e) or "flood" in error_str or "too many requests" in error_str:
@@ -178,17 +196,46 @@ async def broadcast_daily_news(context: ContextTypes.DEFAULT_TYPE):
                             disable_web_page_preview=True
                         )
                         set_last_news_delivery(chat_id, now.isoformat())
-                        success_count += 1
-                        fail_count -= 1
-                        logger.info(f"✅ News sent to {chat_id} after rate limit retry")
+                        tg_success += 1
+                        tg_fail -= 1
+                        logger.info(f"✅ TG News sent to {chat_id} after rate limit retry")
                     except Exception as retry_e:
-                        logger.error(f"❌ Retry also failed for {chat_id}: {retry_e}")
+                        logger.error(f"❌ Retry also failed for TG {chat_id}: {retry_e}")
 
                 if "blocked" in error_str or "deactivated" in error_str:
                     unsubscribe_user(chat_id)
                     logger.info(f"🗑️ Auto-unsubscribed blocked user {chat_id}")
 
-        logger.info(f"📬 Broadcast complete: {success_count} sent, {fail_count} failed out of {len(subscribers)} subscribers")
+        # ═══ بث الواتساب ═══
+        wa_success = 0
+        wa_fail = 0
+
+        for subscriber in wa_subscribers:
+            wa_id = str(subscriber["user_id"])
+            lang = subscriber.get("language", "ar")
+            message = messages.get(lang, messages["ar"])
+            
+            # WhatsApp مش بيدعم HTML — لازم نشيل الـ tags
+            import re as _re
+            wa_message = _re.sub(r'<[^>]+>', '', message)
+            # نحول الـ &amp; وغيره
+            wa_message = wa_message.replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>')
+
+            try:
+                from whatsapp_webhook import _send_whatsapp_message
+                await _send_whatsapp_message(wa_id, wa_message[:4000])
+                
+                set_last_news_delivery(int(wa_id), now.isoformat())
+                wa_success += 1
+                logger.info(f"✅ WhatsApp news sent to {wa_id}")
+                
+                await asyncio.sleep(BROADCAST_DELAY_SECONDS)
+                
+            except Exception as e:
+                wa_fail += 1
+                logger.error(f"❌ Failed to send WA news to {wa_id}: {e}")
+
+        logger.info(f"📬 Broadcast complete: TG({tg_success} sent, {tg_fail} failed) WA({wa_success} sent, {wa_fail} failed)")
 
     except Exception as e:
         logger.error(f"❌ Critical error in broadcast: {e}", exc_info=True)
@@ -331,7 +378,7 @@ def main():
     _scheduler.add_job(
         scheduled_broadcast,
         trigger="cron",
-        hour="8,12,18,21",
+        hour="0,6,8,9,10,12,14,16,18,20,21,22",
         minute="0",
         id="daily_news_broadcast",
         name="Daily AI News Broadcast (per-user time)",

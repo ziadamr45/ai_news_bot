@@ -1316,7 +1316,7 @@ async def userinfo_callback_refresh(query, context, target_id):
 🌐 <b>اللغة:</b> {'العربية' if user_data.get('language') == 'ar' else 'English'}
 ⭐ <b>الخطة:</b> {plan.upper()}
 📬 <b>مشترك أخبار:</b> {'نعم' if user_data.get('subscribed') else 'لا'}
-⏰ <b>وقت الأخبار:</b> {user_data.get('news_time', '09:00')}
+⏰ <b>وقت الأخبار:</b> {user_data.get('news_time', '12:00')}
 💬 <b>محادثات:</b> {user_data.get('chat_count', 0)}
 ⚡ <b>أوامر:</b> {user_data.get('commands_used', 0)}
 

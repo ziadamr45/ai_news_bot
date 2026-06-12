@@ -214,9 +214,9 @@ async def subscribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if is_subscribed(user_id):
         if lang == "ar":
-            msg = "✅ أنت مشترك بالفعل في الأخبار اليومية!\n\n📬 هابعتلك الأخبار كل يوم الساعة 9 الصبح\n💡 ممكن تلغي الاشتراك من ⚙️ الإعدادات أو أمر /unsubscribe"
+            msg = "✅ أنت مشترك بالفعل في الأخبار اليومية!\n\n📬 هابعتلك الأخبار كل يوم الساعة 12 الظهر\n💡 ممكن تلغي الاشتراك من ⚙️ الإعدادات أو أمر /unsubscribe\n⏰ ممكن تغير وقت الأخبار من ⚙️ الإعدادات > وقت الأخبار"
         else:
-            msg = "✅ You're already subscribed to daily news!\n\n📬 I'll send you news every day at 9 AM\n💡 You can unsubscribe from ⚙️ Settings or /unsubscribe"
+            msg = "✅ You're already subscribed to daily news!\n\n📬 I'll send you news every day at 12:00 PM\n💡 You can unsubscribe from ⚙️ Settings or /unsubscribe\n⏰ You can change news time from ⚙️ Settings > News Time"
         await update.message.reply_text(msg, parse_mode="HTML")
     else:
         sub_keyboard = get_subscribe_keyboard(lang)

@@ -159,7 +159,7 @@ def _create_postgresql_tables(conn):
                 user_id BIGINT PRIMARY KEY,
                 name TEXT DEFAULT '',
                 language TEXT DEFAULT 'ar',
-                news_time TEXT DEFAULT '09:00',
+                news_time TEXT DEFAULT '12:00',
                 sources TEXT DEFAULT '[]',
                 subscribed INTEGER DEFAULT 0,
                 response_length TEXT DEFAULT 'medium',
@@ -353,7 +353,7 @@ def _init_sqlite():
             user_id INTEGER PRIMARY KEY,
             name TEXT DEFAULT '',
             language TEXT DEFAULT 'ar',
-            news_time TEXT DEFAULT '09:00',
+            news_time TEXT DEFAULT '12:00',
             sources TEXT DEFAULT '[]',
             subscribed INTEGER DEFAULT 0,
             response_length TEXT DEFAULT 'medium',
@@ -673,11 +673,11 @@ def _ensure_user_in_db(user_id: int, platform: str = "telegram"):
             """INSERT INTO user_profiles
             (user_id, name, language, news_time, sources, subscribed, interests,
              favorite_companies, created_at, last_interaction, commands_used, chat_count, platform)
-            VALUES (%s, %s, 'ar', '09:00', '[]', 0, '[]', '[]', %s, %s, 0, 0, %s)""" if _is_postgres() else
+            VALUES (%s, %s, 'ar', '12:00', '[]', 0, '[]', '[]', %s, %s, 0, 0, %s)""" if _is_postgres() else
             """INSERT OR IGNORE INTO user_profiles
             (user_id, name, language, news_time, sources, subscribed, interests,
              favorite_companies, created_at, last_interaction, commands_used, chat_count, platform)
-            VALUES (?, ?, 'ar', '09:00', '[]', 0, '[]', '[]', ?, ?, 0, 0, ?)""",
+            VALUES (?, ?, 'ar', '12:00', '[]', 0, '[]', '[]', ?, ?, 0, 0, ?)""",
             (user_id, '', now, now, platform)
         )
     elif _is_postgres():
@@ -723,7 +723,7 @@ def get_user(user_id: int) -> Dict:
     uid = str(user_id)
     if uid not in all_users:
         all_users[uid] = {
-            "language": "ar", "news_time": "09:00", "sources": [],
+            "language": "ar", "news_time": "12:00", "sources": [],
             "subscribed": False, "created_at": datetime.now().isoformat(),
             "last_interaction": datetime.now().isoformat(),
             "commands_used": 0, "chat_count": 0,
@@ -848,7 +848,7 @@ def set_language(user_id: int, language: str):
 
 def get_news_time(user_id: int) -> str:
     user = get_user(user_id)
-    return user.get("news_time", "09:00")
+    return user.get("news_time", "12:00")
 
 def set_news_time(user_id: int, time_str: str):
     update_user(user_id, {"news_time": time_str})
@@ -906,7 +906,7 @@ def get_all_subscribers(platform: str = None) -> List[Dict]:
                 continue
             subscribers.append({
                 "user_id": int(uid), "language": data.get("language", "ar"),
-                "news_time": data.get("news_time", "09:00"), "name": data.get("name", ""),
+                "news_time": data.get("news_time", "12:00"), "name": data.get("name", ""),
             })
     return subscribers
 
@@ -1747,29 +1747,43 @@ def set_last_news_delivery(user_id: int, delivery_time: str):
     """تحديث آخر وقت وصول أخبار للمستخدم"""
     update_user(user_id, {"last_news_delivery": delivery_time})
 
-def get_subscribers_for_time(hour: int, minute: int) -> List[Dict]:
-    """الحصول على المشتركين اللي وقت أخبارهم matches الساعة دي"""
-    # Format: "HH:MM" e.g., "14:00" or "09:00"
+def get_subscribers_for_time(hour: int, minute: int, platform: str = None) -> List[Dict]:
+    """الحصول على المشتركين اللي وقت أخبارهم matches الساعة دي
+    
+    🔴 FIX v2: إضافة platform filter — عشان نبعت للتلجرام لوحده والواتساب لوحده
+    """
+    # Format: "HH:MM" e.g., "14:00" or "12:00"
     time_str = f"{hour:02d}:{minute:02d}"
     ph = "%s" if _is_postgres() else "?"
-    rows = _execute(
-        f"SELECT user_id, language, news_time, name, last_news_delivery FROM user_profiles WHERE subscribed = {ph} AND news_time = {ph}",
-        (1, time_str),
-        fetch=True
-    )
+    
+    if platform:
+        rows = _execute(
+            f"SELECT user_id, language, news_time, name, last_news_delivery, platform FROM user_profiles WHERE subscribed = {ph} AND news_time = {ph} AND platform = {ph}",
+            (1, time_str, platform),
+            fetch=True
+        )
+    else:
+        rows = _execute(
+            f"SELECT user_id, language, news_time, name, last_news_delivery, platform FROM user_profiles WHERE subscribed = {ph} AND news_time = {ph}",
+            (1, time_str),
+            fetch=True
+        )
     if rows:
         if _is_postgres():
-            return [{"user_id": r[0], "language": r[1], "news_time": r[2], "name": r[3], "last_news_delivery": r[4]} for r in rows]
+            return [{"user_id": r[0], "language": r[1], "news_time": r[2], "name": r[3], "last_news_delivery": r[4], "platform": r[5] if len(r) > 5 else "telegram"} for r in rows]
         return [dict(r) for r in rows]
     # fallback
     all_users = _load_all_users()
     subscribers = []
     for uid, data in all_users.items():
-        if data.get("subscribed", False) and data.get("news_time", "09:00") == time_str:
+        if data.get("subscribed", False) and data.get("news_time", "12:00") == time_str:
+            if platform and data.get("platform") != platform:
+                continue
             subscribers.append({
                 "user_id": int(uid), "language": data.get("language", "ar"),
-                "news_time": data.get("news_time", "09:00"), "name": data.get("name", ""),
+                "news_time": data.get("news_time", "12:00"), "name": data.get("name", ""),
                 "last_news_delivery": data.get("last_news_delivery", None),
+                "platform": data.get("platform", "telegram"),
             })
     return subscribers
 

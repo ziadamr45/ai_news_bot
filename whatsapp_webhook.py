@@ -3917,7 +3917,7 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
         try:
             from memory import subscribe_user
             subscribe_user(wa_user_id)
-            await _send_whatsapp_message(wa_id, "✅ تم الاشتراك بنجاح! 🎉\n\nهنبعتلك أخبار AI على مدار اليوم.\nلو عايز تلغي الاشتراك ابعت: إلغاء")
+            await _send_whatsapp_message(wa_id, "✅ تم الاشتراك بنجاح! 🎉\n\n📬 هنبعتلك أخبار AI كل يوم الساعة 12 الظهر (توقيت القاهرة).\n\n⏰ لو عايز تغير الوقت ابعت بصيغة HH:MM\nمثال: 14:30\n\nلو عايز تلغي الاشتراك ابعت: إلغاء")
         except Exception:
             await _send_whatsapp_message(wa_id, "✅ تم الاشتراك بنجاح! 🎉")
 
@@ -5345,6 +5345,29 @@ async def _handle_incoming_message(message: dict, value: dict):
                 handled = await _handle_command(wa_id, command, wa_user_id, contact_name, message_id)
                 if handled:
                     return
+
+            # ═══ Time Change Detection (HH:MM pattern) ═══
+            # لو المستخدم كتب وقت بصيغة HH:MM (زي 14:30 أو 09:00)
+            # ده معناه إنه عايز يغير وقت الأخبار اليومية
+            import re as _time_re
+            _time_match = _time_re.match(r'^([0-1]?[0-9]|2[0-3]):([0-5][0-9])$', content.strip())
+            if _time_match:
+                hour_str = _time_match.group(1).zfill(2)
+                minute_str = _time_match.group(2).zfill(2)
+                new_time = f"{hour_str}:{minute_str}"
+                
+                try:
+                    from memory import set_news_time
+                    set_news_time(wa_user_id, new_time)
+                    await _send_whatsapp_message(wa_id,
+                        f"✅ تم تغيير وقت الأخبار!\n\n"
+                        f"⏰ الوقت الجديد: {new_time} (توقيت القاهرة)\n"
+                        f"📬 هابعتلك الأخبار كل يوم في الوقت ده.\n\n"
+                        f"💡 ممكن تغيره تاني من الإعدادات"
+                    )
+                except Exception:
+                    await _send_whatsapp_message(wa_id, f"✅ تم تغيير وقت الأخبار إلى {new_time}")
+                return
 
             # ═══ PDF Follow-up Q&A ═══
             # If user has a PDF context and asks a question, answer based on the PDF
