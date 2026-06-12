@@ -232,6 +232,8 @@ def _create_postgresql_tables(conn):
         cur.execute("CREATE INDEX IF NOT EXISTS idx_learning_user ON learning_progress(user_id);")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_favorites_user ON favorites(user_id, category);")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_memories_user ON user_memories(user_id, category);")
+        # ✅ فهرس لرقم واتساب — مهم جداً لـ find_user_by_wa_phone() و lookup السريع
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_user_profiles_wa_phone ON user_profiles(wa_phone);")
         cur.close()
         return True
     except Exception as e:
@@ -683,6 +685,48 @@ def _ensure_user_in_db(user_id: int, platform: str = "telegram"):
     elif _is_postgres():
         # تحديث platform لو مش مضبوط
         _execute("UPDATE user_profiles SET platform = %s WHERE user_id = %s AND (platform IS NULL OR platform = '')", (platform, user_id))
+    
+    # ✅ التأكد من وجود فهرس wa_phone لـ lookup سريع
+    try:
+        _execute("CREATE INDEX IF NOT EXISTS idx_user_profiles_wa_phone ON user_profiles(wa_phone)")
+    except Exception:
+        pass
+
+
+def find_user_by_wa_phone(phone: str) -> Optional[int]:
+    """البحث عن مستخدم واتساب برقم التليفون بدل الـ user_id
+    
+    ⚠️ مهم جداً: لأن Python's hash() مش deterministic عبر الريستارتات،
+    ممكن نفس الرقم ينتج user_id مختلف بعد كل ريستارت.
+    الدالة دي بتدور في قاعدة البيانات على wa_phone وترجع الـ user_id الصح.
+    
+    Returns:
+        user_id لو لقى المستخدم، None لو مش موجود
+    """
+    if not phone:
+        return None
+    # تنظيف الرقم (إزالة + ومسافات)
+    clean = phone.lstrip('+').strip()
+    if not clean:
+        return None
+    ph = "%s" if _is_postgres() else "?"
+    try:
+        row = _execute(
+            f"SELECT user_id FROM user_profiles WHERE wa_phone = {ph} AND platform = 'whatsapp' ORDER BY last_interaction DESC LIMIT 1",
+            (clean,), fetchone=True
+        )
+        if row:
+            return row[0]
+        # محاولة تانية بالرقم مع +
+        row = _execute(
+            f"SELECT user_id FROM user_profiles WHERE wa_phone = {ph} AND platform = 'whatsapp' ORDER BY last_interaction DESC LIMIT 1",
+            (f"+{clean}",), fetchone=True
+        )
+        if row:
+            return row[0]
+    except Exception as e:
+        logger.error(f"Error finding user by wa_phone {phone}: {e}")
+    return None
 
 
 # ═══════════════════════════════════════

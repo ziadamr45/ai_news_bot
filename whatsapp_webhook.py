@@ -91,12 +91,21 @@ def _wa_phone_to_user_id(phone: str) -> int:
     الواتساب بيتعامل برقم الموبايل (زي 201203551789)
     بس الدوال الداخلية بتستخدم hashed user_id
     الدالة دي بتاخد الرقم وترجع الـ user_id الصح
+    
+    ⚠️ BUG FIX: Python's hash() is NOT deterministic across restarts!
+    Since Python 3.3, hash() uses a random seed (PYTHONHASHSEED) that changes
+    on every interpreter start. This means the same phone number would produce
+    different user_ids after each bot restart, orphaning all user data.
+    
+    FIX: Use hashlib.sha256 for deterministic hashing.
     """
     # إزالة + من البداية لو موجود
     clean = phone.lstrip('+')
     # إزالة مسافات
     clean = clean.strip()
-    return -abs(hash(f"wa_{clean}")) % (2**31)
+    # ✅ Deterministic hash — same result every time, even after restarts
+    h = hashlib.sha256(f"wa_{clean}".encode()).hexdigest()
+    return -(int(h, 16) % (2**31))
 
 
 def _wa_phone_to_display(phone: str) -> str:
@@ -112,7 +121,7 @@ def _is_wa_admin(wa_id: str) -> bool:
     # Also check via admin.py using the hashed user_id
     try:
         from admin import is_admin
-        wa_user_id = -abs(hash(f"wa_{wa_id}")) % (2**31)
+        wa_user_id = _wa_phone_to_user_id(wa_id)
         return is_admin(wa_user_id)
     except Exception:
         return False
@@ -123,7 +132,7 @@ def _ensure_wa_admin_premium(wa_id: str):
     if wa_id == ADMIN_WA_ID:
         try:
             from admin import ensure_admin_premium
-            wa_user_id = -abs(hash(f"wa_{wa_id}")) % (2**31)
+            wa_user_id = _wa_phone_to_user_id(wa_id)
             ensure_admin_premium(wa_user_id)
         except Exception as e:
             logger.warning(f"Could not ensure admin premium: {e}")
@@ -4982,7 +4991,14 @@ async def _handle_incoming_message(message: dict, value: dict):
             contact_name = contacts[0].get("profile", {}).get("name", "Unknown")
 
         # Generate user ID
-        wa_user_id = -abs(hash(f"wa_{wa_id}")) % (2**31)
+        # ✅ FIX: First check if user already exists by wa_phone (handles hash changes after restarts)
+        # If found, use their existing user_id to preserve all data
+        from memory import find_user_by_wa_phone
+        existing_user_id = find_user_by_wa_phone(wa_id)
+        if existing_user_id is not None:
+            wa_user_id = existing_user_id
+        else:
+            wa_user_id = _wa_phone_to_user_id(wa_id)
         is_admin = _is_wa_admin(wa_id)
 
         # Ensure admin is premium
@@ -5733,6 +5749,18 @@ async def _handle_admin_with_args(wa_id: str, content: str, wa_user_id: int, con
     cmd = parts[0].lower()
     args = parts[1:]
 
+    # ✅ FIX: Helper to resolve WA phone to user_id — prefers database lookup over hash
+    def _resolve_wa_target(phone: str) -> int:
+        """Resolve a WhatsApp phone number to a user_id.
+        First tries database lookup by wa_phone (reliable, survives restarts),
+        then falls back to deterministic hash for new users.
+        """
+        from memory import find_user_by_wa_phone
+        existing = find_user_by_wa_phone(phone)
+        if existing is not None:
+            return existing
+        return _wa_phone_to_user_id(phone)
+
     try:
         if cmd in ("/grant",):
             if not args:
@@ -5756,14 +5784,14 @@ async def _handle_admin_with_args(wa_id: str, content: str, wa_user_id: int, con
             if len(args) == 1:
                 # /grant phone → مدى الحياة
                 phone = args[0]
-                target_id = _wa_phone_to_user_id(phone)
+                target_id = _resolve_wa_target(phone)
                 days = 0
                 expires_display = "مدى الحياة 🔓"
             elif len(args) == 2:
                 # /grant [مدة] phone
                 duration_str = args[0]
                 phone = args[1]
-                target_id = _wa_phone_to_user_id(phone)
+                target_id = _resolve_wa_target(phone)
                 days, expires_display = parse_duration(duration_str)
                 if days == -1:
                     await _send_whatsapp_message(wa_id, "❌ المدة مش صحيحة.\n\n🔑 الاختصارات:\nd = يوم | w = أسبوع | m = شهر | y = سنة\n0 أو دائم = مدى الحياة\n\nمثال: /grant m 201203551789")
@@ -5841,7 +5869,7 @@ async def _handle_admin_with_args(wa_id: str, content: str, wa_user_id: int, con
                 await _send_whatsapp_message(wa_id, "❌ الاستخدام: /revoke رقم_الواتساب\nمثال: /revoke 201203551789")
                 return
             phone = args[0]
-            target_id = _wa_phone_to_user_id(phone)
+            target_id = _resolve_wa_target(phone)
             from premium import revoke_premium, get_premium_info
             
             # 🔴 فحص هل المستخدم أصلاً مش Premium
@@ -5870,7 +5898,7 @@ async def _handle_admin_with_args(wa_id: str, content: str, wa_user_id: int, con
                 await _send_whatsapp_message(wa_id, "🔄 الاستخدام: /resetlimit رقم_الواتساب\nمثال: /resetlimit 201203551789")
                 return
             phone = args[0]
-            target_id = _wa_phone_to_user_id(phone)
+            target_id = _resolve_wa_target(phone)
             from premium import reset_user_usage, get_premium_info
             
             # 🔴 فحص هل المستخدم Premium — لو آه، الريست مش هيعمل حاجة
@@ -5899,7 +5927,7 @@ async def _handle_admin_with_args(wa_id: str, content: str, wa_user_id: int, con
                 await _send_whatsapp_message(wa_id, "🚫 الاستخدام: /ban رقم_الواتساب [سبب]\nمثال: /ban 201203551789 سبام")
                 return
             phone = args[0]
-            target_id = _wa_phone_to_user_id(phone)
+            target_id = _resolve_wa_target(phone)
             reason = " ".join(args[1:]) if len(args) > 1 else "حظر من الأدمن"
             
             # 🔴 فحص هل المستخدم محظور بالفعل
@@ -5928,7 +5956,7 @@ async def _handle_admin_with_args(wa_id: str, content: str, wa_user_id: int, con
                 await _send_whatsapp_message(wa_id, "✅ الاستخدام: /unban رقم_الواتساب\nمثال: /unban 201203551789")
                 return
             phone = args[0]
-            target_id = _wa_phone_to_user_id(phone)
+            target_id = _resolve_wa_target(phone)
             
             # 🔴 فحص هل المستخدم محظور أصلاً
             from memory import _execute as _mem_execute2, _is_postgres as _mem_is_postgres2, unban_user
@@ -5964,10 +5992,16 @@ async def _handle_admin_with_args(wa_id: str, content: str, wa_user_id: int, con
                     "🔒 مش بيرجع بيانات حساسة")
                 return
             phone = args[0]
-            target_id = _wa_phone_to_user_id(phone)
+            # ✅ FIX: First try to find user by wa_phone in database (reliable)
+            # Falls back to deterministic hash if not found
+            from memory import find_user_by_wa_phone
+            target_id = find_user_by_wa_phone(phone)
+            if target_id is None:
+                # No user found with this phone — try deterministic hash as fallback
+                target_id = _wa_phone_to_user_id(phone)
             from premium import get_user_stats
             
-            stats = get_user_stats(target_id)
+            stats = get_user_stats(target_id, platform="whatsapp")
             
             if not stats.get("found"):
                 await _send_whatsapp_message(wa_id, "❌ المستخدم ده مش موجود في قاعدة البيانات.")
@@ -6080,10 +6114,14 @@ async def _handle_admin_with_args(wa_id: str, content: str, wa_user_id: int, con
                 await _send_whatsapp_message(wa_id, "📊 الاستخدام: /userstats رقم_الواتساب\nمثال: /userstats 201203551789\n\n💡 بيرجع إحصائيات شاملة بدون بيانات حساسة")
                 return
             phone = args[0]
-            target_id = _wa_phone_to_user_id(phone)
+            # ✅ FIX: First try to find user by wa_phone in database (reliable)
+            from memory import find_user_by_wa_phone
+            target_id = find_user_by_wa_phone(phone)
+            if target_id is None:
+                target_id = _wa_phone_to_user_id(phone)
             from premium import get_user_stats
             
-            stats = get_user_stats(target_id)
+            stats = get_user_stats(target_id, platform="whatsapp")
             
             if not stats.get("found"):
                 await _send_whatsapp_message(wa_id, "❌ المستخدم ده مش موجود في قاعدة البيانات.")
@@ -6271,7 +6309,7 @@ async def _handle_admin_with_args(wa_id: str, content: str, wa_user_id: int, con
                 return
             try:
                 phone = args[0]
-                target_id = _wa_phone_to_user_id(phone)
+                target_id = _resolve_wa_target(phone)
                 reason = " ".join(args[1:]) if len(args) > 1 else "تحذير من الأدمن"
                 from memory import _execute, _is_postgres, _ensure_user_in_db
                 _ensure_user_in_db(target_id, platform="whatsapp")
@@ -6300,7 +6338,7 @@ async def _handle_admin_with_args(wa_id: str, content: str, wa_user_id: int, con
                 return
             try:
                 phone = args[0]
-                target_id = _wa_phone_to_user_id(phone)
+                target_id = _resolve_wa_target(phone)
                 from admin import _save_admin_to_db, ADMIN_USER_IDS
                 _save_admin_to_db(target_id, role="admin", added_by=f"admin_{wa_user_id}")
                 await _send_whatsapp_message(wa_id, f"👑 *تم إضافة أدمن جديد!*\n📱 {_wa_phone_to_display(phone)}")
@@ -6313,7 +6351,7 @@ async def _handle_admin_with_args(wa_id: str, content: str, wa_user_id: int, con
                 return
             try:
                 phone = args[0]
-                target_id = _wa_phone_to_user_id(phone)
+                target_id = _resolve_wa_target(phone)
                 from admin import _remove_admin_from_db, is_admin as check_admin
                 if check_admin(target_id) and target_id in [8674141938, 8313119944]:
                     await _send_whatsapp_message(wa_id, "👑 مينفعش تشيل الـ Owner!")

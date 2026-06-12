@@ -476,7 +476,7 @@ def get_premium_history(user_id: int, limit: int = 20) -> list:
     return []
 
 
-def get_user_stats(user_id: int) -> dict:
+def get_user_stats(user_id: int, platform: str = "telegram") -> dict:
     """الحصول على إحصائيات شاملة عن المستخدم — بدون بيانات حساسة
     
     ⚠️ البيانات الحساسة اللي مش بتترجع:
@@ -486,9 +486,14 @@ def get_user_stats(user_id: int) -> dict:
     - عناصر Workspace التفصيلية (workspace content)
     
     بيرجع بس إحصائيات عامة وعددات — بدون محتوى فعلي
+    
+    Args:
+        user_id: معرف المستخدم
+        platform: المنصة ("telegram" أو "whatsapp") — ضروري عشان _ensure_user_in_db
+                  تعرف تضبط الـ platform صح لو المستخدم جديد
     """
     from memory import _ensure_user_in_db, get_user, get_interests, get_favorite_companies
-    _ensure_user_in_db(user_id)
+    _ensure_user_in_db(user_id, platform=platform)
     
     result = {
         "user_id": user_id,
