@@ -348,6 +348,10 @@ async def webhook_receiver(request: web.Request):
 
     except Exception as e:
         logger.error(f"❌ Webhook processing error: {e}", exc_info=True)
+        # 🐦 Sentry — capture webhook processing errors
+        from sentry_config import capture_exception, set_context
+        set_context("webhook", {"error_type": "webhook_receiver"})
+        capture_exception(e)
         return web.Response(text="OK", status=200)
 
 
@@ -1333,6 +1337,10 @@ async def _handle_incoming_message(message: dict, value: dict):
     except Exception as e:
         logger.error(f"❌ Error handling WA message: {e}", exc_info=True)
         _log_activity("message_handler_error", {"error": str(e)[:200]}, "error")
+        # 🐦 Sentry — capture message handler errors
+        from sentry_config import capture_exception, set_context
+        set_context("whatsapp_message", {"wa_id": wa_id if 'wa_id' in dir() else "unknown"})
+        capture_exception(e)
 
 
 # ═══════════════════════════════════════

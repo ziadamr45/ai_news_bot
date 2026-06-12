@@ -472,6 +472,14 @@ async def smart_chat(user_message: str, language: str = "ar", user_id: int = Non
     + يرسل سياق المحادثة الأخير للـ AI عشان يفتكر
     + يستخدم Provider Manager مع تبديل تلقائي
     """
+    # 🐦 Sentry — track smart_chat performance
+    from sentry_config import start_transaction, add_breadcrumb, set_tag
+    _tx = start_transaction(name="smart_chat", op="ai.chat")
+    add_breadcrumb(category="ai", message=f"smart_chat called: {user_message[:50]}", level="info")
+    if user_id:
+        set_tag("user_id", str(user_id))
+    set_tag("language", language)
+
     # 0. كشف أسئلة الهوية أولاً (لا تحتاج بحث ويب!)
     is_identity = _is_identity_question(user_message)
     is_creator = _is_creator_question(user_message)
@@ -942,6 +950,8 @@ Examples:
     if response:
         _set_cached_response(user_message, language, task_type, response)
 
+    # 🐦 Sentry — finish performance tracking
+    _tx.finish()
     return response
 
 

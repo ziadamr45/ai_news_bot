@@ -416,6 +416,10 @@ class ProviderManager:
 
         except Exception as e:
             logger.warning(f"❌ Unexpected error for {provider_name}/{model}: {str(e)[:100]}")
+            # 🐦 Sentry — capture provider errors for observability
+            from sentry_config import capture_exception, set_context
+            set_context("provider", {"provider": provider_name, "model": model, "error_type": "unexpected"})
+            capture_exception(e)
             return None
 
     def _try_continue(self, messages: List[Dict[str, str]], provider_name: str, model: str,
@@ -1000,6 +1004,9 @@ class ProviderManager:
             return None
         except Exception as e:
             logger.error(f"❌ Unexpected image generation error: {str(e)[:100]}")
+            # 🐦 Sentry — capture image gen errors
+            from sentry_config import capture_exception
+            capture_exception(e)
             return None
 
     async def generate_image_async(
@@ -1158,6 +1165,9 @@ class ProviderManager:
             return None
         except Exception as e:
             logger.error(f"❌ Unexpected image editing error: {str(e)[:100]}")
+            # 🐦 Sentry — capture image edit errors
+            from sentry_config import capture_exception
+            capture_exception(e)
             return None
 
     async def edit_image_async(

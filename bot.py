@@ -14,6 +14,10 @@ import asyncio
 import signal
 from datetime import datetime
 
+# 🐦 Sentry — must be one of the very first imports
+from sentry_config import init_sentry
+init_sentry()
+
 from telegram import Update
 from telegram.ext import Application, ContextTypes
 
@@ -703,6 +707,9 @@ if __name__ == "__main__":
         logger.info("Bot stopped by system exit (graceful shutdown)")
     except Exception as e:
         logger.critical(f"💥 FATAL: Bot crashed with unhandled exception: {e}", exc_info=True)
+        # 🐦 Sentry — capture the fatal crash
+        from sentry_config import capture_exception
+        capture_exception(e)
         # 🔴 FIX: تنظيف الموارد قبل محاولة إعادة التشغيل
         # عشان مفيش تسريب للـ connections والموارد
         try:
