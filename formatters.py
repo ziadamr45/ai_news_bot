@@ -6,18 +6,124 @@
 import re
 
 
+def _strip_non_telegram_html(text: str) -> str:
+    """
+    تنظيف HTML غير المدعوم من تليجرام
+    
+    تليجرام بيدعم بس: b, i, u, s, code, pre, a, spoiler, blockquote, tg-spoiler
+    الـ AI بيرجع HTML كامل (div, p, ol, ul, li, h1-h6, span, style...) 
+    اللي بيبان كرموز غريبة في الرسالة
+    
+    الاستراتيجية:
+    1. نحول h1-h6 لـ <b> (عناوين)
+    2. نحول <li> لـ bullet points (•)
+    3. نحول <p> لـ سطر فاضي
+    4. نحول <br> و <hr> لـ سطر جديد
+    5. نشيل كل الـ tags الباقية (div, span, ol, ul, table, style, etc.)
+    6. نشيل الـ style attributes من أي tag
+    """
+    if not text:
+        return text
+    
+    # 🔴 أولاً: نحول العناوين h1-h6 لـ bold
+    text = re.sub(r'<h[1-6][^>]*>', '\n<b>', text, flags=re.IGNORECASE)
+    text = re.sub(r'</h[1-6]>', '</b>\n', text, flags=re.IGNORECASE)
+    
+    # 🔴 نحول <li> لـ bullet points
+    text = re.sub(r'<li[^>]*>\s*', '\n• ', text, flags=re.IGNORECASE)
+    text = re.sub(r'\s*</li>', '', text, flags=re.IGNORECASE)
+    
+    # 🔴 نحول <p> لـ سطر فاضي
+    text = re.sub(r'<p[^>]*>', '\n', text, flags=re.IGNORECASE)
+    text = re.sub(r'</p>', '\n', text, flags=re.IGNORECASE)
+    
+    # 🔴 نحول <br> و <br/> لـ سطر جديد
+    text = re.sub(r'<br\s*/?\s*>', '\n', text, flags=re.IGNORECASE)
+    
+    # 🔴 نحول <hr> لـ خط فاصل
+    text = re.sub(r'<hr\s*/?\s*>', '\n━━━━━━━━━━━━━\n', text, flags=re.IGNORECASE)
+    
+    # 🔴 نحول <tr> لـ سطر جديد (جداول)
+    text = re.sub(r'<tr[^>]*>', '\n', text, flags=re.IGNORECASE)
+    text = re.sub(r'</tr>', '', text, flags=re.IGNORECASE)
+    
+    # 🔴 نحول <td> و <th> لـ فواصل (جداول)
+    text = re.sub(r'<t[dh][^>]*>', ' ', text, flags=re.IGNORECASE)
+    text = re.sub(r'</t[dh]>', ' ', text, flags=re.IGNORECASE)
+    
+    # 🔴 نشيل كل opening/closing tags اللي مش مدعومة من تليجرام
+    # القائمة دي كل حاجة مش: b, i, u, s, code, pre, a, spoiler, blockquote, tg-spoiler, em, strong
+    unsupported_tags = (
+        'div', 'span', 'section', 'article', 'main', 'header', 'footer', 'nav',
+        'ol', 'ul', 'dl', 'dt', 'dd', 'table', 'thead', 'tbody', 'tfoot', 'caption',
+        'style', 'script', 'noscript', 'iframe', 'object', 'embed',
+        'form', 'input', 'button', 'select', 'option', 'textarea', 'label',
+        'img', 'figure', 'figcaption', 'picture', 'svg', 'canvas', 'video', 'audio', 'source',
+        'center', 'font', 'big', 'small', 'sub', 'sup', 'mark', 'del', 'ins',
+        'abbr', 'cite', 'q', 'address', 'time', 'var', 'samp', 'kbd',
+        'details', 'summary', 'dialog', 'menu', 'menuitem',
+        'col', 'colgroup', 'fieldset', 'legend', 'optgroup',
+        'map', 'area', 'track', 'wbr', 'ruby', 'rt', 'rp',
+    )
+    
+    # نشيل الـ self-closing tags أولاً
+    for tag in unsupported_tags:
+        text = re.sub(rf'<{tag}[^>]*/\s*>', '', text, flags=re.IGNORECASE)
+    
+    # نشيل الـ opening tags مع أي attributes
+    for tag in unsupported_tags:
+        text = re.sub(rf'<{tag}[^>]*>', '', text, flags=re.IGNORECASE)
+    
+    # نشيل الـ closing tags
+    for tag in unsupported_tags:
+        text = re.sub(rf'</{tag}>', '', text, flags=re.IGNORECASE)
+    
+    # 🔴 نشيل style, class, id, وكل event attributes من أي tag متبقي
+    # مثال: <b style="..."> ← <b>
+    text = re.sub(r'<(b|i|u|s|code|pre|a|spoiler|blockquote|tg-spoiler|em|strong)\s+[^>]*?>', r'<\1>', text, flags=re.IGNORECASE)
+    
+    # 🔴 نشيل أي tag متبقي مش في القائمة المدعومة (catch-all)
+    # القائمة المسموحة: b, i, u, s, code, pre, a, spoiler, blockquote, tg-spoiler, em, strong
+    allowed_pattern = r'/?((?:b|i|u|s|code|pre|a|spoiler|blockquote|tg-spoiler|em|strong)(?:\s[^>]*)?)'
+    # نشيل أي tag مش في القائمة
+    def _clean_unknown_tag(match):
+        tag_content = match.group(1)
+        tag_name = tag_content.strip().split()[0].rstrip('/')
+        allowed_names = {'b', 'i', 'u', 's', 'code', 'pre', 'a', 'spoiler', 'blockquote', 'tg-spoiler', 'em', 'strong'}
+        if tag_name.lower() in allowed_names:
+            return match.group(0)  # نسيبه زي ما هو
+        return ''  # نشيله
+    
+    text = re.sub(r'<([^>]+)>', _clean_unknown_tag, text)
+    
+    # 🔴 تنظيف نهائي
+    # نشيل الـ bullet points الفاضية
+    text = re.sub(r'^\s*•\s*$', '', text, flags=re.MULTILINE)
+    
+    # نشيل أسطر فاضية متكررة
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    
+    return text
+
+
 def clean_ai_response(text: str) -> str:
     """
-    تنظيف رد AI من رموز Markdown الزيادة
+    تنظيف رد AI من رموز Markdown الزيادة و HTML غير المدعوم
     البوت بيستخدم HTML في تيليجرام، فـ Markdown بيبان كرموز غريبة
     بنحول الـ Markdown لـ HTML أو بنشيله لو مش محتاجينه
     + معالجة الكلام اللي بيلزق في بعضه بسبب إزالة الرموز
     + إصلاح الكلمات المكسورة على سطرين
     + v2: إصلاح تنسيق العربية — أقواس [ ] من روابط Markdown، مسافات أفضل
     + v3: إصلاح شامل للنص العربي المكسور — كل كلمة على سطر لوحدها
+    + v4: تنظيف HTML غير مدعوم من تليجرام (div, p, span, ol, ul, li, h1-h6, style, etc.)
     """
     if not text:
         return text
+
+    # ═══ مرحلة -1: تنظيف HTML غير المدعوم من تيليجرام ═══
+    # تليجرام بيدعم بس: b, i, u, s, code, pre, a, spoiler, blockquote, tg-spoiler
+    # الـ AI بيرجع HTML كامل (div, p, ol, ul, li, h1-h6, span, style...) اللي بيبان كرموز غريبة
+    text = _strip_non_telegram_html(text)
 
     # ═══ مرحلة 0: إصلاح النص العربي المكسور (الأهم!) ═══
     # مشكلة: الـ AI models بترجع نص عربي فيه أسطر جديدة في نص الكلمة
