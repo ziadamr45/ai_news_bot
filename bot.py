@@ -256,7 +256,8 @@ async def broadcast_daily_news(context: ContextTypes.DEFAULT_TYPE):
 
             try:
                 if len(message) > 4000:
-                    chunks = [message[i:i+4000] for i in range(0, len(message), 4000)]
+                    from formatters import smart_split_message
+                    chunks = smart_split_message(message, max_length=4000)
                     for chunk in chunks:
                         await context.bot.send_message(
                             chat_id=chat_id,

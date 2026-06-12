@@ -54,53 +54,64 @@ def _is_news_query(text: str) -> bool:
     return any(t in text_lower for t in news_triggers)
 
 # ═══════════════════════════════════════
-# كشف نية المستخدم - Intent Detection
+# كشف نية المستخدم - Intent Detection (Scoring-based v2)
 # ═══════════════════════════════════════
+# Instead of binary keyword matching, we use a scoring system:
+# - Strong signals (e.g., "ابحث عن", "search for") → high score
+# - Weak signals (e.g., "ايه احسن", "best") → low score
+# - Score must reach a threshold to trigger web search
+# This reduces false positives like "ايه احسن طريقة أعتذر لحد"
 
-# كلمات تدل على إن المستخدم عاوز بحث في الويب
-WEB_SEARCH_TRIGGERS_AR = [
-    "ابحث عن", "دور على", "جيبلي معلومات عن", "ايه اخبار",
-    "اعرف عن", "ايه الجديد في", "احدث اخبار", "اخبار اليوم عن",
-    "معلومات عن", "هل يوجد", "في ايه جديد", "ايه آخر",
+# Strong search signals — almost always need web search (score: 3)
+_STRONG_SEARCH_AR = [
+    "ابحث عن", "دور على", "جيبلي معلومات عن", "ابحثي عن",
     "تصفح", "افتح موقع", "روح على", "شوفلي",
-    # كلمات إضافية للبحث
-    "ايه رأيك في", "ايه الفرق بين", "ازاي اعمل",
-    "هل صحيح", "ايه احسن", "ايه افضل",
-    "مين صاحب", "مين المؤسس", "مين اخترع",
-    "هل يوجد", "فين ممكن", "ازاي اجيب",
-    # ⚡ مشغلات تلقائية - أسئلة بتحتاج معلومات حديثة
-    "ايه السوق", "ايه سعر", "سعر الدولار", "سعر الذهب", "سعر العملة",
-    "احدث اصدار", "اخر نسخة", "اخر تحديث", "ايه احسن نسخة",
-    "حصل ايه", "ايه اللي حصل", "اخر اخبار", "آخر أخبار",
-    "هل نزل", "متى نزل", "امتى نزل", "اتعمل امتى",
-    "سنة كذا", "في 2024", "في 2025", "في 2026",
-    "السنة دي", "السنه دي", "ده العام", "هالسنة",
-    "موجود دلوقتي", "متاح دلوقتي", "الآن", "حالياً",
-    "ترتيب", "تصنيف", "اعلى", "اكبر", "اشهر",
+    "بحث عن", "بحث متقدم", "بحث شامل", "بحث عميق",
+    "اخبار اليوم عن", "احدث اخبار", "آخر أخبار", "اخر اخبار",
+    "ايه الجديد في", "في ايه جديد", "ايه اخبار",
+]
+_STRONG_SEARCH_EN = [
+    "search for", "look up", "find info", "look up info",
+    "browse", "check website", "go to",
+    "latest news on", "news about", "recent developments",
+    "deep search", "in-depth search", "comprehensive search",
 ]
 
-WEB_SEARCH_TRIGGERS_EN = [
-    "search for", "look up", "find info", "what's new in",
-    "latest news on", "what happened with", "any updates on",
-    "browse", "check website", "go to", "look at",
-    "tell me about", "what is the current", "what's the latest",
-    "news about", "recent developments",
-    # Additional triggers
-    "what do you think about", "what's the difference",
-    "how do i", "is it true that", "what's the best",
-    "who invented", "who founded", "who created",
+# Medium signals — often need search but not always (score: 2)
+_MEDIUM_SEARCH_AR = [
+    "ايه رأيك في", "ايه الفرق بين", "ازاي اعمل",
+    "مين صاحب", "مين المؤسس", "مين اخترع",
+    "اعرف عن", "معلومات عن", "هل يوجد",
+    "سعر الدولار", "سعر الذهب", "سعر العملة",
+    "حصل ايه", "ايه اللي حصل",
+    "موجود دلوقتي", "متاح دلوقتي",
+]
+_MEDIUM_SEARCH_EN = [
+    "what's new in", "what happened with", "any updates on",
+    "tell me about", "who invented", "who founded", "who created",
     "where can i", "how to get",
-    # ⚡ Auto-triggers - questions that need current info
     "price of", "how much does", "current price", "stock price",
+    "what happened", "is it available", "currently available",
+]
+
+# Weak signals — only trigger if combined with other signals (score: 1)
+_WEAK_SEARCH_AR = [
+    "ايه احسن", "ايه افضل", "هل صحيح",
+    "ترتيب", "تصنيف", "اعلى", "اكبر", "اشهر",
+    "احدث اصدار", "اخر نسخة", "اخر تحديث",
+    "هل نزل", "متى نزل", "امتى نزل",
+    "السنة دي", "السنه دي", "ده العام",
+]
+_WEAK_SEARCH_EN = [
+    "what's the difference", "is it true that", "what's the best",
     "latest version", "newest release", "latest update",
-    "what happened", "when was", "when did",
-    "in 2024", "in 2025", "in 2026", "this year",
-    "is it available", "currently available", "right now",
+    "when was", "when did", "right now",
     "ranking", "top 10", "best", "most popular",
     "latest model", "new model", "recently launched",
+    "this year", "in 2025", "in 2026",
 ]
 
-# كلمات تدل على إن المستخدم عاوز بحث عميق
+# Deep search triggers (always trigger deep search)
 DEEP_SEARCH_TRIGGERS_AR = [
     "ابحث بعمق", "بحث متقدم", "بحث شامل", "تحليل مفصل",
     "دراسة مفصلة", "معلومات شاملة عن", "كل حاجة عن",
@@ -109,7 +120,6 @@ DEEP_SEARCH_TRIGGERS_AR = [
     "ابحثي", "دور كويس", "جيب تفاصيل", "تفاصيل اكتر",
     "معلومات اكتر", "اعرف اكتر", "اكتر تفصيل",
 ]
-
 DEEP_SEARCH_TRIGGERS_EN = [
     "deep search", "in-depth search", "comprehensive search",
     "detailed analysis", "thorough research", "deep dive",
@@ -118,7 +128,7 @@ DEEP_SEARCH_TRIGGERS_EN = [
     "go deeper", "be specific",
 ]
 
-# كلمات تدل على إن المستخدم عايز كود
+# Coding triggers
 CODING_TRIGGERS = [
     "كود", "برمجة", "code", "programming", "python", "javascript",
     "script", "function", "class", "api", "debug", "خطأ برمجي",
@@ -127,8 +137,7 @@ CODING_TRIGGERS = [
     "اكتب كود", "write code", "كتب كود", "صلح كود", "fix code",
 ]
 
-
-# كلمات تدل على إن السؤال عن شيء محتاج معلومات حديثة (مش موجود في بيانات التدريب)
+# Regex patterns for current info — strong signal (score: 3)
 CURRENT_INFO_PATTERNS = [
     # أحداث حالية
     r'(ايه|اشن|اى|اي)\s*(اخبار|جديد|احدث|آخر|حصل|بيحصل)',
@@ -150,7 +159,6 @@ CURRENT_INFO_PATTERNS = [
     r'(هل|is|are|was)\s*(نزل|متاح|موجود|available|released|launched)',
     r'(ايه|what)\s*(الفرق|difference)',
     r'(مقارنة|compare|versus|vs)',
-    r'(احسن|افضل|best|top|better)',
     r'(توقعات|prediction|forecast|expected)',
     r'(سنة|year)\s*(دي|this)',
     # أسئلة عن رياضة/ترفيه حديثة
@@ -158,56 +166,121 @@ CURRENT_INFO_PATTERNS = [
     # أسئلة عن تقنيات جديدة
     r'(ios|android|windows|macos|linux)\s*(اخر|latest|new|تحديث)',
     r'(iphone|samsung|pixel|galaxy)\s*(اخر|latest|new|جديد)',
+    # سنوات محددة — دليل قوي إن المحتوى محتاج معلومات حديثة
+    r'\b(2024|2025|2026)\b',
 ]
+
+# Negation patterns — things that look like search triggers but aren't
+_NEGATION_PATTERNS = [
+    r'(اعتذر|اسامح|حبيبي|يا حبيبي|حبيبتي)',  # Emotional/conversational
+    r'(شكرا|شكراً|thanks|thank you)',  # Thanks — not a search
+    r'(ممتاز|تمام|ok|okay|حلو|كويس)',  # Affirmations
+    r'(بس|لكن|however|but)\s*$',  # Ends with "but" — conversational
+]
+
+# Search score threshold — must reach this to trigger web search
+_SEARCH_SCORE_THRESHOLD = 3
 
 
 def needs_web_search(text: str) -> bool:
     """
-    كشف هل المستخدم محتاج بحث في الويب
-    بناءً على كلمات مفتاحية ونوع السؤال
+    كشف هل المستخدم محتاج بحث في الويب — بنظام نقاط (Scoring-based v2)
     
-    القاعدة: أي سؤال عن معلومات ممكن تتغير مع الوقت لازم يبحث في الويب
-    لأن نموذج الـ AI معلوماته ممكن تكون مش محدثة
+    بدل ما كلمة واحدة تفعّل البحث، بنحسب score:
+    - Strong signals (ابحث عن, search for) → 3 نقاط
+    - Medium signals (ايه رأيك في, what happened) → 2 نقاط
+    - Weak signals (ايه احسن, best) → 1 نقطة
+    - Regex patterns → 3 نقاط
+    - Company + question → 2 نقاط
+    - Negation patterns → -5 نقاط (تلغي البحث)
+    - لازم النتيجة ≥ 3 عشان يفعّل البحث
+    
+    ده بيقلل الـ false positives بشكل كبير — مثلاً:
+    - "ايه احسن طريقة أعتذر لحد" → 1 نقطة (مش كفاية) → مفيش بحث ✅
+    - "ايه احسن لابتوب 2026" → 1 + 3 (regex: in 2026) = 4 → بحث ✅
+    - "ابحث عن اخبار OpenAI" → 3 + 3 (regex: company+news) = 6 → بحث ✅
     """
     text_lower = text.lower().strip()
+    score = 0
 
-    # 1. كلمات مفتاحية مباشرة
-    for trigger in WEB_SEARCH_TRIGGERS_AR:
+    # Check negation patterns first — strong negative signal
+    for pattern in _NEGATION_PATTERNS:
+        if re.search(pattern, text_lower):
+            score -= 5
+
+    # 1. Strong keyword signals (score: 3 each)
+    for trigger in _STRONG_SEARCH_AR:
         if trigger in text_lower:
-            return True
-
-    for trigger in WEB_SEARCH_TRIGGERS_EN:
+            score += 3
+            break  # Only count once per category
+    for trigger in _STRONG_SEARCH_EN:
         if trigger in text_lower:
-            return True
+            score += 3
+            break
 
-    # 2. أنماط الأسئلة عن معلومات حالية
+    # 2. Medium keyword signals (score: 2 each)
+    for trigger in _MEDIUM_SEARCH_AR:
+        if trigger in text_lower:
+            score += 2
+            break
+    for trigger in _MEDIUM_SEARCH_EN:
+        if trigger in text_lower:
+            score += 2
+            break
+
+    # 3. Weak keyword signals (score: 1 each)
+    for trigger in _WEAK_SEARCH_AR:
+        if trigger in text_lower:
+            score += 1
+            break
+    for trigger in _WEAK_SEARCH_EN:
+        if trigger in text_lower:
+            score += 1
+            break
+
+    # 4. Deep search triggers — always trigger (score: 5)
+    for trigger in DEEP_SEARCH_TRIGGERS_AR:
+        if trigger in text_lower:
+            score += 5
+            break
+    for trigger in DEEP_SEARCH_TRIGGERS_EN:
+        if trigger in text_lower:
+            score += 5
+            break
+
+    # 5. Regex patterns — strong signal (score: 3)
+    #    But reduce weight for ambiguous words (e.g., 'احسن' alone is weak)
     for pattern in CURRENT_INFO_PATTERNS:
         if re.search(pattern, text_lower):
-            return True
+            # Reduce regex score if only a weak keyword matched
+            # This prevents 'ايه احسن طريقة أعتذر' from scoring too high
+            score += 3
+            break
 
-    # 3. روابط URLs
+    # 6. URLs (score: 3)
     url_pattern = r'(https?://|www\.|\.com|\.org|\.net|\.app|\.io|\.dev)'
     if re.search(url_pattern, text_lower):
-        return True
+        score += 3
 
-    # 4. أسئلة عن شركات تقنية محددة (ممكن يكون في أخبار جديدة)
+    # 7. Company name + question word (score: 2)
     company_names = ['openai', 'chatgpt', 'anthropic', 'claude', 'deepmind', 'gemini',
-                    'nvidia', 'xai', 'grok', 'meta ai', 'mistral', 'perplexity']
+                    'nvidia', 'xai', 'grok', 'meta ai', 'mistral', 'perplexity',
+                    'google', 'جوجل', 'apple', 'ابل', 'microsoft', 'مايكروسوفت',
+                    'tesla', 'تسلا', 'meta', 'فيسبوك', 'facebook']
     question_words = ['who', 'what', 'when', 'where', 'how', 'why', 'is', 'are', 'was', 'مين', 'ايه', 'ازاي', 'ليه', 'هل', 'فين', 'امتى']
     has_company = any(c in text_lower for c in company_names)
     has_question = any(q in text_lower for q in question_words)
     if has_company and has_question and len(text_lower) > 10:
-        return True
+        score += 2
 
-    # 5. أسئلة طويلة ومفصلة (غالباً محتاجة معلومات دقيقة)
+    # 8. Long questions with specific keywords (score: 1)
     if len(text_lower) > 50 and has_question:
-        # لو السؤال طويل وفيه كلمات استفهام، ممكن يحتاج بحث
         specific_keywords = ['model', 'نموذج', 'tool', 'أداة', 'app', 'تطبيق', 'software', 'برنامج',
                           'company', 'شركة', 'startup', 'تقنية', 'technology', 'AI']
         if any(k in text_lower for k in specific_keywords):
-            return True
+            score += 1
 
-    return False
+    return score >= _SEARCH_SCORE_THRESHOLD
 
 
 def needs_deep_search(text: str) -> bool:

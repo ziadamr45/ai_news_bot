@@ -81,9 +81,12 @@ class TestGetNvidiaKey(unittest.TestCase):
         # Need to reimport to pick up new env var
         import importlib
         import config
+        import config.ai_providers
+        importlib.reload(config.ai_providers)
         importlib.reload(config)
         self.assertEqual(config.get_nvidia_key("deepseek_v4_pro"), "nvapi-test-key-123")
         # Reload again to restore original state
+        importlib.reload(config.ai_providers)
         importlib.reload(config)
 
 
@@ -101,9 +104,12 @@ class TestDeveloperWhatsapp(unittest.TestCase):
         """Should read DEVELOPER_WHATSAPP from environment variable"""
         import importlib
         import config
+        import config.telegram
+        importlib.reload(config.telegram)
         importlib.reload(config)
         self.assertEqual(config.DEVELOPER_WHATSAPP, "1234567890")
         # Clean up - reload without the env var
+        importlib.reload(config.telegram)
         importlib.reload(config)
 
     def test_developer_whatsapp_url_format(self):

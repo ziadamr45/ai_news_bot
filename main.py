@@ -184,9 +184,10 @@ def main():
             message = messages.get(lang, messages["ar"])
 
             try:
-                # تقسيم الرسالة لو طويلة
+                # تقسيم الرسالة لو طويلة — بشكل ذكي عند حدود الجمل
                 if len(message) > 4000:
-                    chunks = [message[i:i+4000] for i in range(0, len(message), 4000)]
+                    from formatters import smart_split_message
+                    chunks = smart_split_message(message, max_length=4000)
                     for chunk in chunks:
                         send_message_to_chat(chat_id, chunk)
                 else:

@@ -364,8 +364,8 @@ class TestGetYdlOpts(unittest.TestCase):
     """Tests for _get_ydl_opts — yt-dlp options generation"""
 
     def setUp(self):
-        """Mock heavy deps needed by ytdlp_core"""
-        # Mock all the heavy deps that ytdlp_core imports
+        """Mock heavy deps needed by ytdlp.options"""
+        # Mock all the heavy deps that ytdlp options imports
         sys.modules['telegram'] = MagicMock()
         sys.modules['telegram.ext'] = MagicMock()
         sys.modules['memory'] = MagicMock()
@@ -375,7 +375,7 @@ class TestGetYdlOpts(unittest.TestCase):
         sys.modules['content_safety'] = MagicMock()
         sys.modules['handlers.downloads.threads'] = MagicMock()
 
-        # We also need to provide the utils functions that ytdlp_core imports
+        # We also need to provide the utils functions that ytdlp options imports
         # Create a mock utils module that has the real functions
         _mock_utils = MagicMock()
         _mock_utils._is_audio_quality = _is_audio_quality
@@ -405,18 +405,28 @@ class TestGetYdlOpts(unittest.TestCase):
         # Make the handlers.downloads.utils accessible via the mock
         sys.modules['handlers.downloads'].utils = _mock_utils
 
-        # Load ytdlp_core module
-        _ytdlp_path = os.path.join(
+        # Mock the ytdlp sub-package and its modules so the shim works
+        sys.modules['handlers.downloads.ytdlp'] = MagicMock()
+        sys.modules['handlers.downloads.ytdlp.update'] = MagicMock()
+        sys.modules['handlers.downloads.ytdlp.cobalt'] = MagicMock()
+        sys.modules['handlers.downloads.ytdlp.commands'] = MagicMock()
+        sys.modules['handlers.downloads.ytdlp.download_main'] = MagicMock()
+        sys.modules['handlers.downloads.ytdlp.options'] = MagicMock()
+
+        # Load ytdlp.options module directly (contains _get_ydl_opts)
+        _options_path = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            "handlers", "downloads", "ytdlp_core.py"
+            "handlers", "downloads", "ytdlp", "options.py"
         )
         self._ytdlp_spec = importlib.util.spec_from_file_location(
-            "handlers.downloads.ytdlp_core", _ytdlp_path
+            "handlers.downloads.ytdlp.options", _options_path
         )
 
     def _import_ytdlp(self):
-        """Import ytdlp_core with mocked dependencies"""
+        """Import ytdlp.options with mocked dependencies"""
         ytdlp_mod = importlib.util.module_from_spec(self._ytdlp_spec)
+        # Register the module so relative imports inside options.py resolve
+        sys.modules['handlers.downloads.ytdlp.options'] = ytdlp_mod
         self._ytdlp_spec.loader.exec_module(ytdlp_mod)
         return ytdlp_mod
 
