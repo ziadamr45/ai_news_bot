@@ -9,7 +9,8 @@ import logging
 from typing import List, Dict
 from datetime import datetime, timezone, timedelta
 
-from config import AI_KEYWORDS, EXCLUSION_KEYWORDS, NEWS_FETCH_HOURS
+import config as _config_module
+from config import AI_KEYWORDS, EXCLUSION_KEYWORDS
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +55,10 @@ def is_ai_related(title: str, description: str = "") -> bool:
 
 def is_within_timeframe(published_date: datetime = None) -> bool:
     """
-    التحقق من أن الخبر ضمن الإطار الزمني المحدد (آخر 24 ساعة)
+    التحقق من أن الخبر ضمن الإطار الزمني المحدد
+    
+    🔴 FIX v3: بنقرأ NEWS_FETCH_HOURS ديناميكي من الـ config module
+    عشان لو البوت غيّر القيمة (مثلاً بناءً على last_news_delivery)، التغيير ينعكس هنا
     """
     if published_date is None:
         return True  # لو مفيش تاريخ، نسيبه يعدي
@@ -66,7 +70,7 @@ def is_within_timeframe(published_date: datetime = None) -> bool:
         published_date = published_date.replace(tzinfo=timezone.utc)
 
     time_diff = now - published_date
-    return time_diff.total_seconds() <= NEWS_FETCH_HOURS * 3600
+    return time_diff.total_seconds() <= _config_module.NEWS_FETCH_HOURS * 3600
 
 
 def is_duplicate(title: str, seen_titles: List[str], threshold: float = 0.55) -> bool:

@@ -166,10 +166,20 @@ async def broadcast_daily_news(context: ContextTypes.DEFAULT_TYPE):
             header = daily_news_header(lang_code, date_str)
             items = []
             for i, article in enumerate(summarized):
+                # 🔴 FIX v3: العربي يشوف تلخيص عربي، الإنجليزي يشوف تلخيص إنجليزي
+                if lang_code == "ar":
+                    # للمستخدم العربي: نستخدم العنوان العربي والتلخيص العربي
+                    item_title = article.get("arabic_title") or article.get("title", "")
+                    item_summary = article.get("arabic_summary", article.get("description", "")[:200])
+                else:
+                    # للمستخدم الإنجليزي: نستخدم العنوان الإنجليزي الأصلي والوصف الأصلي
+                    item_title = article.get("title", "")
+                    item_summary = article.get("description", "")[:300]
+                
                 item = format_news_item(
                     i + 1,
-                    article.get("title", ""),
-                    article.get("arabic_summary", article.get("description", "")[:200]),
+                    item_title,
+                    item_summary,
                     article.get("link", ""),
                     article.get("is_top", False),
                     article.get("category", ""),

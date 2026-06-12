@@ -14,7 +14,8 @@ from urllib.parse import urlparse
 import feedparser
 import requests
 
-from config import RSS_FEEDS, REQUEST_TIMEOUT, MAX_RETRIES, RETRY_DELAY, NEWS_FETCH_HOURS
+import config as _config_module
+from config import RSS_FEEDS, REQUEST_TIMEOUT, MAX_RETRIES, RETRY_DELAY
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +27,9 @@ def _is_recent(published: datetime = None, max_hours: float = None) -> bool:
     - كتير من الـ RSS feeds مش بتبعت تاريخ
     - الأخبار دي ممكن تكون مهمة
     - الفلترة الدقيقة بتتعمل بعدين في filters.py
+    
+    🔴 FIX v3: بنقرأ NEWS_FETCH_HOURS ديناميكي من الـ config module
+    عشان لو البوت غيّر القيمة قبل ما ينادي fetch_news()، التغيير ينعكس هنا
     """
     if published is None:
         return True  # 🔴 FIX v2: أخبار بدون تاريخ = نسيبها تعدي (قبل كده كانت False وده بيضيع أخبار كتير!)
@@ -33,7 +37,7 @@ def _is_recent(published: datetime = None, max_hours: float = None) -> bool:
     if published.tzinfo is None:
         published = published.replace(tzinfo=timezone.utc)
     time_diff = now - published
-    hours = max_hours if max_hours is not None else NEWS_FETCH_HOURS
+    hours = max_hours if max_hours is not None else _config_module.NEWS_FETCH_HOURS
     return time_diff.total_seconds() <= hours * 3600
 
 
