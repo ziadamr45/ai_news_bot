@@ -12,6 +12,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, List
 
 from i18n import t
+from config import DEVELOPER_WHATSAPP, DEVELOPER_WHATSAPP_URL
 
 logger = logging.getLogger(__name__)
 
@@ -114,8 +115,7 @@ PLAN_LIMITS = {
 }
 
 DEVELOPER_TELEGRAM = "@ziadamr"
-DEVELOPER_WHATSAPP = "01203551789"
-DEVELOPER_WHATSAPP_URL = "https://wa.me/201203551789"
+# DEVELOPER_WHATSAPP and DEVELOPER_WHATSAPP_URL are imported from config
 
 
 def _get_db():

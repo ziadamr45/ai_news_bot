@@ -19,6 +19,7 @@ from provider_manager import get_provider_manager, call_ai, call_ai_sync
 from config import (
     CREATOR_INFO, REQUEST_TIMEOUT, FAST_TIMEOUT,
     DEVELOPER_USER_ID, DEVELOPER_USERNAME,
+    DEVELOPER_WHATSAPP_URL,
 )
 
 # ⚡ كاش الـ System Prompt الأساسي — بنتبني مرة واحدة لكل لغة
@@ -774,6 +775,9 @@ Your capabilities: 📰 AI News • 🔍 Search • 👁️ Image Analysis • �
 Your creator: Ziad Amr (spelled Z-I-A-D, NOT Zid!) — Egyptian Developer. Made with love in Egypt 🇪🇬.
 
 Respond in English naturally and clearly."""
+
+    # استبدال WhatsApp URL بالقيمة من config
+    _base_system_cache[cache_key] = _base_system_cache[cache_key].replace("https://wa.me/201203551789", DEVELOPER_WHATSAPP_URL)
 
     # استبدال {{DATE_CONTEXT}} بالتاريخ الحالي
     system = _base_system_cache[cache_key].replace("{{DATE_CONTEXT}}", date_context)

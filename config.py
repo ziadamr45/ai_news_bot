@@ -40,6 +40,28 @@ NVIDIA_QWEN_IMAGE_EDIT_KEY = os.environ.get("NVIDIA_QWEN_IMAGE_EDIT_KEY", "")
 NVIDIA_SD35_LARGE_KEY = os.environ.get("NVIDIA_SD35_LARGE_KEY", "")
 NVIDIA_FLUX_KONTEXT_KEY = os.environ.get("NVIDIA_FLUX_KONTEXT_KEY", "")
 
+# NVIDIA API Keys — centralized dictionary
+NVIDIA_KEYS = {
+    "deepseek_v4_pro": NVIDIA_DEEPSEEK_V4_PRO_KEY,
+    "deepseek_v4_flash": NVIDIA_DEEPSEEK_V4_FLASH_KEY,
+    "kimi_k26": NVIDIA_KIMI_K26_KEY,
+    "glm_51": NVIDIA_GLM_51_KEY,
+    "minimax_m27": NVIDIA_MINIMAX_M27_KEY,
+    "llama_33_70b": NVIDIA_LLAMA_33_70B_KEY,
+    "step_37_flash": NVIDIA_STEP_37_FLASH_KEY,
+    "llama_32_90b_vision": NVIDIA_LLAMA_32_90B_VISION_KEY,
+    "nemotron_nano_vl": NVIDIA_NEMOTRON_NANO_VL_KEY,
+    "qwen_image": NVIDIA_QWEN_IMAGE_KEY,
+    "qwen_image_edit": NVIDIA_QWEN_IMAGE_EDIT_KEY,
+    "sd35_large": NVIDIA_SD35_LARGE_KEY,
+    "flux_kontext": NVIDIA_FLUX_KONTEXT_KEY,
+}
+
+
+def get_nvidia_key(model_name: str) -> str:
+    """Get NVIDIA API key by model name — single point of access"""
+    return NVIDIA_KEYS.get(model_name, "")
+
 # Mistral AI (أساسي للمجاني + fallback للبريميوم — 1B توكن/شهر)
 MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY", "")
 MISTRAL_BASE_URL = "https://api.mistral.ai/v1"
@@ -493,8 +515,8 @@ DEVELOPER_USERNAME = "ziadamr"  # @ziadamr
 
 DEVELOPER_TELEGRAM = "@ziadamr"
 DEVELOPER_TELEGRAM_URL = "https://t.me/ziadamr"
-DEVELOPER_WHATSAPP = "01203551789"
-DEVELOPER_WHATSAPP_URL = "https://wa.me/201203551789"
+DEVELOPER_WHATSAPP = os.environ.get("DEVELOPER_WHATSAPP", "01203551789")
+DEVELOPER_WHATSAPP_URL = f"https://wa.me/{DEVELOPER_WHATSAPP.lstrip('0')}"
 
 # Premium limits (⚠️仅供参考 — the actual limits are in PLAN_LIMITS in premium.py)
 FREE_AI_MESSAGES_PER_DAY = 20
