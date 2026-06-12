@@ -3,8 +3,8 @@
 الخطه الشامله مع per-model API keys:
 🧠 Chat Free: Mistral Small → Mistral Nemo → Llama 3.3 70B → DeepSeek V4 Flash (heavy) → SambaNova
 🧠 Chat Premium: Mistral Large → Mistral Medium → Kimi K2.6 → MiniMax M2.7 → GLM 5.1 → DeepSeek V4 Pro (heavy)
-⚡ Simple Free: Groq Llama 3.3 70B → Mistral Small → Llama 3.3 70B → Step 3.7 Flash → SambaNova
-⚡ Simple Premium: Groq Llama 3.3 70B → Mistral Small → Step 3.7 Flash → Mistral Medium
+⚡ Simple Free: Mistral Small → Llama 3.3 70B → Step 3.7 Flash → SambaNova
+⚡ Simple Premium: Mistral Small → Step 3.7 Flash → Mistral Medium
 🔥 Deep Search Premium: DeepSeek V4 Pro → Kimi K2.6 → MiniMax M2.7 → Mistral Large
 👨‍💻 Coding Free: Step 3.7 Flash → Codestral → Mistral Small → SambaNova
 👨‍💻 Coding Premium: GLM 5.1 → DeepSeek V4 Pro → Kimi K2.6 → Codestral → Mistral Large
@@ -41,7 +41,6 @@ _api_semaphore = asyncio.Semaphore(10)
 from config import (
     SAMBANOVA_API_KEY, SAMBANOVA_BASE_URL,
     MISTRAL_API_KEY, MISTRAL_BASE_URL,
-    GROQ_API_KEY, GROQ_BASE_URL,
     NVIDIA_BASE_URL, NVIDIA_GENAI_BASE_URL,
     CHAT_MODELS, SIMPLE_MODELS, DEEP_SEARCH_MODELS,
     CODING_MODELS, SUMMARY_MODELS, VISION_MODELS,
@@ -119,14 +118,6 @@ class ProviderManager:
                 "base_url": SAMBANOVA_BASE_URL,
             }
             logger.info("✅ SambaNova provider configured (Free fallback)")
-
-        # Groq (⚡ أسرع نموذج — sub-second inference للرسائل البسيطة)
-        if GROQ_API_KEY:
-            self.providers["groq"] = {
-                "api_key": GROQ_API_KEY,
-                "base_url": GROQ_BASE_URL,
-            }
-            logger.info("✅ Groq provider configured (⚡ Simple responses — sub-second inference)")
 
         if not self.providers:
             logger.error("❌ No AI providers configured!")
