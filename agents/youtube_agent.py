@@ -7,8 +7,16 @@
 2. youtube_transcript_api (مكتبة بايثون — يدعم v0.6+)
 3. Piped Captions API (بديل لـ Invidious)
 4. YouTube HTML Scraping (استخراج الترجمة من صفحة الفيديو)
-5. Web Search Fallback (بحث عن ملخصات موجودة)
-6. Video Info + AI (آخر حل — تلخيص بناءً على العنوان والوصف فقط)
+5. 🆕 ASR Fallback — تحميل الصوت وتحويله لنص عبر Whisper (للفيديوهات اللي مفيهاش ترجمة)
+6. Web Search Fallback (بحث عن ملخصات موجودة)
+7. Video Info + AI (آخر حل — تلخيص بناءً على العنوان والوصف فقط)
+
+🔴 جديد في v3:
+- 🆕 ASR Fallback: تحميل صوت الفيديو وتحويله لنص عبر VoiceAgent (Groq Whisper)
+  - بيشتغل للفيديوهات اللي مفيهاش ترجمات (أغلب الفيديوهات!)
+  - بينزل صوت بس (مش فيديو كامل) → أسرع وأخف
+  - بينزل أول 20 دقيقة بس لو الفيديو طويل → مياخدش وقت كتير
+  - بيستخدم نفس VoiceAgent بتاع الرسائل الصوتية
 
 🔴 جديد في v2:
 - Invidious captions API كطريقة أولى (أضمن من scraping)
@@ -150,7 +158,15 @@ class YouTubeAgent:
             self._cache_transcript(video_id, transcript)
             return transcript
 
-        logger.warning(f"🔴 All transcript methods failed for {video_id}")
+        # ═══ الطريقة 5: 🆕 ASR — تحميل الصوت وتحويله لنص ═══
+        # لو كل طرق الترجمة فشلت → نحمل الصوت ونحوله لنص عبر Whisper
+        # ده بيشتغل لأي فيديو فيه صوت حتى لو مفيهوش ترجمة!
+        transcript = self._get_transcript_asr(video_id, languages)
+        if transcript:
+            self._cache_transcript(video_id, transcript)
+            return transcript
+
+        logger.warning(f"🔴 All transcript methods (including ASR) failed for {video_id}")
         return ""
 
     def _get_transcript_invidious(self, video_id: str, languages: list = None) -> str:
@@ -723,6 +739,272 @@ class YouTubeAgent:
         return ""
 
     # ═══════════════════════════════════════
+    # 🆕 ASR Fallback — تحميل صوت الفيديو وتحويله لنص
+    # ═══════════════════════════════════════
+
+    def _get_transcript_asr(self, video_id: str, languages: list = None) -> str:
+        """تحميل صوت الفيديو من YouTube وتحويله لنص عبر VoiceAgent (Whisper)
+
+        🔴 ده الحل للفيديوهات اللي مفيهاش ترجمات — بيستخدم نفس النموذج بتاع الرسائل الصوتية!
+
+        الخطوات:
+        1. تحميل الصوت بس من YouTube باستخدام yt-dlp (أسرع من تحميل الفيديو كامل)
+        2. لو الفيديو أطول من 20 دقيقة → نحمل أول 20 دقيقة بس
+        3. لو الملف أكبر من 24MB → نقطعه لقطع ونحول كل قطعة
+        4. تحويل الصوت لنص عبر VoiceAgent (Groq Whisper أساسي + 3 fallbacks)
+        5. دمج النصوص وترجعها
+
+        Returns: نص الفيديو أو "" لو فشل
+        """
+        if not languages:
+            languages = ["ar", "en"]
+
+        logger.info(f"🎤 ASR: Attempting audio transcription for {video_id}")
+
+        try:
+            import subprocess
+            import tempfile
+            import os
+
+            # 🔴 Step 1: معرفة مدة الفيديو عشان نحدد هنحمل قد إيه
+            duration = 0
+            try:
+                # نحاول نجيب المدة من Invidious الأول (سريع)
+                import requests as req
+                for instance in INVIVIOUS_CAPTION_INSTANCES[:2]:
+                    try:
+                        api_url = f"{instance}/api/v1/videos/{video_id}"
+                        resp = req.get(api_url, params={"fields": "lengthSeconds"}, timeout=8, headers={
+                            "User-Agent": "Mozilla/5.0", "Accept": "application/json"
+                        })
+                        if resp.status_code == 200:
+                            duration = resp.json().get("lengthSeconds", 0)
+                            if duration:
+                                break
+                    except Exception:
+                        continue
+            except Exception:
+                pass
+
+            # 🔴 Step 2: تحميل الصوت باستخدام yt-dlp
+            # بنحمل صوت بس (مش فيديو) — أسرع بكتير
+            tmpdir = tempfile.mkdtemp(prefix="yt_asr_")
+            audio_path = os.path.join(tmpdir, "audio.ogg")
+
+            # لو الفيديو أطول من 20 دقيقة → نحمل أول 20 دقيقة بس
+            # ده بيخلي التحميل والتحويل أسرع بكتير
+            MAX_DURATION = 20 * 60  # 20 دقيقة
+            download_args = [
+                'yt-dlp',
+                '--quiet', '--no-warnings',
+                '-f', 'bestaudio/best',
+                '--extract-audio',
+                '--audio-format', 'opus',  # OGG/Opus — خفيف وبيشتغل مع Whisper
+                '--audio-quality', '5',  # جودة متوسطة (أصغر حجم)
+                '-o', audio_path,
+            ]
+
+            # لو الفيديو طويل → نحمل أول 20 دقيقة بس
+            if duration > MAX_DURATION:
+                logger.info(f"🎤 ASR: Video is {duration // 60}min, downloading first 20min only...")
+                download_args.extend([
+                    '--download-sections', f'*0:00-{MAX_DURATION // 60}:{MAX_DURATION % 60:02d}',
+                ])
+            elif duration == 0:
+                # لو مش عارفين المدة → نحدد حد أقصى 20 دقيقة احتياطي
+                logger.info(f"🎤 ASR: Unknown duration, setting 20min limit as precaution...")
+                download_args.extend([
+                    '--download-sections', '*0:00-20:00',
+                ])
+
+            # إضافة رابط الفيديو
+            video_url = f"https://www.youtube.com/watch?v={video_id}"
+            download_args.append(video_url)
+
+            logger.info(f"🎤 ASR: Downloading audio from {video_id}...")
+            dl_result = subprocess.run(download_args, capture_output=True, timeout=180)
+
+            # لو الملف مش موجود بالامتداد ده → yt-dlp ممكن يكون غيّره
+            if not os.path.exists(audio_path):
+                # بحث عن أي ملف صوت في المجلد المؤقت
+                for f in os.listdir(tmpdir):
+                    if f.endswith(('.ogg', '.opus', '.mp3', '.m4a', '.wav', '.webm')):
+                        audio_path = os.path.join(tmpdir, f)
+                        break
+
+            if not os.path.exists(audio_path):
+                logger.warning(f"🎤 ASR: yt-dlp failed to download audio — {dl_result.stderr.decode()[:300]}")
+                try:
+                    import shutil
+                    shutil.rmtree(tmpdir, ignore_errors=True)
+                except Exception:
+                    pass
+                return ""
+
+            file_size = os.path.getsize(audio_path)
+            file_mb = file_size / (1024 * 1024)
+            logger.info(f"🎤 ASR: Audio downloaded — {file_mb:.1f}MB")
+
+            # 🔴 Step 3: تحويل الصوت لنص عبر VoiceAgent
+            # VoiceAgent بيقبل bytes أو file_path
+            # Groq Whisper ليه حد 25MB → لو الملف أكبر نقطعه
+            MAX_WHISPER_SIZE = 24 * 1024 * 1024  # 24MB (أقل بقليل من الحد)
+
+            try:
+                from agents.voice_agent import VoiceAgent
+                voice_agent = VoiceAgent()
+
+                if file_size <= MAX_WHISPER_SIZE:
+                    # ملف واحد → نحوله مرة واحدة
+                    logger.info(f"🎤 ASR: Transcribing single file ({file_mb:.1f}MB)...")
+                    with open(audio_path, 'rb') as f:
+                        audio_bytes = f.read()
+
+                    result = voice_agent.transcribe(audio_bytes, language=languages[0] if languages else "ar")
+
+                    if result.get("success") and result.get("text", "").strip():
+                        transcript = result["text"].strip()
+                        logger.info(f"✅ ASR: Transcription successful ({len(transcript)} chars, provider={result.get('provider', 'unknown')})")
+                        return transcript
+                    else:
+                        logger.warning(f"🎤 ASR: Transcription failed: {result.get('error', 'unknown')}")
+                else:
+                    # ملف كبير → نقطعه لقطع ونحول كل قطعة
+                    logger.info(f"🎤 ASR: File too large ({file_mb:.1f}MB), splitting into chunks...")
+                    transcript = self._transcribe_audio_chunks(voice_agent, audio_path, languages)
+                    if transcript:
+                        return transcript
+
+            except ImportError:
+                logger.warning("🎤 ASR: VoiceAgent not available — skipping ASR fallback")
+            except Exception as e:
+                logger.warning(f"🎤 ASR: VoiceAgent error: {e}")
+
+            # تنظيف
+            try:
+                import shutil
+                shutil.rmtree(tmpdir, ignore_errors=True)
+            except Exception:
+                pass
+
+        except subprocess.TimeoutExpired:
+            logger.warning("🎤 ASR: Audio download timed out (180s)")
+        except Exception as e:
+            logger.warning(f"🎤 ASR: Error: {e}")
+
+        return ""
+
+    def _transcribe_audio_chunks(self, voice_agent, audio_path: str, languages: list = None) -> str:
+        """تحويل ملف صوتي كبير لنص عن طريق تقطيعه لقطع صغيرة
+
+        🔴 Groq Whisper ليه حد ~25MB → بنقطع الملف لقطع 10 دقيقة
+        ونحول كل قطعة لوحدها ثم ندمج النتائج
+        """
+        import subprocess
+        import tempfile
+        import os
+
+        if not languages:
+            languages = ["ar", "en"]
+
+        lang = languages[0] if languages else "ar"
+
+        try:
+            # معرفة مدة الصوت
+            probe_cmd = ['ffprobe', '-v', 'error', '-show_entries', 'format=duration',
+                        '-of', 'default=noprint_wrappers=1:nokey=1', audio_path]
+            probe_result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=15)
+
+            if probe_result.returncode != 0:
+                logger.warning("🎤 ASR chunks: ffprobe failed")
+                return ""
+
+            try:
+                total_duration = float(probe_result.stdout.strip())
+            except ValueError:
+                logger.warning("🎤 ASR chunks: Could not parse duration")
+                return ""
+
+            if total_duration <= 0:
+                return ""
+
+            logger.info(f"🎤 ASR chunks: Total duration={total_duration:.0f}s")
+
+            # تقطيع لقطع 10 دقيقة
+            CHUNK_DURATION = 10 * 60  # 10 دقائق
+            chunks = []
+            start = 0
+
+            while start < total_duration:
+                chunk_path = f"{audio_path}_chunk_{len(chunks)}.ogg"
+                chunk_cmd = [
+                    'ffmpeg', '-y', '-i', audio_path,
+                    '-ss', str(start),
+                    '-t', str(CHUNK_DURATION),
+                    '-c:a', 'libopus', '-b:a', '48k',
+                    '-vn',
+                    chunk_path
+                ]
+                chunk_result = subprocess.run(chunk_cmd, capture_output=True, timeout=60)
+
+                if chunk_result.returncode == 0 and os.path.exists(chunk_path) and os.path.getsize(chunk_path) > 1000:
+                    chunks.append(chunk_path)
+                    start += CHUNK_DURATION
+                else:
+                    break
+
+                # حد أقصى 6 قطع (60 دقيقة)
+                if len(chunks) >= 6:
+                    break
+
+            if not chunks:
+                logger.warning("🎤 ASR chunks: No chunks created")
+                return ""
+
+            logger.info(f"🎤 ASR chunks: Created {len(chunks)} chunks")
+
+            # تحويل كل قطعة
+            transcripts = []
+            for i, chunk_path in enumerate(chunks):
+                try:
+                    chunk_size = os.path.getsize(chunk_path)
+                    chunk_mb = chunk_size / (1024 * 1024)
+                    logger.info(f"🎤 ASR chunk {i+1}/{len(chunks)}: {chunk_mb:.1f}MB — transcribing...")
+
+                    with open(chunk_path, 'rb') as f:
+                        chunk_bytes = f.read()
+
+                    # محاولة تحويل باللغة المطلوبة الأول، وبعدين auto
+                    result = voice_agent.transcribe(chunk_bytes, language=lang)
+                    if not result.get("success") or not result.get("text", "").strip():
+                        # محاولة تانية بدون تحديد لغة
+                        result = voice_agent.transcribe(chunk_bytes, language="auto")
+
+                    if result.get("success") and result.get("text", "").strip():
+                        transcripts.append(result["text"].strip())
+                        logger.info(f"✅ ASR chunk {i+1}: {len(result['text'])} chars")
+                    else:
+                        logger.warning(f"⚠️ ASR chunk {i+1}: Failed — {result.get('error', 'unknown')}")
+
+                except Exception as e:
+                    logger.warning(f"⚠️ ASR chunk {i+1} error: {e}")
+                finally:
+                    try: os.remove(chunk_path)
+                    except: pass
+
+            if transcripts:
+                full_transcript = ' '.join(transcripts)
+                logger.info(f"✅ ASR chunks: Full transcription — {len(full_transcript)} chars from {len(transcripts)}/{len(chunks)} chunks")
+                return full_transcript
+            else:
+                logger.warning("🎤 ASR chunks: All chunks failed to transcribe")
+
+        except Exception as e:
+            logger.warning(f"🎤 ASR chunks error: {e}")
+
+        return ""
+
+    # ═══════════════════════════════════════
     # Video Info
     # ═══════════════════════════════════════
 
@@ -1013,7 +1295,7 @@ Write an approximate summary in English based on the title. NEVER use Markdown. 
 
         # ═══ Last Resort: Basic Info ═══
         if language == "ar":
-            return f"🎬 <b>{title}</b>\n{f'👤 {author}' if author else ''}\n{f'⏱️ {duration_str}' if duration_str else ''}\n\n⚠️ لم أتمكن من الحصول على محتوى الفيديو. جرب فيديو فيه ترجمة (captions)."
+            return f"🎬 <b>{title}</b>\n{f'👤 {author}' if author else ''}\n{f'⏱️ {duration_str}' if duration_str else ''}\n\n⚠️ مقدرش أجيب محتوى الفيديو — ممكن يكون مفيهوش صوت أو اللغة مش مدعومة."
         else:
             return f"🎬 <b>{title}</b>\n{f'👤 {author}' if author else ''}\n{f'⏱️ {duration_str}' if duration_str else ''}\n\n⚠️ Couldn't get video content. Try a video with captions."
 
