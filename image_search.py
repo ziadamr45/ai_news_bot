@@ -3,7 +3,7 @@ Image Search Module 🔍🖼️
 بحث عن صور وتحميلها
 
 🔴 كيف بيشتغل:
-1. بيبحث في DuckDuckGo + Google + Bing + Pexels + Pixabay + Unsplash في نفس الوقت (parallel)
+1. بيبحث في Google + DuckDuckGo + Bing + Pexels + Pixabay + Unsplash في نفس الوقت (parallel)
 2. بيدمج النتائج وبيخلطها عشان التنوع
 3. بيرجع قائمة صور فيها: رابط، صورة مصغرة، حجم، مصدر، مصور
 4. بيقدر يحمّل الصور ويبعتها
@@ -540,27 +540,28 @@ async def search_images_bing(query: str, count: int = 3) -> Optional[List[Dict]]
 
 
 # ═══════════════════════════════════════
-# بحث صور — Parallel Search (DuckDuckGo + Google + Bing + Pexels + Pixabay + Unsplash)
+# بحث صور — Parallel Search (Google + DuckDuckGo + Bing + Pexels + Pixabay + Unsplash)
 # ═══════════════════════════════════════
 
 async def search_images(query: str, count: int = 3) -> Optional[List[Dict]]:
-    """بحث صور — Parallel search من DuckDuckGo + Google + Bing + Pexels + Pixabay + Unsplash
+    """بحث صور — Parallel search من Google + DuckDuckGo + Bing + Pexels + Pixabay + Unsplash
     
-    🔴 FIX v4: Google Images اتضاف كمصدر إضافي!
-    - DuckDuckGo — بيفهرس الويب كله، الأفضل للأشخاص والشخصيات (مجاني، مش محتاج API key!)
-    - Google Images — أغنى مصدر صور على الإنترنت (مجاني، بدون API key!)
+    🔴 FIX v5: Google Images الأولوية الأولى!
+    - Google Images — أغنى وأدق مصدر صور على الإنترنت (مجاني، بدون API key!) — الأول 🔴
+    - DuckDuckGo — بيفهرس الويب كله، كويس للأشخاص والشخصيات (مجاني، مش محتاج API key!)
     - Bing — لو متوفر BING_SEARCH_API_KEY (optional — محتاج فيزا على Azure)
     - Pexels API — صور ستوك عالية الجودة (محتاج PEXELS_API_KEY)
     - Pixabay API — صور ستوك مجانية كتير (محتاج PIXABAY_API_KEY)
     - Unsplash API — صور ستوك احترافية (محتاج UNSPLASH_ACCESS_KEY)
     
-    🔴 ليه Google Images مهم:
+    🔴 ليه Google Images الأول:
     أغنى مصدر صور على الإنترنت — بيفهرس مليارات الصور من كل الويب.
-    لو DuckDuckGo رجع نتائج قليلة أو مش دقيقة، Google بيعوض ده.
-    ممتاز للأشخاص والشخصيات المحددة (محمد صلاح، الأهرامات، إلخ).
+    أدق نتائج للأشخاص والشخصيات والأماكن المحددة.
+    بيغطي أي حاجة DuckDuckGo مش لاقيها.
     
     🔴 أولوية النتائج:
-    - بنحط نتائج الويب الأول: DuckDuckGo/Google/Bing (أكثر دقة للبحث عن أشخاص/أشياء محددة)
+    - بنحط نتائج Google الأول (أغنى وأدق مصدر)
+    - بعدين نتائج DuckDuckGo/Bing من الويب
     - بعدين بنخلط مع نتائج الستوك عشان التنوع
     
     Args:
@@ -577,8 +578,8 @@ async def search_images(query: str, count: int = 3) -> Optional[List[Dict]]:
     import asyncio
     
     search_tasks = [
+        ("Google", search_images_google),  # 🔴 الأول — أغنى مصدر صور على الإنترنت (مجاني!)
         ("DuckDuckGo", search_images_duckduckgo),
-        ("Google", search_images_google),  # 🔴 جديد — أغنى مصدر صور على الإنترنت (مجاني!)
         ("Bing", search_images_bing),  # optional — لو متوفر BING_SEARCH_API_KEY
         ("Pexels", search_images_pexels),
         ("Pixabay", search_images_pixabay),
@@ -592,8 +593,8 @@ async def search_images(query: str, count: int = 3) -> Optional[List[Dict]]:
     
     results_list = await asyncio.gather(*tasks, return_exceptions=True)
     
-    # بنجمع كل النتائج الناجحة — بنحط نتائج الويب الأول (DuckDuckGo/Bing)
-    web_results = []  # DuckDuckGo + Bing = نتائج من الويب (أشخاص وشخصيات)
+    # بنجمع كل النتائج الناجحة — بنحط نتائج الويب الأول (Google/DuckDuckGo/Bing)
+    web_results = []  # Google + DuckDuckGo + Bing = نتائج من الويب (أشخاص وشخصيات)
     stock_results = []  # Pexels + Pixabay + Unsplash = صور ستوك
     
     for i, result in enumerate(results_list):
@@ -610,8 +611,8 @@ async def search_images(query: str, count: int = 3) -> Optional[List[Dict]]:
         else:
             logger.debug(f"🖼️ Image search ({name}): no results")
     
-    # 🔴 بنحط نتائج الويب الأول (أكثر دقة للأشخاص والشخصيات)
-    # بعدين نخلط مع نتائج الستوك عشان التنوع
+    # 🔴 بنحط نتائج Google الأول (أغنى وأدق مصدر) → بعدين DuckDuckGo/Bing → بعدين الستوك
+    # ده بيخلي نتائج Google تظهر الأول في القائمة
     all_results = web_results + stock_results
     
     if all_results:
