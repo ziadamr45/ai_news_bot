@@ -3,7 +3,7 @@ Image Search Module 🔍🖼️
 بحث عن صور وتحميلها
 
 🔴 كيف بيشتغل:
-1. بيبحث في DuckDuckGo + Bing + Pexels + Pixabay + Unsplash في نفس الوقت (parallel)
+1. بيبحث في DuckDuckGo + Google + Bing + Pexels + Pixabay + Unsplash في نفس الوقت (parallel)
 2. بيدمج النتائج وبيخلطها عشان التنوع
 3. بيرجع قائمة صور فيها: رابط، صورة مصغرة، حجم، مصدر، مصور
 4. بيقدر يحمّل الصور ويبعتها
@@ -14,10 +14,11 @@ Image Search Module 🔍🖼️
 - تحميل الصور وإرسالها مباشرة
 - Parallel search = أسرع = نتائج أكتر
 - DuckDuckGo = صور أشخاص وشخصيات حقيقية من الويب (مجاني!)
+- Google Images = أغنى مصدر صور على الويب (مجاني، بدون API key!)
 - Bing = صور من الويب (optional — لو متوفر API key)
 - Pexels · Pixabay · Unsplash = صور ستوك احترافية
 
-🔴 محتاج API keys (اختياري — DuckDuckGo مش محتاج أي حاجة!):
+🔴 محتاج API keys (اختياري — DuckDuckGo و Google مش محتاجين أي حاجة!):
 - BING_SEARCH_API_KEY — من azure.microsoft.com (optional — محتاج فيزا)
 - PEXELS_API_KEY — من pexels.com/api (مجاني)
 - PIXABAY_API_KEY — من pixabay.com/api/docs (مجاني)
@@ -32,7 +33,7 @@ import tempfile
 import hashlib
 import base64
 from typing import Dict, Optional, List
-from urllib.parse import quote_plus, urlparse
+from urllib.parse import quote_plus, unquote, urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +115,141 @@ async def search_images_duckduckgo(query: str, count: int = 3) -> Optional[List[
         return None
     except Exception as e:
         logger.warning(f"DuckDuckGo image search error: {e}")
+        return None
+
+
+# ═══════════════════════════════════════
+# Google Images Search (بحث الويب — مجاني ومش محتاج API key!)
+# 🔴 أغنى مصدر صور على الإنترنت — بيفهرس الويب كله
+# 🔴 الأفضل للأشخاص والشخصيات المحددة (محمد صلاح، الأهرامات، إلخ)
+# 🔴 بنستخدم scraping لصفحة Google Images (mobile version أبسط)
+# ═══════════════════════════════════════
+
+async def search_images_google(query: str, count: int = 3) -> Optional[List[Dict]]:
+    """بحث صور باستخدام Google Images — لا يحتاج API key
+    
+    🔴 أغنى مصدر صور على الإنترنت لأنه:
+    1. مجاني ومش محتاج API key أو فيزا
+    2. بيفهرس الويب كله — أكبر قاعدة بيانات صور في العالم
+    3. الأفضل للأشخاص والشخصيات المحددة (محمد صلاح، الأهرامات، إلخ)
+    4. بيرجع روابط صور مباشرة (مش صفحات ويب)
+    
+    🔴 كيف بيشتغل:
+    - بنعمل scraping لصفحة Google Images (mobile version)
+    - بنستخرج روابط الصور من الـ HTML بـ 3 طرق مختلفة عشان نضمن أكبر عدد
+    
+    🔴 ملاحظات:
+    - Google ممكن يحدد rate limits لو طلبات كتير، فـ ده مصدر إضافي مش أساسي
+    - بنستخدم mobile user agent عشان Google ترجع HTML أبسط
+    - بنفعل safe=active عشان فلترة المحتوى غير المناسب
+    """
+    try:
+        import requests as req
+        
+        search_count = min(count * 3, 30)
+        encoded_query = quote_plus(query)
+        
+        # بنستخدم mobile user agent عشان Google ترجع HTML أبسط
+        url = f"https://www.google.com/search?q={encoded_query}&tbm=isch&safe=active"
+        
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Linux; Android 10; SM-G973F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9,ar;q=0.8",
+            "Accept-Encoding": "gzip, deflate, br",
+        }
+        
+        def _sync_search():
+            resp = req.get(url, headers=headers, timeout=REQUEST_TIMEOUT)
+            if resp.status_code != 200:
+                logger.warning(f"Google Images: HTTP {resp.status_code}")
+                return []
+            
+            html = resp.text
+            results = []
+            seen = set()
+            
+            # ═══ Method 1: استخراج روابط الصور الأصلية من imgres links ═══
+            # Google بيلف روابط الصور كده: /imgres?imgurl=ORIGINAL_URL&...
+            imgres_urls = re.findall(r'imgurl=(https?://[^&"\'\s]+)', html)
+            for img_url in imgres_urls:
+                img_url = unquote(img_url)
+                # نتخطى أصول Google نفسها
+                if 'gstatic.com' in img_url:
+                    continue
+                try:
+                    domain = img_url.split('/')[2]
+                    if 'google' in domain:
+                        continue
+                except (IndexError, ValueError):
+                    pass
+                if img_url not in seen:
+                    seen.add(img_url)
+                    results.append({
+                        "url": img_url,
+                        "thumbnail": "",
+                        "full_url": img_url,
+                        "width": 0,
+                        "height": 0,
+                        "description": query,
+                        "author": "",
+                        "source": "Google",
+                        "download_url": img_url,
+                    })
+            
+            # ═══ Method 2: استخراج من حقول "ou" في JSON (original URL) ═══
+            if len(results) < search_count:
+                ou_matches = re.findall(r'"ou"\s*:\s*"(https?://[^"]+)"', html)
+                tu_matches = re.findall(r'"tu"\s*:\s*"(https?://[^"]+)"', html)
+                for i, ou in enumerate(ou_matches):
+                    ou = ou.replace('\\u003d', '=').replace('\\u0026', '&')
+                    if ou not in seen and 'gstatic.com' not in ou:
+                        thumb = ""
+                        if i < len(tu_matches):
+                            thumb = tu_matches[i].replace('\\u003d', '=').replace('\\u0026', '&')
+                        seen.add(ou)
+                        results.append({
+                            "url": ou,
+                            "thumbnail": thumb,
+                            "full_url": ou,
+                            "width": 0,
+                            "height": 0,
+                            "description": query,
+                            "author": "",
+                            "source": "Google",
+                            "download_url": ou,
+                        })
+            
+            # ═══ Method 3: استخراج من data-src في img tags (صور مصغرة) ═══
+            if len(results) < search_count:
+                data_srcs = re.findall(r'data-src="(https://[^"]+)"', html)
+                for src in data_srcs:
+                    if src not in seen and 'gstatic.com' not in src:
+                        seen.add(src)
+                        results.append({
+                            "url": src,
+                            "thumbnail": src,
+                            "full_url": src,
+                            "width": 0,
+                            "height": 0,
+                            "description": query,
+                            "author": "",
+                            "source": "Google",
+                            "download_url": src,
+                        })
+            
+            return results[:search_count]
+        
+        loop = asyncio.get_event_loop()
+        results = await loop.run_in_executor(None, _sync_search)
+        
+        if results:
+            logger.info(f"🖼️ Google image search: {len(results)} results for '{query}' (requested {search_count})")
+            return results
+        return None
+        
+    except Exception as e:
+        logger.warning(f"Google image search error: {e}")
         return None
 
 
@@ -370,26 +506,27 @@ async def search_images_bing(query: str, count: int = 3) -> Optional[List[Dict]]
 
 
 # ═══════════════════════════════════════
-# بحث صور — Parallel Search (DuckDuckGo + Bing + Pexels + Pixabay + Unsplash)
+# بحث صور — Parallel Search (DuckDuckGo + Google + Bing + Pexels + Pixabay + Unsplash)
 # ═══════════════════════════════════════
 
 async def search_images(query: str, count: int = 3) -> Optional[List[Dict]]:
-    """بحث صور — Parallel search من DuckDuckGo + Bing + Pexels + Pixabay + Unsplash
+    """بحث صور — Parallel search من DuckDuckGo + Google + Bing + Pexels + Pixabay + Unsplash
     
-    🔴 FIX v3: DuckDuckGo Images هو البحث الأساسي للويب!
+    🔴 FIX v4: Google Images اتضاف كمصدر إضافي!
     - DuckDuckGo — بيفهرس الويب كله، الأفضل للأشخاص والشخصيات (مجاني، مش محتاج API key!)
+    - Google Images — أغنى مصدر صور على الإنترنت (مجاني، بدون API key!)
     - Bing — لو متوفر BING_SEARCH_API_KEY (optional — محتاج فيزا على Azure)
     - Pexels API — صور ستوك عالية الجودة (محتاج PEXELS_API_KEY)
     - Pixabay API — صور ستوك مجانية كتير (محتاج PIXABAY_API_KEY)
     - Unsplash API — صور ستوك احترافية (محتاج UNSPLASH_ACCESS_KEY)
     
-    🔴 ليه DuckDuckGo مهم:
-    Pexels/Pixabay/Unsplash دول مواقع صور ستوك — صور عامة واحترافية بس مش صور
-    أشخاص حقيقيين. لو المستخدم بيدور على "محمد صلاح" أو "ال أهرامات" أو
-    أي حاجة محددة، DuckDuckGo هيلاقيها لأنه بيفهرس الويب كله مش ستوك بس.
+    🔴 ليه Google Images مهم:
+    أغنى مصدر صور على الإنترنت — بيفهرس مليارات الصور من كل الويب.
+    لو DuckDuckGo رجع نتائج قليلة أو مش دقيقة، Google بيعوض ده.
+    ممتاز للأشخاص والشخصيات المحددة (محمد صلاح، الأهرامات، إلخ).
     
     🔴 أولوية النتائج:
-    - بنحط نتائج DuckDuckGo/Bing الأول (أكثر دقة للبحث عن أشخاص/أشياء محددة)
+    - بنحط نتائج الويب الأول: DuckDuckGo/Google/Bing (أكثر دقة للبحث عن أشخاص/أشياء محددة)
     - بعدين بنخلط مع نتائج الستوك عشان التنوع
     
     Args:
@@ -407,6 +544,7 @@ async def search_images(query: str, count: int = 3) -> Optional[List[Dict]]:
     
     search_tasks = [
         ("DuckDuckGo", search_images_duckduckgo),
+        ("Google", search_images_google),  # 🔴 جديد — أغنى مصدر صور على الإنترنت (مجاني!)
         ("Bing", search_images_bing),  # optional — لو متوفر BING_SEARCH_API_KEY
         ("Pexels", search_images_pexels),
         ("Pixabay", search_images_pixabay),
@@ -431,7 +569,7 @@ async def search_images(query: str, count: int = 3) -> Optional[List[Dict]]:
             continue
         if result and len(result) > 0:
             logger.info(f"🖼️ Image search ({name}): {len(result)} results for '{query}'")
-            if name in ("DuckDuckGo", "Bing"):
+            if name in ("DuckDuckGo", "Google", "Bing"):
                 web_results.extend(result)
             else:
                 stock_results.extend(result)
