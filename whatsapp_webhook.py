@@ -34,7 +34,6 @@ import base64
 import io
 import tempfile
 import shutil
-import subprocess
 import time
 from datetime import datetime, timezone
 
@@ -620,91 +619,6 @@ class ThinkingFeedback:
 # ═══════════════════════════════════════
 # WhatsApp Media Sending Helpers
 # ═══════════════════════════════════════
-
-async def _reencode_video_for_whatsapp(input_path: str) -> str | None:
-    """Re-encode video to WhatsApp-compatible format (H.264 + AAC in MP4)
-    
-    WhatsApp Cloud API is very restrictive about video formats:
-    - Must be H.264 video codec
-    - Must be AAC audio codec  
-    - Must be in MP4 container
-    - Must have moov atom at the beginning (faststart)
-    
-    Videos from platforms like Threads might use different codecs (VP9, AV1, etc.)
-    that WhatsApp rejects. This function re-encodes them.
-    
-    Returns: Path to re-encoded file (or original if already compatible), None on failure
-    """
-    try:
-        # First, check if the video is already compatible using ffprobe
-        probe_cmd = [
-            'ffprobe', '-v', 'quiet', '-print_format', 'json',
-            '-show_streams', '-show_format', input_path
-        ]
-        probe_result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=10)
-        
-        if probe_result.returncode == 0:
-            import json as _json
-            probe_data = _json.loads(probe_result.stdout)
-            streams = probe_data.get('streams', [])
-            
-            video_codec = None
-            audio_codec = None
-            for s in streams:
-                if s.get('codec_type') == 'video':
-                    video_codec = s.get('codec_name', '')
-                elif s.get('codec_type') == 'audio':
-                    audio_codec = s.get('codec_name', '')
-            
-            # Already compatible? No need to re-encode
-            if video_codec in ('h264', 'avc1') and (audio_codec is None or audio_codec in ('aac', 'mp4a')):
-                logger.info(f"📹 Video already WhatsApp-compatible: video={video_codec}, audio={audio_codec}")
-                return input_path
-            
-            logger.info(f"📹 Video needs re-encoding for WhatsApp: video={video_codec}, audio={audio_codec}")
-        else:
-            logger.info(f"📹 ffprobe failed, will re-encode to be safe")
-        
-        # Re-encode with ffmpeg
-        output_path = input_path.rsplit('.', 1)[0] + '_wa.mp4'
-        cmd = [
-            'ffmpeg', '-y', '-i', input_path,
-            '-c:v', 'libx264', '-preset', 'fast', '-crf', '28',
-            '-c:a', 'aac', '-b:a', '128k',
-            '-movflags', '+faststart',
-            '-f', 'mp4',
-            output_path
-        ]
-        
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-        
-        if result.returncode == 0 and os.path.exists(output_path):
-            output_size = os.path.getsize(output_path)
-            if output_size > 0:
-                logger.info(f"📹 Re-encoded video for WhatsApp: {output_size / (1024*1024):.1f}MB")
-                return output_path
-            else:
-                logger.warning("📹 Re-encoded file is empty")
-                try: os.remove(output_path)
-                except: pass
-        else:
-            logger.warning(f"📹 ffmpeg re-encode failed: {result.stderr[:200] if result.stderr else 'unknown'}")
-            try: 
-                if os.path.exists(output_path): os.remove(output_path)
-            except: pass
-        
-        return None
-        
-    except subprocess.TimeoutExpired:
-        logger.warning("📹 ffmpeg re-encode timed out")
-        return None
-    except FileNotFoundError:
-        # ffmpeg not available
-        logger.warning("📹 ffmpeg not available, skipping re-encode")
-        return input_path  # Return original as fallback
-    except Exception as e:
-        logger.warning(f"📹 Re-encode error: {e}")
-        return None
 
 
 async def _send_whatsapp_image(recipient_wa_id: str, image_base64: str, caption: str = ""):
@@ -1561,7 +1475,7 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                 media_response = requests.post(
                                     f"{WHATSAPP_API_URL}/{WHATSAPP_PHONE_NUMBER_ID}/media",
                                     headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
-                                    files={"file": (f"threads_video.mp4", vf, "video/mp4")},
+                                    files={"file": ("threads_video.mp4", vf, "video/mp4")},
                                     data={"messaging_product": "whatsapp", "type": "video"},
                                     timeout=180
                                 )
@@ -1577,50 +1491,10 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                         except Exception as send_err:
                             logger.warning(f"⚠️ Threads WA video send failed: {send_err}")
                         
-                        # 🔴 الإرسال المباشر فشل — نحاول إعادة ترميز الفيديو لـ WhatsApp
-                        logger.info(f"🧵 Threads WA: Direct send failed, trying re-encode for WhatsApp compatibility...")
-                        reencoded_path = await _reencode_video_for_whatsapp(file_path)
-                        if reencoded_path and reencoded_path != file_path:
-                            # حاول تاني بالملف المعاد ترميزه
-                            try:
-                                reencoded_size = os.path.getsize(reencoded_path)
-                                reencoded_size_str = f"{reencoded_size / (1024*1024):.1f}MB"
-                                with open(reencoded_path, 'rb') as vf:
-                                    media_response2 = requests.post(
-                                        f"{WHATSAPP_API_URL}/{WHATSAPP_PHONE_NUMBER_ID}/media",
-                                        headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
-                                        files={"file": ("threads_video.mp4", vf, "video/mp4")},
-                                        data={"messaging_product": "whatsapp", "type": "video"},
-                                        timeout=180
-                                    )
-                                    if media_response2.status_code == 200:
-                                        media_id2 = media_response2.json().get("id")
-                                        await _send_whatsapp_video(wa_id, media_id2, caption=f"🧵 {real_title[:200]}\n📥 Threads | {reencoded_size_str}")
-                                        await feedback.success()
-                                        try: os.remove(reencoded_path)
-                                        except: pass
-                                        try: os.remove(file_path)
-                                        except: pass
-                                        return
-                                    else:
-                                        logger.warning(f"⚠️ Threads WA: re-encoded upload also failed: {media_response2.status_code}")
-                            except Exception as reenc_send_err:
-                                logger.warning(f"⚠️ Threads WA: re-encoded send failed: {reenc_send_err}")
-                            finally:
-                                # تنظيف ملف إعادة الترميز
-                                try:
-                                    if reencoded_path != file_path and os.path.exists(reencoded_path):
-                                        os.remove(reencoded_path)
-                                except: pass
-                        elif reencoded_path == file_path:
-                            # الفيديو متوافق بالفعل — المشكلة مش في الفورمات
-                            logger.info(f"🧵 Threads WA: Video is already compatible, issue is not format-related")
-                        
-                        # 🔴 كل محاولات الإرسال المباشر فشلت — نحاول Supabase كـ fallback
-                        logger.info(f"🧵 Threads WA: All direct sends failed, trying Supabase upload...")
+                        # 🔴 الإرسال المباشر فشل — نحاول Supabase كـ fallback
+                        logger.info(f"🧵 Threads WA: Direct send failed, trying Supabase upload...")
                     
-                    # 🔴 الملف كبير (>100MB) أو الإرسال المباشر فشل → رفع على Supabase
-                    # 🔴 FIX v3: Supabase free tier has 50MB limit — upload_and_get_link now auto-compresses
+                    # 🔴 الملف كبير (>25MB) أو الإرسال المباشر فشل → رفع على Supabase
                     try:
                         from supabase_storage import upload_and_get_link
                         if file_size > 100 * 1024 * 1024:
@@ -1630,7 +1504,7 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                         cloud_msg = await asyncio.wait_for(
                             upload_and_get_link(
                                 file_path=file_path,
-                                filename=f"{real_title[:50]}.mp4",
+                                filename=f"threads_video.mp4",
                                 content_type="video/mp4",
                                 platform="whatsapp",
                                 title=real_title,
@@ -1645,7 +1519,7 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                             except: pass
                             return
                         else:
-                            logger.warning("🧵 Threads WA: Supabase upload returned None (file too large even after compression?)")
+                            logger.warning("🧵 Threads WA: Supabase upload returned None")
                     except asyncio.TimeoutError:
                         logger.warning("🧵 Threads WA: Supabase upload timed out")
                     except Exception as supa_err:
