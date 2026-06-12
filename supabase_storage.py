@@ -828,8 +828,10 @@ async def upload_and_get_link(
             uploaded_mb = original_mb
         
         if lang == "ar":
+            # ✅ FIX: Don't say "الملف كبير" when it's actually small
+            size_note = f"☁️ الملف كبير للإرسال المباشر ({original_mb:.1f}MB)\n\n" if original_mb > 10 else f"☁️ جاري الرفع على السحابة ({original_mb:.1f}MB)\n\n"
             msg = (
-                f"☁️ الملف كبير للإرسال المباشر ({original_mb:.1f}MB)\n\n"
+                size_note
                 f"📥 تم رفعه على السحابة بنجاح!\n\n"
                 f"🔗 رابط التحميل:\n{download_url}\n\n"
                 f"⏰ الرابط صالح لمدة 24 ساعة\n"
@@ -841,8 +843,9 @@ async def upload_and_get_link(
                 msg = f"🎬 {title}\n\n" + msg
             return msg
         else:
+            size_note = f"☁️ File is too large for direct sending ({original_mb:.1f}MB)\n\n" if original_mb > 10 else f"☁️ Uploading to cloud ({original_mb:.1f}MB)\n\n"
             msg = (
-                f"☁️ File is too large for direct sending ({original_mb:.1f}MB)\n\n"
+                size_note
                 f"📥 Uploaded to cloud successfully!\n\n"
                 f"🔗 Download link:\n{download_url}\n\n"
                 f"⏰ Link valid for 24 hours\n"
