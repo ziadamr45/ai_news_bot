@@ -616,6 +616,14 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                 except Exception:
                     logger.warning("⚠️ Could not add deno/remote_components for WhatsApp yt-dlp")
             
+            # 🔑 PO Token — إضافة آمنة (لو مش متوفر → مفيش أي تغيير)
+            if is_youtube_platform:
+                try:
+                    from po_token_manager import add_po_token_to_opts
+                    ydl_opts = add_po_token_to_opts(ydl_opts)
+                except Exception:
+                    pass  # 🔴 آمن — لو مش متوفر، كل حاجة شغالة زي ما هي
+            
             # Download video — Multi-stage approach
             loop = asyncio.get_event_loop()
             info = None
@@ -1075,6 +1083,42 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                     logger.warning("⚠️ Dailymotion player API timed out")
                 except Exception as dm_err:
                     logger.warning(f"⚠️ Dailymotion player API error: {dm_err}")
+            
+            # ═══ المرحلة 1.5: PO Token fallback (YouTube فقط!) ═══
+            # 🔑 لو عندنا PO Token → نجرب بيه قبل player_client
+            # PO Token بيقدر يتخطى "Sign in to confirm you're not a bot"
+            if info is None and is_youtube:
+                try:
+                    from po_token_manager import get_po_token, get_ytdlp_po_token_args
+                    po_token = get_po_token()
+                    if po_token:
+                        logger.info("🔑 WhatsApp: Trying YouTube with PO Token only (before player_client)...")
+                        po_opts = dict(ydl_opts)
+                        po_opts.pop('remote_components', None)
+                        po_args = get_ytdlp_po_token_args()
+                        if po_args:
+                            existing_ea = po_opts.get('extractor_args', {})
+                            existing_ea.update(po_args)
+                            po_opts['extractor_args'] = existing_ea
+                        
+                        def _run_ytdlp_po():
+                            with yt_dlp.YoutubeDL(po_opts) as ydl:
+                                return ydl.extract_info(url, download=True)
+                        
+                        try:
+                            info = await asyncio.wait_for(
+                                loop.run_in_executor(None, _run_ytdlp_po),
+                                timeout=300
+                            )
+                            if info:
+                                logger.info("✅ WhatsApp: Download succeeded with PO Token!")
+                        except Exception as po_err:
+                            logger.warning(f"⚠️ WhatsApp PO Token attempt failed: {po_err}")
+                            last_error = po_err
+                except ImportError:
+                    pass  # po_token_manager مش متاح — مش مشكلة
+                except Exception as po_outer_err:
+                    logger.debug(f"🔑 WhatsApp PO Token fallback error: {po_outer_err}")
             
             # ═══ المرحلة 2: yt-dlp player_client fallback chain (YouTube فقط!) ═══
             # 🔴 FIX: player_client ده لليوتيوب بس — مش بيشتغل مع Dailymotion/SoundCloud

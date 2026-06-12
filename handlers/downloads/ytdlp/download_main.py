@@ -645,6 +645,47 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
             
             # 🔴 FIX v5: لو YouTube — fallback chain محسّن
             if is_youtube:
+                # ═══ المحاولة 1.5: PO Token fallback — لو عندنا token ═══
+                # 🔑 PO Token بيقدر يتخطى "Sign in to confirm you're not a bot"
+                # بس لو المحاولة الأولى شاملته (من _get_ydl_opts) وفشلت → نجرب لوحده
+                try:
+                    from po_token_manager import get_po_token, get_ytdlp_po_token_args
+                    po_token = get_po_token()
+                    if po_token:
+                        logger.info("🔑 Trying YouTube with PO Token only (no player_client)...")
+                        try:
+                            await status_msg.edit_text(
+                                "🔑 جاري تجربة PO Token..." if lang == "ar"
+                                else "🔑 Trying with PO Token..."
+                            )
+                        except:
+                            pass
+                        
+                        # بنبني opts بسيطة مع PO Token بس
+                        po_opts = _get_ydl_opts(quality, output_template, platform, player_client_idx=0)
+                        # نشيل player_client و remote_components عشان نجرب PO Token لوحده
+                        po_opts.pop('remote_components', None)
+                        po_args = get_ytdlp_po_token_args()
+                        if po_args:
+                            existing_ea = po_opts.get('extractor_args', {})
+                            existing_ea.update(po_args)
+                            po_opts['extractor_args'] = existing_ea
+                        
+                        try:
+                            info = await asyncio.wait_for(
+                                loop.run_in_executor(None, lambda: _run_ytdlp(po_opts)),
+                                timeout=300
+                            )
+                            if info is not None:
+                                logger.info("✅ Download succeeded with PO Token!")
+                        except Exception as po_err:
+                            logger.warning(f"⚠️ PO Token attempt failed: {po_err}")
+                            last_error = po_err
+                except ImportError:
+                    pass  # po_token_manager مش متاح — مش مشكلة
+                except Exception as po_outer_err:
+                    logger.debug(f"🔑 PO Token fallback error: {po_outer_err}")
+                
                 # ═══ المحاولة 2: نجرب player_clients كـ fallback ═══
                 for client_idx in range(1, 1 + len(_YOUTUBE_PLAYER_CLIENTS)):
                     client_name = _YOUTUBE_PLAYER_CLIENTS[client_idx - 1][0]
