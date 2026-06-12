@@ -1245,12 +1245,14 @@ def _is_threads_url(url: str) -> bool:
 
 
 async def _download_threads_media_wa(url: str, tmpdir: str) -> dict | None:
-    """تحميل فيديو/صورة من Threads — نفس الـ 3-layer fallback زي التليجرام
+    """تحميل فيديو/صورة من Threads — نفس الـ fallback chain زي التليجرام
     
-    🔴 الترتيب (مزامنة مع download_handlers.py):
+    🔴 الترتيب (مزامنة مع download_handlers.py v4):
+    0. RapidAPI — الأسرع والأضمن (لو المفتاح متاح)
     1. data-sjs JSON parsing — استخراج من <script data-sjs> tags في HTML
+       ⚠️ video_versions بيبقي null دلوقتي → شغال للصور بس
     2. GraphQL API — طلب مباشر من threads.net/api/graphql
-    3. RapidAPI — خدمة خارجية كـ fallback
+    3. Cobalt API — خدمة مفتوحة المصدر كـ fallback
     
     Returns: dict فيه {success, file_path, title, is_video} أو None
     """

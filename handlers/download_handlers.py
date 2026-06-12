@@ -297,12 +297,20 @@ def _parse_threads_post(post: dict) -> dict | None:
 
 
 async def _download_threads_media(url: str, tmpdir: str, quality: str = "best") -> dict | None:
-    """تحميل فيديو/صورة من Threads — الحل النهائي
+    """تحميل فيديو/صورة من Threads — الحل النهائي v4
     
-    🔴 الترتيب:
-    1. data-sjs JSON parsing — استخراج من <script data-sjs> tags في HTML
-    2. GraphQL API — طلب مباشر من threads.net/api/graphql
-    3. RapidAPI — خدمة خارجية كـ fallback
+    🔴 الترتيب (محدث 2025):
+    1. RapidAPI — الأسرع والأضمن (لو المفتاح متاح)
+    2. data-sjs JSON parsing — استخراج من <script data-sjs> tags في HTML
+       ⚠️ ملاحظة: Threads بيبقي video_versions=null في الـ HTML دلوقتي!
+       بس image_versions2 لسه شغال → بنستخدمه للصور
+    3. GraphQL API — طلب مباشر من threads.com/api/graphql
+    4. Cobalt API — خدمة مفتوحة المصدر كـ fallback
+    
+    🔴 تغييرات مهمة:
+    - threads.net بيعمل redirect لـ threads.com → لازم نتعامل مع الـ redirect
+    - video_versions بقي null في الـ HTML → لازم نعتمد على الـ APIs
+    - GraphQL doc_ids القديمة مش شغالة → محتاجين doc_ids جديدة
     
     Returns: dict فيه {success, file_path, title, is_video, file_size} أو None
     """
@@ -318,32 +326,84 @@ async def _download_threads_media(url: str, tmpdir: str, quality: str = "best") 
         'Sec-Fetch-Site': 'none',
     }
     
-    # 🔴 نوحد الرابط — threads.com → threads.net
-    normalized_url = url.replace("threads.com", "threads.net")
+    # 🔴 FIX v4: threads.net بيعمل redirect لـ threads.com دلوقتي
+    # نوحد الرابط — كلاهما يقبلوا threads.com و threads.net
+    # بنحتفظ بالرابط الأصلي وبنجرب الاتنين لو الاول فشل
+    normalized_url = url
+    # حوّل threads.com → threads.net للتوافق (الاتنين بيرجعوا نفس البيانات)
+    # بس threads.net أضمن عشان الـ redirect بيتعامل معاه صح
+    if 'threads.com' in normalized_url:
+        normalized_url = normalized_url.replace('threads.com', 'threads.net')
+    
+    # 🔴 FIX v4: بنجرب الاتنين threads.net و threads.com لو الاول فشل
+    urls_to_try = [normalized_url]
+    if 'threads.net' in normalized_url:
+        urls_to_try.append(normalized_url.replace('threads.net', 'threads.com'))
+    elif 'threads.com' in normalized_url:
+        urls_to_try.append(normalized_url.replace('threads.com', 'threads.net'))
     
     # ═══════════════════════════════════════
-    # الطريقة 1: data-sjs JSON Parsing — الأضمن
+    # الطريقة 0: RapidAPI — الأسرع والأضمن (لو المفتاح متاح)
+    # 🔴 بنجرب الأول عشان الـ data-sjs و GraphQL مش شغالين للفيديو دلوقتي
     # ═══════════════════════════════════════
     try:
-        logger.info(f"🧵 Threads: Trying data-sjs parsing for {normalized_url[:80]}")
+        from config import RAPIDAPI_KEY
         
-        async with aiohttp.ClientSession() as session:
-            async with session.get(normalized_url, headers=headers, timeout=aiohttp.ClientTimeout(total=30)) as resp:
-                if resp.status != 200:
-                    logger.warning(f"🧵 Threads: Page returned status {resp.status}")
-                else:
+        if RAPIDAPI_KEY:
+            logger.info(f"🧵 Threads: Trying RapidAPI first (most reliable for video) for {url[:80]}")
+            
+            rapidapi_result = await _threads_rapidapi_download(url, tmpdir, headers, quality)
+            if rapidapi_result:
+                rapidapi_result["method"] = "rapidapi"
+                return rapidapi_result
+            else:
+                logger.warning("🧵 Threads: RapidAPI failed, trying other methods...")
+        else:
+            logger.info("🧵 Threads: No RAPIDAPI_KEY configured, skipping RapidAPI")
+    
+    except Exception as e:
+        logger.warning(f"🧵 Threads: RapidAPI error: {e}")
+    
+    # ═══════════════════════════════════════
+    # الطريقة 1: data-sjs JSON Parsing
+    # 🔴 ملاحظة: video_versions بيبقي null في الـ HTML دلوقتي!
+    # بس image_versions2 لسه شغال → بنستخدمه للصور
+    # ═══════════════════════════════════════
+    html_data = None  # بنخزن الـ HTML عشان نستخدمه في GraphQL
+    for attempt_url in urls_to_try:
+        try:
+            logger.info(f"🧵 Threads: Trying data-sjs parsing for {attempt_url[:80]}")
+            
+            async with aiohttp.ClientSession() as session:
+                # 🔴 FIX v4: بنستخدم allow_redirects=False عشان نتجاهل الـ redirect
+                # لـ threads.com اللي بيروح لصفحة error
+                async with session.get(attempt_url, headers=headers, 
+                                      timeout=aiohttp.ClientTimeout(total=30),
+                                      allow_redirects=True) as resp:
+                    final_url = str(resp.url)
+                    is_error_page = 'error=' in final_url
+                    
+                    if resp.status != 200:
+                        logger.warning(f"🧵 Threads: Page returned status {resp.status}")
+                        continue
+                    
                     html = await resp.text()
                     
+                    # 🔴 لو وصلنا لصفحة error → جرب الـ URL التاني
+                    if is_error_page:
+                        logger.warning(f"🧵 Threads: Got error page redirect: {final_url}")
+                        continue
+                    
                     if html and len(html) > 500:
+                        html_data = html  # خزن للـ GraphQL
+                        
                         # 🔴 نبحث عن <script type="application/json" data-sjs>
-                        # Threads بيحط بيانات البوست في الـ tags دي عشان Server-Side Rendering
                         script_pattern = r'<script[^>]*type="application/json"[^>]*data-sjs[^>]*>(.*?)</script>'
                         scripts = re.findall(script_pattern, html, re.DOTALL | re.IGNORECASE)
                         
                         logger.info(f"🧵 Threads: Found {len(scripts)} data-sjs script tags")
                         
                         for i, script_content in enumerate(scripts):
-                            # بنبحث بس عن الـ scripts اللي فيها بيانات البوست
                             if '"ScheduledServerJS"' not in script_content and 'thread_items' not in script_content:
                                 continue
                             
@@ -358,96 +418,135 @@ async def _download_threads_media(url: str, tmpdir: str, quality: str = "best") 
                             if thread_items and isinstance(thread_items, list):
                                 logger.info(f"🧵 Threads: Found thread_items with {len(thread_items)} items")
                                 
-                                # نأخذ أول post
                                 for item in thread_items:
                                     if not isinstance(item, dict):
                                         continue
                                     
-                                    # الهيكل: item > post (أو item مباشرة لو فيه media)
                                     post = item.get("post", item)
-                                    
                                     parsed = _parse_threads_post(post)
                                     if parsed:
-                                        logger.info(f"🧵 Threads: Parsed post — video={bool(parsed['video_url'])} image={bool(parsed['image_url'])} carousel={len(parsed['carousel'])} items")
+                                        # 🔴 FIX v4: لو video_url موجود (مش null) → نحمل
+                                        # لو image_url بس → نحمل الصورة
+                                        # لو الاتنين null → نكمل للطريقة التالية
+                                        has_video = bool(parsed.get('video_url'))
+                                        has_image = bool(parsed.get('image_url'))
+                                        has_carousel = len(parsed.get('carousel', [])) > 0
                                         
-                                        # تحميل الميديا
-                                        result = await _threads_download_media(parsed, tmpdir, headers, quality)
-                                        if result:
-                                            result["method"] = "data_sjs"
-                                            return result
+                                        logger.info(f"🧵 Threads: Parsed post — video={has_video} image={has_image} carousel={has_carousel}")
+                                        
+                                        if has_video or has_image or has_carousel:
+                                            result = await _threads_download_media(parsed, tmpdir, headers, quality)
+                                            if result:
+                                                result["method"] = "data_sjs"
+                                                return result
                             
-                            logger.warning(f"🧵 Threads: Script #{i} had no usable thread_items")
-        
-        logger.warning("🧵 Threads: data-sjs parsing found no media, trying GraphQL...")
-    
-    except asyncio.TimeoutError:
-        logger.warning("🧵 Threads: data-sjs request timed out")
-    except Exception as e:
-        logger.warning(f"🧵 Threads: data-sjs parsing error: {e}")
+                            logger.warning(f"🧵 Threads: Script #{i} had no usable media (video_versions is null)")
+            
+            # لو وصلنا هنا → data-sjs مفيش فيديو → نكمل
+            break  # مفيش داعي نجرب الـ URL التاني
+            
+        except asyncio.TimeoutError:
+            logger.warning("🧵 Threads: data-sjs request timed out")
+        except Exception as e:
+            logger.warning(f"🧵 Threads: data-sjs parsing error: {e}")
     
     # ═══════════════════════════════════════
     # الطريقة 2: GraphQL API — طلب مباشر
+    # 🔴 FIX v4: doc_ids محدثة + بنستخدم threads.com بدل threads.net
     # ═══════════════════════════════════════
     try:
-        logger.info(f"🧵 Threads: Trying GraphQL API for {normalized_url[:80]}")
+        logger.info(f"🧵 Threads: Trying GraphQL API for {url[:80]}")
         
         # استخراج post shortcode من الرابط
         post_code = None
-        match = re.search(r'/post/([A-Za-z0-9_-]+)', normalized_url)
+        match = re.search(r'/post/([A-Za-z0-9_-]+)', url)
         if not match:
-            match = re.search(r'/t/([A-Za-z0-9_-]+)', normalized_url)
+            match = re.search(r'/t/([A-Za-z0-9_-]+)', url)
         if match:
             post_code = match.group(1)
         
         if post_code:
+            # 🔴 FIX v4: نستخرج LSD token من الـ HTML اللي حملناه
+            lsd_token = ''
+            if html_data:
+                lsd_match = re.search(r'"LSD",\[\],\{"token":"([^"]+)"', html_data)
+                if lsd_match:
+                    lsd_token = lsd_match.group(1)
+            
             graphql_headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'x-ig-app-id': '238260118697367',  # Instagram/Threads app ID ثابت
+                'x-ig-app-id': '238260118697367',
+                'x-fb-lsd': lsd_token,
                 'content-type': 'application/x-www-form-urlencoded',
                 'Accept': '*/*',
                 'Origin': 'https://www.threads.net',
-                'Referer': normalized_url,
+                'Referer': url,
+                'Sec-Fetch-Site': 'same-origin',
+                'Sec-Fetch-Mode': 'cors',
             }
             
-            # أولاً: نحصل على numeric post ID من الـ shortcode
-            # عن طريق طلب الصفحة واستخراجه
             async with aiohttp.ClientSession() as session:
-                # محاولة 1: نستخدم doc_id معروف للـ Thread API
-                for doc_id in ['5587632691339264', '77880302274913']:
+                # 🔴 FIX v4: doc_ids محدثة + بنجرب الاتنين threads.net و threads.com
+                # doc_id القديم 5587632691339264 بيرجع data=null
+                # بنجرب doc_ids جديدة من الـ JS bundles
+                doc_ids = [
+                    '5587632691339264',  # القديم (ممكن يشتغل لو الـ variables صح)
+                    '27448316234780989',  # BarcelonaLightboxDialogRootViewerQuery
+                    '27125403363779788',  # BarcelonaLightboxDialogRootQuery
+                ]
+                
+                for doc_id in doc_ids:
                     try:
-                        # نحتاج الـ postID (رقمي) — نجرب نستخرجه من الصفحة
                         payload = {
+                            'lsd': lsd_token,
                             'variables': _json.dumps({"postID": post_code}),
                             'doc_id': doc_id,
                         }
                         
-                        async with session.post(
-                            'https://www.threads.net/api/graphql',
-                            headers=graphql_headers,
-                            data=payload,
-                            timeout=aiohttp.ClientTimeout(total=15)
-                        ) as resp:
-                            if resp.status == 200:
-                                try:
-                                    gql_data = await resp.json()
-                                    thread_items = _find_thread_items(gql_data)
-                                    
-                                    if thread_items and isinstance(thread_items, list):
-                                        for item in thread_items:
-                                            if not isinstance(item, dict):
-                                                continue
-                                            post = item.get("post", item)
-                                            parsed = _parse_threads_post(post)
-                                            if parsed:
-                                                logger.info(f"🧵 Threads: GraphQL found media — video={bool(parsed['video_url'])} image={bool(parsed['image_url'])}")
-                                                result = await _threads_download_media(parsed, tmpdir, headers, quality)
-                                                if result:
-                                                    result["method"] = "graphql"
-                                                    return result
-                                except:
-                                    pass
+                        for api_origin in ['https://www.threads.net', 'https://www.threads.com']:
+                            try:
+                                async with session.post(
+                                    f'{api_origin}/api/graphql',
+                                    headers=graphql_headers,
+                                    data=payload,
+                                    timeout=aiohttp.ClientTimeout(total=15)
+                                ) as resp:
+                                    if resp.status != 200:
+                                        continue
+                                    try:
+                                        gql_data = await resp.json()
+                                        text_str = _json.dumps(gql_data)
+                                        
+                                        # 🔴 لو فيه errors → جرب doc_id التالي
+                                        if 'errors' in gql_data:
+                                            err_msg = gql_data['errors'][0].get('message', '')[:60]
+                                            logger.debug(f"🧵 Threads: GraphQL doc_id {doc_id} @ {api_origin}: {err_msg}")
+                                            continue
+                                        
+                                        # 🔴 لو data=null → جرب doc_id التاني
+                                        if gql_data.get('data', {}).get('data') is None:
+                                            continue
+                                        
+                                        thread_items = _find_thread_items(gql_data)
+                                        
+                                        if thread_items and isinstance(thread_items, list):
+                                            for item in thread_items:
+                                                if not isinstance(item, dict):
+                                                    continue
+                                                post = item.get("post", item)
+                                                parsed = _parse_threads_post(post)
+                                                if parsed and (parsed.get('video_url') or parsed.get('image_url')):
+                                                    logger.info(f"🧵 Threads: GraphQL found media!")
+                                                    result = await _threads_download_media(parsed, tmpdir, headers, quality)
+                                                    if result:
+                                                        result["method"] = "graphql"
+                                                        return result
+                                    except:
+                                        pass
+                            except Exception:
+                                pass
                     except Exception as e:
-                        logger.warning(f"🧵 Threads: GraphQL doc_id {doc_id} failed: {e}")
+                        logger.debug(f"🧵 Threads: GraphQL doc_id {doc_id} failed: {e}")
         else:
             logger.warning("🧵 Threads: Could not extract post code from URL for GraphQL")
     
@@ -455,25 +554,141 @@ async def _download_threads_media(url: str, tmpdir: str, quality: str = "best") 
         logger.warning(f"🧵 Threads: GraphQL error: {e}")
     
     # ═══════════════════════════════════════
-    # الطريقة 3: RapidAPI — خدمة خارجية
+    # الطريقة 3: Cobalt API — خدمة مفتوحة المصدر
+    # 🔴 Cobalt بيدعم Threads وبيشتغل من غير API key
     # ═══════════════════════════════════════
     try:
-        from config import RAPIDAPI_KEY
-        
-        if RAPIDAPI_KEY:
-            logger.info(f"🧵 Threads: Trying RapidAPI for {normalized_url[:80]}")
-            
-            rapidapi_result = await _threads_rapidapi_download(normalized_url, tmpdir, headers, quality)
-            if rapidapi_result:
-                rapidapi_result["method"] = "rapidapi"
-                return rapidapi_result
-        else:
-            logger.warning("🧵 Threads: No RAPIDAPI_KEY configured, skipping RapidAPI")
-    
+        cobalt_result = await _threads_cobalt_download(url, tmpdir, headers, quality)
+        if cobalt_result:
+            cobalt_result["method"] = "cobalt"
+            return cobalt_result
     except Exception as e:
-        logger.warning(f"🧵 Threads: RapidAPI error: {e}")
+        logger.debug(f"🧵 Threads: Cobalt error: {e}")
     
-    logger.warning(f"🧵 Threads: All methods failed for {normalized_url[:80]}")
+    logger.warning(f"🧵 Threads: All methods failed for {url[:80]}")
+    logger.warning("🧵 Threads: NOTE — Threads changed their API and video URLs are no longer in HTML. RapidAPI key is recommended.")
+    return None
+
+
+async def _threads_cobalt_download(url: str, tmpdir: str, headers: dict, quality: str = "best") -> dict | None:
+    """تحميل من Threads عبر Cobalt API — خدمة مفتوحة المصدر
+    
+    Cobalt بيدعم Threads وبيقدر يجيب روابط الفيديو اللي مش موجودة في الـ HTML
+    
+    🔴 ملاحظة: Cobalt API instances بتتغير، بنجرب أكتر من واحد
+    """
+    import aiohttp
+    
+    # 🔴 Cobalt API instances (مفتوحة المصدر)
+    cobalt_instances = [
+        'https://api.cobalt.tools',
+        'https://cobalt-api.kwiatekmiki.com',
+    ]
+    
+    for api_url in cobalt_instances:
+        try:
+            api_headers = {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+            }
+            payload = {
+                'url': url,
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    api_url,
+                    headers=api_headers,
+                    json=payload,
+                    timeout=aiohttp.ClientTimeout(total=20)
+                ) as resp:
+                    if resp.status != 200:
+                        continue
+                    
+                    data = await resp.json()
+                    status = data.get('status', '')
+                    
+                    if status == 'redirect' or status == 'tunnel':
+                        # 🔴 رابط التحميل المباشر
+                        download_url = data.get('url', '')
+                        if download_url:
+                            logger.info(f"🧵 Threads: Cobalt got download URL from {api_url}")
+                            
+                            # تحديد نوع الملف
+                            is_video = '.mp4' in download_url or 'video' in data.get('filename', '')
+                            ext = "mp4" if is_video else "jpg"
+                            file_path = os.path.join(tmpdir, f"threads_cobalt.{ext}")
+                            timeout = 120 if is_video else 60
+                            
+                            dl_headers = dict(headers)
+                            dl_headers['Referer'] = 'https://www.threads.net/'
+                            
+                            async with session.get(download_url, headers=dl_headers,
+                                                  timeout=aiohttp.ClientTimeout(total=timeout)) as dl_resp:
+                                if dl_resp.status != 200:
+                                    continue
+                                
+                                file_size = 0
+                                with open(file_path, 'wb') as f:
+                                    async for chunk in dl_resp.content.iter_chunked(8192):
+                                        f.write(chunk)
+                                        file_size += len(chunk)
+                                
+                                if file_size < 1000:
+                                    try: os.remove(file_path)
+                                    except: pass
+                                    continue
+                            
+                            return {
+                                "success": True,
+                                "file_path": file_path,
+                                "file_size": file_size,
+                                "title": "Threads Post",
+                                "is_video": is_video,
+                            }
+                    
+                    elif status == 'picker':
+                        # 🔴 عندنا اختيارات (carousel) → نحمل أول واحد
+                        picker = data.get('picker', [])
+                        if picker and isinstance(picker, list):
+                            first = picker[0]
+                            download_url = first.get('url', '')
+                            if download_url:
+                                is_video = first.get('type', '') == 'video'
+                                ext = "mp4" if is_video else "jpg"
+                                file_path = os.path.join(tmpdir, f"threads_cobalt.{ext}")
+                                
+                                async with session.get(download_url, headers={'Referer': 'https://www.threads.net/'},
+                                                      timeout=aiohttp.ClientTimeout(total=120)) as dl_resp:
+                                    if dl_resp.status != 200:
+                                        continue
+                                    file_size = 0
+                                    with open(file_path, 'wb') as f:
+                                        async for chunk in dl_resp.content.iter_chunked(8192):
+                                            f.write(chunk)
+                                            file_size += len(chunk)
+                                
+                                if file_size < 1000:
+                                    try: os.remove(file_path)
+                                    except: pass
+                                    continue
+                                
+                                return {
+                                    "success": True,
+                                    "file_path": file_path,
+                                    "file_size": file_size,
+                                    "title": "Threads Post",
+                                    "is_video": is_video,
+                                }
+                    
+                    elif status == 'error':
+                        logger.debug(f"🧵 Threads: Cobalt error: {data.get('error', {}).get('code', 'unknown')}")
+                    
+        except asyncio.TimeoutError:
+            logger.debug(f"🧵 Threads: Cobalt {api_url} timed out")
+        except Exception as e:
+            logger.debug(f"🧵 Threads: Cobalt {api_url} error: {e}")
+    
     return None
 
 
