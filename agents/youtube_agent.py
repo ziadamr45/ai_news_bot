@@ -30,6 +30,7 @@
 
 import asyncio
 import logging
+import os
 import re
 import time
 from typing import Optional, Dict, List
@@ -77,6 +78,12 @@ PIPED_CAPTION_INSTANCES = [
 _transcript_cache: Dict[str, dict] = {}  # video_id -> {"transcript": str, "timestamp": float}
 _TRANSCRIPT_CACHE_TTL = 1800  # 30 دقيقة
 
+# ═══════════════════════════════════════
+# Supadata API — Tier 1 transcript source
+# ═══════════════════════════════════════
+SUPADATA_API_KEY = os.environ.get("SUPADATA_API_KEY", "sd_87d6ddb315444b5c437a1e205e778a54")
+_supadata_video_info = {}  # temp storage for video metadata from Supadata
+
 
 class YouTubeAgent:
     """وكيل YouTube - تلخيص فيديوهات مع fallback متعدد الطبقات"""
@@ -121,7 +128,8 @@ class YouTubeAgent:
         """استخراج نص الفيديو - pipeline متعدد الطبقات
 
         🔴 الطرق بالترتيب:
-        1. Invidious Captions API (الأكثر استقراراً)
+        0. 🆕 Supadata API (Tier 1 — الأكثر استقراراً)
+        1. Invidious Captions API
         2. youtube_transcript_api (مكتبة بايثون)
         3. Piped Captions API (بديل)
         4. YouTube HTML Scraping (استخراج من الصفحة)
@@ -133,6 +141,12 @@ class YouTubeAgent:
         cached = self._get_cached_transcript(video_id)
         if cached:
             return cached
+
+        # ═══ الطريقة 0: 🆕 Supadata API (Tier 1 — الأكثر استقراراً) ═══
+        transcript = self._get_transcript_supadata(video_id, languages)
+        if transcript:
+            self._cache_transcript(video_id, transcript)
+            return transcript
 
         # ═══ الطريقة 1: Invidious Captions API ═══
         transcript = self._get_transcript_invidious(video_id, languages)
@@ -167,6 +181,80 @@ class YouTubeAgent:
             return transcript
 
         logger.warning(f"🔴 All transcript methods (including ASR) failed for {video_id}")
+        return ""
+
+    def _get_transcript_supadata(self, video_id: str, languages: list = None) -> str:
+        """استخراج الترجمة من Supadata API
+
+        🔴 Tier 1 — أول طريقة بنجربها لأنها الأكثر استقراراً
+        Supadata API بيقدم ترجمة فيديوهات YouTube مع metadata
+        """
+        if not languages:
+            languages = ["ar", "en"]
+
+        import requests as req
+
+        global _supadata_video_info
+
+        api_key = SUPADATA_API_KEY
+
+        for lang in languages:
+            try:
+                # Transcript endpoint
+                transcript_url = f"https://api.supadata.ai/v1/youtube/transcript?url=https://www.youtube.com/watch?v={video_id}&lang={lang}"
+                headers = {
+                    "x-api-key": api_key,
+                    "Accept": "application/json",
+                }
+
+                logger.info(f"🔵 Supadata API: Fetching transcript for {video_id} (lang={lang})")
+                response = req.get(transcript_url, headers=headers, timeout=15)
+
+                if response.status_code != 200:
+                    logger.debug(f"🔵 Supadata API: Status {response.status_code} for lang={lang}")
+                    continue
+
+                data = response.json()
+                content = data.get("content", [])
+
+                if not content:
+                    logger.debug(f"🔵 Supadata API: No content for lang={lang}")
+                    continue
+
+                # Join all text segments
+                texts = [seg.get("text", "") for seg in content if seg.get("text", "").strip()]
+                transcript = " ".join(texts).strip()
+
+                if transcript:
+                    logger.info(f"✅ Supadata API: Got transcript for {video_id} lang={lang} ({len(transcript)} chars, {len(texts)} segments)")
+
+                    # Also get video metadata
+                    try:
+                        video_url = f"https://api.supadata.ai/v1/youtube/video?id={video_id}"
+                        video_resp = req.get(video_url, headers=headers, timeout=10)
+                        if video_resp.status_code == 200:
+                            video_data = video_resp.json()
+                            _supadata_video_info = {
+                                "id": video_data.get("id", ""),
+                                "description": video_data.get("description", ""),
+                            }
+                            logger.info(f"🔵 Supadata API: Got video metadata for {video_id}")
+                    except Exception as e:
+                        logger.debug(f"🔵 Supadata API: Video metadata error: {e}")
+
+                    return transcript
+
+            except req.exceptions.Timeout:
+                logger.debug(f"🔵 Supadata API: Timeout for lang={lang}")
+                continue
+            except req.exceptions.ConnectionError:
+                logger.debug(f"🔵 Supadata API: Connection error for lang={lang}")
+                continue
+            except Exception as e:
+                logger.debug(f"🔵 Supadata API: Error for lang={lang}: {e}")
+                continue
+
+        logger.debug(f"🔵 Supadata API: All languages failed for {video_id}")
         return ""
 
     def _get_transcript_invidious(self, video_id: str, languages: list = None) -> str:
@@ -1170,12 +1258,12 @@ class YouTubeAgent:
 • لو فيه خطوات أو تعليمات — اذكرها بالترتيب
 
 🔴🔴🔴 قواعد صارمة:
-• ماتستخدمش Markdown أبداً (لا *, **, #, |, []). استخدم HTML فقط: <b>عريض</b> <i>مائل</i> <code>كود</code> • نقاط
+• ماتستخدمش Markdown أبداً (لا *, **, #, |, []). ماتستخدمش HTML tags غير المدعومة من تليجرام (لا <div>, <p>, <span>, <ol>, <ul>, <li>, <h1>-<h6>, <style>). استخدم بس: <b>عريض</b> <i>مائل</i> <code>كود</code> <pre>كود كبير</pre> • نقاط. الخلايا والعناصر خليها نص عادي من غير HTML tags.
 • 🔴 ماتقولش أبداً إنك مش قادر تلخص!
 • 🔴 لازم تلخص المحتوى ده — ده وظيفتك!
 • 🔴 ابدأ بالملخص مباشرة بدون مقدمات
 
-أنت مساعد ذكي متخصص في تلخيص الفيديوهات. تلخص بالعربية بشكل منظم وواضح. ماتستخدمش Markdown أبداً. استخدم HTML فقط."""
+أنت مساعد ذكي متخصص في تلخيص الفيديوهات. تلخص بالعربية بشكل منظم وواضح. ماتستخدمش Markdown أبداً. ماتستخدمش HTML tags غير المدعومة من تليجرام. استخدم بس: <b>عريض</b> <i>مائل</i> <code>كود</code> <pre>كود كبير</pre> • نقاط."""
             else:
                 prompt = f"""Summarize the following video comprehensively in English:
 
@@ -1192,12 +1280,12 @@ Requirements:
 • If there are steps or instructions — list them in order
 
 🔴🔴🔴 Strict rules:
-• NEVER use Markdown (no *, **, #, |, []). Use HTML only: <b>bold</b> <i>italic</i> <code>code</code> • bullets
+• NEVER use Markdown (no *, **, #, |, []). NEVER use non-Telegram HTML tags (no <div>, <p>, <span>, <ol>, <ul>, <li>, <h1>-<h6>, <style>). Use ONLY: <b>bold</b> <i>italic</i> <code>code</code> <pre>big code</pre> • bullets. Keep everything as plain text without HTML wrappers.
 • 🔴 NEVER say you cannot summarize!
 • 🔴 You MUST summarize this content!
 • 🔴 Start with the summary directly without introductions
 
-You are a smart assistant specialized in video summarization. NEVER use Markdown. Use HTML only."""
+You are a smart assistant specialized in video summarization. NEVER use Markdown. NEVER use non-Telegram HTML tags. Use ONLY: <b>bold</b> <i>italic</i> <code>code</code> <pre>big code</pre> • bullets. Keep everything as plain text without HTML wrappers."""
 
             result = await call_ai(prompt, max_tokens=2000, user_id=user_id, task_type="summary")
             return clean_ai_response(result)
@@ -1211,7 +1299,7 @@ You are a smart assistant specialized in video summarization. NEVER use Markdown
 
 {web_info}
 
-لخص بشكل منظم بالعربية. ماتستخدمش Markdown أبداً. استخدم HTML فقط: <b>عريض</b> <i>مائل</i> • نقاط
+لخص بشكل منظم بالعربية. ماتستخدمش Markdown أبداً. ماتستخدمش HTML tags غير المدعومة من تليجرام (لا <div>, <p>, <span>, <ol>, <ul>, <li>, <h1>-<h6>, <style>). استخدم بس: <b>عريض</b> <i>مائل</i> <code>كود</code> <pre>كود كبير</pre> • نقاط. الخلايا والعناصر خليها نص عادي من غير HTML tags.
 
 🔴 ملاحظة: أنت بتلخص بناءً على معلومات من الويب لأن الترجمة مش متاحة للفيديو.
 🔴 ابدأ بالملخص مباشرة بدون مقدمات."""
@@ -1220,7 +1308,7 @@ You are a smart assistant specialized in video summarization. NEVER use Markdown
 
 {web_info}
 
-Summarize in English in an organized way. NEVER use Markdown. Use HTML only: <b>bold</b> <i>italic</i> • bullets
+Summarize in English in an organized way. NEVER use Markdown. NEVER use non-Telegram HTML tags (no <div>, <p>, <span>, <ol>, <ul>, <li>, <h1>-<h6>, <style>). Use ONLY: <b>bold</b> <i>italic</i> <code>code</code> <pre>big code</pre> • bullets. Keep everything as plain text without HTML wrappers.
 
 🔴 Note: You are summarizing based on web information because captions are not available for this video.
 🔴 Start with the summary directly without introductions."""
@@ -1241,7 +1329,7 @@ Summarize in English in an organized way. NEVER use Markdown. Use HTML only: <b>
 📝 <b>الوصف:</b>
 {description[:5000]}
 
-اكتب ملخص تقريبي بالعربية بناءً على العنوان والوصف. ماتستخدمش Markdown أبداً. استخدم HTML فقط.
+اكتب ملخص تقريبي بالعربية بناءً على العنوان والوصف. ماتستخدمش Markdown أبداً. ماتستخدمش HTML tags غير المدعومة من تليجرام. استخدم بس: <b>عريض</b> <i>مائل</i> <code>كود</code> <pre>كود كبير</pre> • نقاط.
 
 🔴 ابدأ بالملخص مباشرة. 🔴 وضّح إن ده ملخص تقريبي بناءً على الوصف فقط."""
             else:
@@ -1254,7 +1342,7 @@ Summarize in English in an organized way. NEVER use Markdown. Use HTML only: <b>
 📝 <b>Description:</b>
 {description[:5000]}
 
-Write an approximate summary in English based on the title and description. NEVER use Markdown. Use HTML only.
+Write an approximate summary in English based on the title and description. NEVER use Markdown. NEVER use non-Telegram HTML tags. Use ONLY: <b>bold</b> <i>italic</i> <code>code</code> <pre>big code</pre> • bullets. Keep everything as plain text without HTML wrappers.
 
 🔴 Start with the summary directly. 🔴 Note this is an approximate summary based on the description only."""
 
@@ -1272,7 +1360,7 @@ Write an approximate summary in English based on the title and description. NEVE
 👤 <b>القناة:</b> {author or "غير معروف"}
 ⏱️ <b>المدة:</b> {duration_str or "غير معروف"}
 
-اكتب ملخص تقريبي بالعربية بناءً على العنوان. ماتستخدمش Markdown أبداً. استخدم HTML فقط.
+اكتب ملخص تقريبي بالعربية بناءً على العنوان. ماتستخدمش Markdown أبداً. ماتستخدمش HTML tags غير المدعومة من تليجرام. استخدم بس: <b>عريض</b> <i>مائل</i> <code>كود</code> <pre>كود كبير</pre> • نقاط.
 
 🔴 ابدأ بالملخص مباشرة.
 🔴 وضّح إن ده ملخص تقريبي بناءً على العنوان فقط ومش محتوى الفيديو الكامل.
@@ -1284,7 +1372,7 @@ Write an approximate summary in English based on the title and description. NEVE
 👤 <b>Channel:</b> {author or "Unknown"}
 ⏱️ <b>Duration:</b> {duration_str or "Unknown"}
 
-Write an approximate summary in English based on the title. NEVER use Markdown. Use HTML only.
+Write an approximate summary in English based on the title. NEVER use Markdown. NEVER use non-Telegram HTML tags. Use ONLY: <b>bold</b> <i>italic</i> <code>code</code> <pre>big code</pre> • bullets. Keep everything as plain text without HTML wrappers.
 
 🔴 Start with the summary directly.
 🔴 Note this is an approximate summary based on the title only, not the full video content.
@@ -1353,9 +1441,9 @@ Write an approximate summary in English based on the title. NEVER use Markdown. 
 ✅ <b>الإجابة الصحيحة:</b> [الحرف]
 💡 <b>الشرح:</b> [شرح مختصر]
 
-⚠️ ماتستخدمش Markdown (لا *, **, #, |). استخدم HTML فقط.
+⚠️ ماتستخدمش Markdown (لا *, **, #, |). ماتستخدمش HTML tags غير المدعومة من تليجرام (لا <div>, <p>, <span>, <ol>, <ul>, <li>, <h1>-<h6>, <style>). استخدم بس: <b>عريض</b> <i>مائل</i> <code>كود</code> <pre>كود كبير</pre> • نقاط.
 
-أنت مساعد تعليمي تنشئ كويزات من محتوى الفيديوهات. ماتستخدمش Markdown أبداً."""
+أنت مساعد تعليمي تنشئ كويزات من محتوى الفيديوهات. ماتستخدمش Markdown أبداً. ماتستخدمش HTML tags غير المدعومة من تليجرام."""
         else:
             prompt = f"""Create a quiz from the video content ({num_questions} questions):
 
@@ -1376,9 +1464,9 @@ D) option 4
 ✅ <b>Answer:</b> [letter]
 💡 <b>Explanation:</b> [brief explanation]
 
-⚠️ NEVER use Markdown (no *, **, #, |). Use HTML only.
+⚠️ NEVER use Markdown (no *, **, #, |). NEVER use non-Telegram HTML tags (no <div>, <p>, <span>, <ol>, <ul>, <li>, <h1>-<h6>, <style>). Use ONLY: <b>bold</b> <i>italic</i> <code>code</code> <pre>big code</pre> • bullets. Keep everything as plain text without HTML wrappers.
 
-You are an educational assistant that creates quizzes from video content. NEVER use Markdown."""
+You are an educational assistant that creates quizzes from video content. NEVER use Markdown. NEVER use non-Telegram HTML tags."""
 
         result = await call_ai(prompt, max_tokens=2000, user_id=user_id, task_type="chat")
         return clean_ai_response(result)
@@ -1442,9 +1530,9 @@ You are an educational assistant that creates quizzes from video content. NEVER 
 📝 <b>خلاصة:</b>
 ...
 
-⚠️ ماتستخدمش Markdown (لا *, **, #, |). استخدم HTML فقط.
+⚠️ ماتستخدمش Markdown (لا *, **, #, |). ماتستخدمش HTML tags غير المدعومة من تليجرام (لا <div>, <p>, <span>, <ol>, <ul>, <li>, <h1>-<h6>, <style>). استخدم بس: <b>عريض</b> <i>مائل</i> <code>كود</code> <pre>كود كبير</pre> • نقاط.
 
-أنت مساعد تعليمي تنشئ ملاحظات مراجعة شاملة. ماتستخدمش Markdown أبداً."""
+أنت مساعد تعليمي تنشئ ملاحظات مراجعة شاملة. ماتستخدمش Markdown أبداً. ماتستخدمش HTML tags غير المدعومة من تليجرام."""
         else:
             prompt = f"""Create comprehensive review notes from the video content:
 
@@ -1472,9 +1560,9 @@ Notes format:
 📝 <b>Summary:</b>
 ...
 
-⚠️ NEVER use Markdown (no *, **, #, |). Use HTML only.
+⚠️ NEVER use Markdown (no *, **, #, |). NEVER use non-Telegram HTML tags (no <div>, <p>, <span>, <ol>, <ul>, <li>, <h1>-<h6>, <style>). Use ONLY: <b>bold</b> <i>italic</i> <code>code</code> <pre>big code</pre> • bullets. Keep everything as plain text without HTML wrappers.
 
-You are an educational assistant that creates comprehensive review notes. NEVER use Markdown."""
+You are an educational assistant that creates comprehensive review notes. NEVER use Markdown. NEVER use non-Telegram HTML tags."""
 
         result = await call_ai(prompt, max_tokens=2000, user_id=user_id, task_type="summary")
         return clean_ai_response(result)

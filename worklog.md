@@ -172,3 +172,49 @@ Stage Summary:
 - Telegram: Unchanged (already had fast settings: preset fast, CRF 23, 128k)
 - Repo structure: Fixed (replaced broken submodule with direct code at root)
 - Deployed to Railway: ✅ SUCCESS
+
+---
+Task ID: 6
+Agent: Main Agent
+Task: 3 changes to AI news bot — Supadata API, Telegram HTML fix, Remove Summary button
+
+Work Log:
+- Read worklog.md (5 previous tasks) and all relevant source files
+- Analyzed youtube_agent.py (~1569 lines after edits) and keyboards.py (277 lines)
+
+Change 1: Added Supadata API as Tier 1 in youtube_agent.py
+- Added `import os` to imports
+- Added module-level variables: `SUPADATA_API_KEY` (reads from env var with fallback) and `_supadata_video_info` (temp storage)
+- Implemented `_get_transcript_supadata()` method:
+  - Tries each language in the `languages` list (default ["ar","en"])
+  - Makes GET request to `https://api.supadata.ai/v1/youtube/transcript?url=...&lang=...` with `x-api-key` header
+  - Parses response, joins all `content[].text` segments with spaces
+  - Also fetches video metadata from `/v1/youtube/video?id=` endpoint, stores in `_supadata_video_info`
+  - Returns joined text or "" if failed
+- Modified `get_transcript()` to call `_get_transcript_supadata()` FIRST (before Invidious) — right after cache check
+- Updated `get_transcript()` docstring to list Supadata as method 0
+
+Change 2: Fixed HTML tags in YouTube summary responses
+- Updated ALL prompts in youtube_agent.py (18 edits total across 3 methods):
+  - summarize_video: 10 prompts (5 Arabic, 5 English — transcript, web search, description, title-only fallbacks + closing)
+  - create_quiz_from_video: 4 prompts (2 Arabic, 2 English — warning + closing)
+  - create_review_notes: 4 prompts (2 Arabic, 2 English — warning + closing)
+- Arabic prompts: Changed from "استخدم HTML فقط" to "ماتستخدمش HTML tags غير المدعومة من تليجرام (لا <div>, <p>, <span>, <ol>, <ul>, <li>, <h1>-<h6>, <style>). استخدم بس: <b>عريض</b> <i>مائل</i> <code>كود</code> <pre>كود كبير</pre> • نقاط."
+- English prompts: Changed from "Use HTML only" to "NEVER use non-Telegram HTML tags (no <div>, <p>, <span>, <ol>, <ul>, <li>, <h1>-<h6>, <style>). Use ONLY: <b>bold</b> <i>italic</i> <code>code</code> <pre>big code</pre> • bullets. Keep everything as plain text without HTML wrappers."
+
+Change 3: Removed Summary button from YouTube inline keyboard
+- Edited `get_youtube_inline_buttons()` in handlers/keyboards.py
+- Removed "📄 ملخص"/"📄 Summary" button (callback_data="yt_summary") from both Arabic and English keyboards
+- Rearranged remaining buttons into a single row: ["📌 نقاط رئيسية", "📝 كويز"] / ["📌 Key Points", "📝 Quiz"]
+
+Verification:
+- Both files pass Python syntax check (py_compile) ✅
+- YouTubeAgent._get_transcript_supadata method exists and has correct signature ✅
+- SUPADATA_API_KEY reads from env var with fallback ✅
+- No "yt_summary" references remain in keyboards.py ✅
+- extract_video_id still works correctly ✅
+
+Stage Summary:
+- Change 1: Supadata API added as Tier 1 transcript source (before Invidious) ✅
+- Change 2: All 18 prompts updated to restrict HTML to Telegram-compatible tags only ✅
+- Change 3: Summary button removed from YouTube inline keyboard ✅

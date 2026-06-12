@@ -147,20 +147,14 @@ def get_youtube_inline_buttons(language: str = "ar") -> InlineKeyboardMarkup:
     if language == "ar":
         keyboard = [
             [
-                InlineKeyboardButton("📄 ملخص", callback_data="yt_summary"),
                 InlineKeyboardButton("📌 نقاط رئيسية", callback_data="yt_keypoints"),
-            ],
-            [
                 InlineKeyboardButton("📝 كويز", callback_data="yt_quiz"),
             ],
         ]
     else:
         keyboard = [
             [
-                InlineKeyboardButton("📄 Summary", callback_data="yt_summary"),
                 InlineKeyboardButton("📌 Key Points", callback_data="yt_keypoints"),
-            ],
-            [
                 InlineKeyboardButton("📝 Quiz", callback_data="yt_quiz"),
             ],
         ]
