@@ -520,6 +520,7 @@ async def _handle_incoming_message(message: dict, value: dict):
                 "/audio": "audio_search_query",
                 "/photo": "photo_search_query",
                 "/cookies": "cookies",
+                "/potoken": "potoken",
             }
             for prefix, cmd_name in prefix_commands.items():
                 if content_lower.startswith(prefix + " "):

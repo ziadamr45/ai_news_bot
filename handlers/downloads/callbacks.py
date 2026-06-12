@@ -1,6 +1,6 @@
-"""Download handlers - Callback handlers and cookies command.
+"""Download handlers - Callback handlers and cookies/potoken commands.
 
-Quality selection callback handler and /cookies command handler.
+Quality selection callback handler and /cookies, /potoken command handlers.
 """
 
 import logging
@@ -343,4 +343,189 @@ async def handle_cookies_file(update: Update, context: ContextTypes.DEFAULT_TYPE
     except Exception as e:
         logger.error(f"Error handling cookies file upload: {e}")
         await update.message.reply_text(f"❌ حصل خطأ: {e}" if lang == "ar" else f"❌ Error: {e}")
+
+
+# ═══════════════════════════════════════
+# أمر /potoken — إدارة PO Token (أدمن بس)
+# ═══════════════════════════════════════
+
+async def potoken_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """أمر /potoken — إدارة PO Token لتخطي حظر YouTube (أدمن بس)
+    
+    الاستخدام:
+    /potoken — عرض حالة PO Token
+    /potoken set TOKEN — تعيين PO Token جديد
+    /potoken clear — مسح PO Token
+    """
+    from admin import is_admin
+    from config import CHAT_ID
+    
+    user_id = update.effective_user.id
+    username = update.effective_user.username if update.effective_user else None
+    lang = get_language(user_id)
+    is_user_admin = is_admin(user_id, username) or str(user_id) == str(CHAT_ID)
+    
+    if not is_user_admin:
+        await update.message.reply_text("❌ الأمر ده للأدمن بس." if lang == "ar" else "❌ Admin only command.")
+        return
+    
+    args = context.args or []
+    
+    try:
+        from po_token_manager import (
+            get_po_token_status, set_po_token, clear_po_token, init_po_token
+        )
+    except ImportError:
+        await update.message.reply_text(
+            "❌ po_token_manager مش متاح." if lang == "ar" else "❌ po_token_manager not available."
+        )
+        return
+    
+    # ═══ /potoken set TOKEN ═══
+    if args and args[0].lower() in ("set", "اضافة", "إضافة"):
+        if len(args) < 2:
+            msg = (
+                "❌ اكتب الـ Token بعد الأمر.\n\n"
+                "مثال: <code>/potoken set MiM2...طويل...</code>\n\n"
+                "💡 إزاي تجيب PO Token:\n"
+                "1️⃣ افتح youtube.com في Chrome\n"
+                "2️⃣ افتح DevTools (F12) → Console\n"
+                "3️⃣ اكتب: <code>document.cookie.split(';').find(c=>c.includes('po_token'))</code>\n"
+                "4️⃣ أو استخدم أداة yt-dlp --extractor-args \"youtube:po_token=web+TOKEN\""
+            ) if lang == "ar" else (
+                "❌ Provide the token after the command.\n\n"
+                "Example: <code>/potoken set MiM2...long...</code>\n\n"
+                "💡 How to get PO Token:\n"
+                "1️⃣ Open youtube.com in Chrome\n"
+                "2️⃣ Open DevTools (F12) → Console\n"
+                "3️⃣ Run: <code>document.cookie.split(';').find(c=>c.includes('po_token'))</code>\n"
+                "4️⃣ Or use: yt-dlp --extractor-args \"youtube:po_token=web+TOKEN\""
+            )
+            await update.message.reply_text(msg, parse_mode="HTML")
+            return
+        
+        token = " ".join(args[1:]).strip()
+        # نشيل web+ prefix لو المستخدم حطه
+        if token.startswith("web+"):
+            token = token[4:]
+        
+        if len(token) < 20:
+            await update.message.reply_text(
+                "❌ الـ Token قصير أوي — لازم يكون أطول من كده." if lang == "ar"
+                else "❌ Token too short — it should be longer."
+            )
+            return
+        
+        success = set_po_token(token, source="manual")
+        if success:
+            status = get_po_token_status()
+            if lang == "ar":
+                msg = f"""✅ <b>تم تعيين PO Token بنجاح!</b>
+
+🔑 المعاينة: <code>{status.get('token_preview', '***')}</code>
+📍 المصدر: manual
+⏰ العمر: {status.get('age_hours', 0):.1f} ساعة
+⏳ صالح لحد: {status.get('ttl_hours', 0):.1f} ساعة
+
+🎬 دلوقتي لما YouTube يطلب "Sign in to confirm" → البوت هيجرب PO Token تلقائي!
+
+⚠️ <b>ملاحظة:</b> PO Token بيفضل شغال لـ 6-12 ساعة وبعدين بيحتاج تجديد"""
+            else:
+                msg = f"""✅ <b>PO Token set successfully!</b>
+
+🔑 Preview: <code>{status.get('token_preview', '***')}</code>
+📍 Source: manual
+⏰ Age: {status.get('age_hours', 0):.1f} hours
+⏳ Valid for: {status.get('ttl_hours', 0):.1f} hours
+
+🎬 Now when YouTube asks "Sign in to confirm" → the bot will try PO Token automatically!
+
+⚠️ <b>Note:</b> PO Token stays valid for 6-12 hours, then needs renewal"""
+            await update.message.reply_text(msg, parse_mode="HTML")
+        else:
+            await update.message.reply_text(
+                "❌ فشل تعيين PO Token." if lang == "ar" else "❌ Failed to set PO Token."
+            )
+        return
+    
+    # ═══ /potoken clear ═══
+    if args and args[0].lower() in ("clear", "delete", "remove", "مسح", "حذف"):
+        clear_po_token()
+        await update.message.reply_text(
+            "✅ تم مسح PO Token." if lang == "ar" else "✅ PO Token cleared."
+        )
+        return
+    
+    # ═══ /potoken (بدون args) — عرض الحالة ═══
+    status = get_po_token_status()
+    
+    if status.get("available"):
+        if lang == "ar":
+            msg = f"""🔑 <b>حالة PO Token</b>
+
+✅ متوفر
+📍 المصدر: {status.get('source', 'غير معروف')}
+🔑 المعاينة: <code>{status.get('token_preview', '***')}</code>
+⏰ العمر: {status.get('age_hours', 0):.1f} ساعة
+⏳ صالح لحد: {status.get('ttl_hours', 0):.1f} ساعة
+{'⚠️ <b>منتهي الصلاحية!</b>' if status.get('expired') else '✅ صالح'}
+
+🔧 <b>الأوامر:</b>
+➕ إضافة: <code>/potoken set TOKEN</code>
+🗑️ مسح: <code>/potoken clear</code>"""
+        else:
+            msg = f"""🔑 <b>PO Token Status</b>
+
+✅ Available
+📍 Source: {status.get('source', 'unknown')}
+🔑 Preview: <code>{status.get('token_preview', '***')}</code>
+⏰ Age: {status.get('age_hours', 0):.1f} hours
+⏳ Valid for: {status.get('ttl_hours', 0):.1f} hours
+{'⚠️ <b>Expired!</b>' if status.get('expired') else '✅ Valid'}
+
+🔧 <b>Commands:</b>
+➕ Set: <code>/potoken set TOKEN</code>
+🗑️ Clear: <code>/potoken clear</code>"""
+    else:
+        if lang == "ar":
+            msg = """🔑 <b>PO Token — مش متوفر</b>
+
+❌ مفيش PO Token حالياً
+
+💡 <b>إزاي تجيب PO Token:</b>
+1️⃣ افتح youtube.com في Chrome
+2️⃣ افتح DevTools (F12) → Console
+3️⃣ شغّل السكريبت ده:
+<code>const poToken = await window.__ytplayer__.config?.args?.raw_player_response?.serviceTrackingParams?.find(p => p.key === 'qoeurl')?.params?.find(p => p.key === 'pot')?.value; console.log(poToken || 'Not found - try visiting a video page');</code>
+4️⃣ انسخ الناتج وابعت هنا:
+<code>/potoken set الناتج</code>
+
+⚠️ أو استخدم المتغير البيئي: <code>PO_TOKEN=الناتج</code>
+
+🎬 PO Token بيقدر يتخطى "Sign in to confirm you're not a bot"
+
+🔧 <b>الأوامر:</b>
+➕ إضافة: <code>/potoken set TOKEN</code>"""
+        else:
+            msg = """🔑 <b>PO Token — Not Available</b>
+
+❌ No PO Token currently set
+
+💡 <b>How to get a PO Token:</b>
+1️⃣ Open youtube.com in Chrome
+2️⃣ Open DevTools (F12) → Console
+3️⃣ Run this script:
+<code>const poToken = await window.__ytplayer__.config?.args?.raw_player_response?.serviceTrackingParams?.find(p => p.key === 'qoeurl')?.params?.find(p => p.key === 'pot')?.value; console.log(poToken || 'Not found - try visiting a video page');</code>
+4️⃣ Copy the output and send:
+<code>/potoken set OUTPUT</code>
+
+⚠️ Or set environment variable: <code>PO_TOKEN=OUTPUT</code>
+
+🎬 PO Token can bypass "Sign in to confirm you're not a bot"
+
+🔧 <b>Commands:</b>
+➕ Set: <code>/potoken set TOKEN</code>"""
+    
+    await update.message.reply_text(msg, parse_mode="HTML")
+
 

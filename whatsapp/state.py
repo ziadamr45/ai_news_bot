@@ -479,6 +479,8 @@ _COMMAND_TRIGGERS = {
     "/youtube": "youtube", "youtube": "youtube", "يوتيوب": "youtube",
     # Cookies
     "/cookies": "cookies", "cookies": "cookies", "كوكيز": "cookies",
+    # PO Token
+    "/potoken": "potoken", "potoken": "potoken",
     # PDF
     "/pdf": "pdf", "pdf": "pdf",
     "/keypoints": "pdf_keypoints",

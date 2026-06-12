@@ -39,6 +39,7 @@ from handlers.image_handlers import (
 from handlers.download_handlers import (
     download_command, handle_download_callback,
     cookies_command, handle_cookies_file,
+    potoken_command,
 )
 from handlers.search_download_handlers import (
     video_search_command, audio_search_command,
@@ -166,6 +167,9 @@ def register_handlers(app):
 
     # 🍪 أمر الكوكيز (كل المستخدمين) — عشان يرفع ملف cookies.txt لـ YouTube
     app.add_handler(CommandHandler("cookies", cookies_command))
+    
+    # 🔑 أمر PO Token (أدمن بس) — لتخطي حظر YouTube
+    app.add_handler(CommandHandler("potoken", potoken_command))
 
     # أزرار Inline
     app.add_handler(CallbackQueryHandler(button_callback))

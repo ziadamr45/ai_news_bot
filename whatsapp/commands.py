@@ -1277,7 +1277,107 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
         await _send_whatsapp_message(wa_id, msg)
 
     # ══════════════════════════════════════
-    # PDF
+    # PO TOKEN (أدمن بس)
+    # ══════════════════════════════════════
+
+    elif command == "potoken":
+        # 🔑 أمر PO Token — أدمن بس
+        if not is_admin:
+            await _send_whatsapp_message(wa_id, "❌ الأمر ده للأدمن بس.")
+            return
+        
+        # Parse args
+        potoken_args = arg.strip() if arg else ""
+        potoken_parts = potoken_args.split(maxsplit=1)
+        potoken_action = potoken_parts[0].lower() if potoken_parts else ""
+        
+        try:
+            from po_token_manager import get_po_token_status, set_po_token, clear_po_token
+        except ImportError:
+            await _send_whatsapp_message(wa_id, "❌ po_token_manager مش متاح.")
+            return
+        
+        # /potoken set TOKEN
+        if potoken_action in ("set", "اضافة", "إضافة"):
+            if len(potoken_parts) < 2:
+                msg = (
+                    "❌ اكتب الـ Token بعد الأمر.\n\n"
+                    "مثال: /potoken set MiM2...طويل...\n\n"
+                    "💡 إزاي تجيب PO Token:\n"
+                    "1️⃣ افتح youtube.com في Chrome\n"
+                    "2️⃣ افتح DevTools (F12) → Console\n"
+                    "3️⃣ شغّل: document.cookie.split(';').find(c=>c.includes('po_token'))\n"
+                    "4️⃣ انسخ الناتج وابعت: /potoken set الناتج"
+                )
+                await _send_whatsapp_message(wa_id, msg)
+                return
+            
+            token = potoken_parts[1].strip()
+            # Remove web+ prefix if user included it
+            if token.startswith("web+"):
+                token = token[4:]
+            
+            if len(token) < 20:
+                await _send_whatsapp_message(wa_id, "❌ الـ Token قصير أوي — لازم يكون أطول من كده.")
+                return
+            
+            success = set_po_token(token, source="manual_wa")
+            if success:
+                status = get_po_token_status()
+                msg = (
+                    f"✅ *تم تعيين PO Token بنجاح!*\n\n"
+                    f"🔑 المعاينة: {status.get('token_preview', '***')}\n"
+                    f"📍 المصدر: manual\n"
+                    f"⏰ العمر: {status.get('age_hours', 0):.1f} ساعة\n"
+                    f"⏳ صالح لحد: {status.get('ttl_hours', 0):.1f} ساعة\n\n"
+                    f"🎬 دلوقتي لما YouTube يطلب Sign in → البوت هيجرب PO Token تلقائي!\n\n"
+                    f"⚠️ PO Token بيفضل شغال لـ 6-12 ساعة وبعدين بيحتاج تجديد"
+                )
+            else:
+                msg = "❌ فشل تعيين PO Token."
+            await _send_whatsapp_message(wa_id, msg)
+            return
+        
+        # /potoken clear
+        if potoken_action in ("clear", "delete", "remove", "مسح", "حذف"):
+            clear_po_token()
+            await _send_whatsapp_message(wa_id, "✅ تم مسح PO Token.")
+            return
+        
+        # /potoken (no args) — show status
+        status = get_po_token_status()
+        if status.get("available"):
+            expired_str = "⚠️ *منتهي الصلاحية!*" if status.get('expired') else "✅ صالح"
+            msg = (
+                f"🔑 *حالة PO Token*\n\n"
+                f"✅ متوفر\n"
+                f"📍 المصدر: {status.get('source', 'غير معروف')}\n"
+                f"🔑 المعاينة: {status.get('token_preview', '***')}\n"
+                f"⏰ العمر: {status.get('age_hours', 0):.1f} ساعة\n"
+                f"⏳ صالح لحد: {status.get('ttl_hours', 0):.1f} ساعة\n"
+                f"{expired_str}\n\n"
+                f"🔧 *الأوامر:*\n"
+                f"➕ إضافة: /potoken set TOKEN\n"
+                f"🗑️ مسح: /potoken clear"
+            )
+        else:
+            msg = (
+                "🔑 *PO Token — مش متوفر*\n\n"
+                "❌ مفيش PO Token حالياً\n\n"
+                "💡 إزاي تجيب PO Token:\n"
+                "1️⃣ افتح youtube.com في Chrome\n"
+                "2️⃣ افتح DevTools (F12) → Console\n"
+                "3️⃣ شغّل السكريبت:\n"
+                "const poToken = await window.__ytplayer__?.config?.args?.raw_player_response?.serviceTrackingParams?.find(p => p.key === 'qoeurl')?.params?.find(p => p.key === 'pot')?.value; console.log(poToken || 'Not found');\n"
+                "4️⃣ انسخ الناتج وابعت:\n"
+                "/potoken set الناتج\n\n"
+                "⚠️ أو استخدم المتغير البيئي: PO_TOKEN=الناتج\n\n"
+                "🎬 PO Token بيقدر يتخطى Sign in to confirm you're not a bot\n\n"
+                "🔧 *الأوامر:*\n"
+                "➕ إضافة: /potoken set TOKEN"
+            )
+        await _send_whatsapp_message(wa_id, msg)
+
     # ══════════════════════════════════════
 
     elif command == "pdf":

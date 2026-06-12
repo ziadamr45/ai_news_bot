@@ -16,8 +16,6 @@ from handlers.downloads.utils import (
     _USER_AGENT,
 )
 
-from po_token_manager import add_po_token_to_opts
-
 logger = logging.getLogger(__name__)
 
 
@@ -227,8 +225,9 @@ def _get_ydl_opts(quality: str, output_template: str, platform: str = "",
                 'format': format_map.get(quality, format_map["best"]),
             }
     
-    # 🔑 PO Token — إضافة آمنة (لو مش متوفر → مفيش أي تغيير)
-    if is_youtube:
-        opts = add_po_token_to_opts(opts)
+    # 🔴 PO Token مش بيضاف هنا — بيضاف بس كـ fallback في download_main.py
+    # لو أضفناه هنا → هيكون في كل محاولة بما فيها الأولى
+    # ولو الـ token باطل → هيخلي المحاولة الأولى تفشل وهي كانت هتنجح بدونه
+    # فبنضيفه بس كـ fallback منفصل بعد ما الطرق العادية تفشل
     
     return opts

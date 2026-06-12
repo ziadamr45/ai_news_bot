@@ -645,46 +645,68 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
             
             # 🔴 FIX v5: لو YouTube — fallback chain محسّن
             if is_youtube:
-                # ═══ المحاولة 1.5: PO Token fallback — لو عندنا token ═══
+                # ═══ المحاولة 1.5: PO Token fallback ═══
                 # 🔑 PO Token بيقدر يتخطى "Sign in to confirm you're not a bot"
-                # بس لو المحاولة الأولى شاملته (من _get_ydl_opts) وفشلت → نجرب لوحده
-                try:
-                    from po_token_manager import get_po_token, get_ytdlp_po_token_args
-                    po_token = get_po_token()
-                    if po_token:
-                        logger.info("🔑 Trying YouTube with PO Token only (no player_client)...")
-                        try:
-                            await status_msg.edit_text(
-                                "🔑 جاري تجربة PO Token..." if lang == "ar"
-                                else "🔑 Trying with PO Token..."
-                            )
-                        except:
-                            pass
-                        
-                        # بنبني opts بسيطة مع PO Token بس
-                        po_opts = _get_ydl_opts(quality, output_template, platform, player_client_idx=0)
-                        # نشيل player_client و remote_components عشان نجرب PO Token لوحده
-                        po_opts.pop('remote_components', None)
-                        po_args = get_ytdlp_po_token_args()
-                        if po_args:
-                            existing_ea = po_opts.get('extractor_args', {})
-                            existing_ea.update(po_args)
-                            po_opts['extractor_args'] = existing_ea
-                        
-                        try:
-                            info = await asyncio.wait_for(
-                                loop.run_in_executor(None, lambda: _run_ytdlp(po_opts)),
-                                timeout=300
-                            )
-                            if info is not None:
-                                logger.info("✅ Download succeeded with PO Token!")
-                        except Exception as po_err:
-                            logger.warning(f"⚠️ PO Token attempt failed: {po_err}")
-                            last_error = po_err
-                except ImportError:
-                    pass  # po_token_manager مش متاح — مش مشكلة
-                except Exception as po_outer_err:
-                    logger.debug(f"🔑 PO Token fallback error: {po_outer_err}")
+                # 🔴 بنستخدمه بس لو الخطأ هو bot detection — مش لكل الأخطاء
+                # 🔴 مش بنضيفه في المحاولة الأولى عشان لو باطل يخليها تفشل
+                is_bot_error = any(kw in err_str for kw in [
+                    "sign in", "bot", "captcha", "confirm you", "login", "403",
+                ])
+                
+                if is_bot_error:
+                    try:
+                        from po_token_manager import get_po_token, get_ytdlp_po_token_args, add_po_token_to_opts
+                        po_token = get_po_token()
+                        if po_token:
+                            logger.info("🔑 Bot detection detected — trying PO Token fallback...")
+                            try:
+                                await status_msg.edit_text(
+                                    "🔑 جاري تجربة PO Token..." if lang == "ar"
+                                    else "🔑 Trying with PO Token..."
+                                )
+                            except:
+                                pass
+                            
+                            # ═══ محاولة A: PO Token + cookies + remote_components ═══
+                            # أقوى تركيبة — كل الحلول مع بعض
+                            po_opts_a = _get_ydl_opts(quality, output_template, platform, player_client_idx=0)
+                            po_opts_a = add_po_token_to_opts(po_opts_a)
+                            
+                            try:
+                                info = await asyncio.wait_for(
+                                    loop.run_in_executor(None, lambda: _run_ytdlp(po_opts_a)),
+                                    timeout=300
+                                )
+                                if info is not None:
+                                    logger.info("✅ Download succeeded with PO Token + cookies + deno!")
+                            except Exception as po_err_a:
+                                logger.warning(f"⚠️ PO Token + cookies + deno failed: {po_err_a}")
+                                last_error = po_err_a
+                            
+                            # ═══ محاولة B: PO Token بس (بدون remote_components) ═══
+                            # أحياناً remote_components بتتعارض مع PO Token
+                            if info is None:
+                                logger.info("🔑 Trying PO Token without remote_components...")
+                                po_opts_b = _get_ydl_opts(quality, output_template, platform, player_client_idx=0)
+                                po_opts_b.pop('remote_components', None)
+                                po_opts_b = add_po_token_to_opts(po_opts_b)
+                                
+                                try:
+                                    info = await asyncio.wait_for(
+                                        loop.run_in_executor(None, lambda: _run_ytdlp(po_opts_b)),
+                                        timeout=300
+                                    )
+                                    if info is not None:
+                                        logger.info("✅ Download succeeded with PO Token (no remote_components)!")
+                                except Exception as po_err_b:
+                                    logger.warning(f"⚠️ PO Token (no remote_components) failed: {po_err_b}")
+                                    last_error = po_err_b
+                        else:
+                            logger.info("🔑 No PO Token available — skipping PO Token fallback")
+                    except ImportError:
+                        pass  # po_token_manager مش متاح — مش مشكلة
+                    except Exception as po_outer_err:
+                        logger.debug(f"🔑 PO Token fallback error: {po_outer_err}")
                 
                 # ═══ المحاولة 2: نجرب player_clients كـ fallback ═══
                 for client_idx in range(1, 1 + len(_YOUTUBE_PLAYER_CLIENTS)):

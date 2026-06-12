@@ -112,6 +112,7 @@ from handlers.downloads.callbacks import (
     handle_download_callback,
     cookies_command,
     handle_cookies_file,
+    potoken_command,
 )
 
 # Explicit __all__ for `from handlers.downloads import *`
@@ -155,6 +156,7 @@ __all__ = [
     "_get_ydl_opts",
     # Main download function
     "_download_with_ytdlp",
-    # Callbacks and cookies command
+    # Callbacks and cookies/potoken commands
     "handle_download_callback", "cookies_command", "handle_cookies_file",
+    "potoken_command",
 ]
