@@ -1435,7 +1435,11 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
         platform_display = platform_names.get(platform, platform)
         
         # Send progress message
-        await _send_whatsapp_message(wa_id, f"📥 جاري تحميل الفيديو من {platform_display}...")
+        if is_threads:
+            # 🔴 Threads فيديو → هيترفع على السحابة مباشرة
+            await _send_whatsapp_message(wa_id, f"🧵 جاري تحميل فيديو Threads ورفعه على السحابة...")
+        else:
+            await _send_whatsapp_message(wa_id, f"📥 جاري تحميل الفيديو من {platform_display}...")
         
         tmpdir = tempfile.mkdtemp(prefix="mybro_wa_dl_")
         output_template = os.path.join(tmpdir, "%(title).80s.%(ext)s")
@@ -1469,113 +1473,24 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                 except Exception:
                     pass  # Fail-open
                 
-                # ═══ إرسال الملف — Direct Send أو Supabase Cloud Upload ═══
-                MAX_WHATSAPP_DIRECT_SIZE = 25 * 1024 * 1024    # 25MB — عشان نتجنب OOM على Railway (كان 100MB)
+                # ═══ إرسال الملف — فيديو: رفع على السحابة مباشرة | صورة: إرسال مباشر ═══
                 
                 if is_video:
-                    # 🔴 FIX v5: فحص الكوديك وتحويله لـ H.264+AAC قبل الإرسال
-                    # WhatsApp بيرفض الفيديوهات اللي مش H.264+AAC+MP4
-                    # Threads بينزل فيديوهات أحياناً بـ VP9 أو كوديك تاني → لازم نحولها
-                    try:
-                        import subprocess as _sp
-                        import json as _json
-                        probe_result = _sp.run(
-                            ['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_streams', file_path],
-                            capture_output=True, timeout=15
-                        )
-                        threads_vcodec = None
-                        threads_acodec = None
-                        
-                        if probe_result.returncode == 0:
-                            try:
-                                probe_data = _json.loads(probe_result.stdout)
-                                for stream in probe_data.get('streams', []):
-                                    if stream.get('codec_type') == 'video':
-                                        threads_vcodec = stream.get('codec_name', '')
-                                    elif stream.get('codec_type') == 'audio':
-                                        threads_acodec = stream.get('codec_name', '')
-                            except Exception:
-                                pass
-                        
-                        needs_conversion = False
-                        if threads_vcodec and threads_vcodec not in ("h264", "avc1", "avc", "mpeg4", ""):
-                            needs_conversion = True
-                            logger.info(f"🧵 Threads WA: Video codec is {threads_vcodec}, converting to h264...")
-                        if threads_acodec and threads_acodec not in ("aac", "mp3", ""):
-                            needs_conversion = True
-                            logger.info(f"🧵 Threads WA: Audio codec is {threads_acodec}, converting to aac...")
-                        
-                        # لو مفيش audio stream خالص → نحول عشان نضيف صوت
-                        if not threads_acodec and threads_vcodec:
-                            needs_conversion = True
-                            logger.info(f"🧵 Threads WA: No audio stream, converting to add AAC...")
-                        
-                        if needs_conversion:
-                            import multiprocessing
-                            conv_threads = min(multiprocessing.cpu_count(), 4)
-                            converted_path = file_path + "_h264.mp4"
-                            conv_cmd = [
-                                'ffmpeg', '-i', file_path,
-                                '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23',
-                                '-c:a', 'aac', '-b:a', '128k',
-                                '-movflags', '+faststart',
-                                '-threads', str(conv_threads),
-                                '-y', converted_path
-                            ]
-                            conv_result = _sp.run(conv_cmd, capture_output=True, timeout=120)
-                            if conv_result.returncode == 0 and os.path.exists(converted_path) and os.path.getsize(converted_path) > 1000:
-                                try: os.remove(file_path)
-                                except: pass
-                                file_path = converted_path
-                                file_size = os.path.getsize(file_path)
-                                size_mb = file_size / (1024 * 1024)
-                                size_str = f"{size_mb:.1f}MB"
-                                logger.info(f"🧵 Threads WA: h264 conversion succeeded! New size: {size_str}")
-                            else:
-                                logger.warning(f"🧵 Threads WA: h264 conversion failed, trying original file")
-                                try: os.remove(converted_path)
-                                except: pass
-                    except Exception as conv_err:
-                        logger.warning(f"🧵 Threads WA: Codec check/conversion error: {conv_err}")
+                    # 🔴 FIX v7: فيديوهات Threads على واتساب → رفع مباشر على السحابة + بعت الرابط
+                    # WhatsApp Cloud API بيرفض فيديوهات Threads بشكل متكرر (مشكلة كوديك/فورمات)
+                    # الحل العملي: نرفع على Supabase ونبعت رابط التحميل — أضمن وأسرع
+                    logger.info(f"🧵 Threads WA: Uploading video directly to cloud (bypassing WhatsApp direct send)...")
                     
-                    if file_size <= MAX_WHATSAPP_DIRECT_SIZE:
-                        # إرسال مباشر
-                        try:
-                            with open(file_path, 'rb') as vf:
-                                media_response = requests.post(
-                                    f"{WHATSAPP_API_URL}/{WHATSAPP_PHONE_NUMBER_ID}/media",
-                                    headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
-                                    files={"file": (f"{real_title[:50]}.mp4", vf, "video/mp4")},
-                                    data={"messaging_product": "whatsapp", "type": "video"},
-                                    timeout=180
-                                )
-                                if media_response.status_code == 200:
-                                    media_id = media_response.json().get("id")
-                                    await _send_whatsapp_video(wa_id, media_id, caption=f"🧵 {real_title[:200]}\n📥 Threads | {size_str}")
-                                    await feedback.success()
-                                    try: os.remove(file_path)
-                                    except: pass
-                                    return
-                                else:
-                                    logger.warning(f"⚠️ Threads WA: media upload returned {media_response.status_code}: {media_response.text[:200]}")
-                        except Exception as send_err:
-                            logger.warning(f"⚠️ Threads WA video send failed: {send_err}")
-                        
-                        # 🔴 الإرسال المباشر فشل — نحاول Supabase كـ fallback
-                        logger.info(f"🧵 Threads WA: Direct send failed, trying Supabase upload...")
-                    
-                    # 🔴 الملف كبير (>25MB) أو الإرسال المباشر فشل → رفع على Supabase
-                    # 🔴 FIX v3: Supabase free tier has 50MB limit — upload_and_get_link now auto-compresses
                     try:
                         from supabase_storage import upload_and_get_link
                         if file_size > 100 * 1024 * 1024:
                             await _send_whatsapp_message(wa_id, f"☁️ الملف كبير ({size_str})، جاري ضغطه ورفعه على السحابة...")
                         else:
-                            await _send_whatsapp_message(wa_id, f"☁️ جاري رفع الملف على السحابة ({size_str})...")
+                            await _send_whatsapp_message(wa_id, f"🧵 جاري رفع فيديو Threads على السحابة ({size_str})...")
                         cloud_msg = await asyncio.wait_for(
                             upload_and_get_link(
                                 file_path=file_path,
-                                filename=f"{real_title[:50]}.mp4",
+                                filename=f"threads_video.mp4",
                                 content_type="video/mp4",
                                 platform="whatsapp",
                                 title=real_title,
@@ -1596,8 +1511,8 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                     except Exception as supa_err:
                         logger.warning(f"🧵 Threads WA: Supabase upload error: {supa_err}")
                     
-                    # كل محاولات الإرسال فشلت
-                    await _send_whatsapp_message(wa_id, f"❌ فشل إرسال الفيديو من Threads ({size_str}). جرب تاني!")
+                    # كل محاولات الرفع فشلت
+                    await _send_whatsapp_message(wa_id, f"❌ فشل رفع فيديو Threads على السحابة ({size_str}). جرب تاني!")
                     await feedback.error()
                     try: os.remove(file_path)
                     except: pass
