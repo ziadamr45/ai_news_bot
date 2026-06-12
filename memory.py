@@ -1843,3 +1843,19 @@ try:
     init_database()
 except Exception as e:
     logger.error(f"Failed to initialize database: {e}")
+
+# 🔴 Migration: تحديث وقت الأخبار الافتراضي من "09:00" لـ "12:00" لكل المستخدمين
+# المستخدمين اللي news_time = "09:00" ده كان الوقت الافتراضي القديم — محدش اختاره يدوي
+try:
+    _OLD_DEFAULT_NEWS_TIME = "09:00"
+    _NEW_DEFAULT_NEWS_TIME = "12:00"
+    ph = "%s" if _is_postgres() else "?"
+    updated = _execute(
+        f"UPDATE user_profiles SET news_time = {ph} WHERE news_time = {ph}",
+        (_NEW_DEFAULT_NEWS_TIME, _OLD_DEFAULT_NEWS_TIME),
+    )
+    if updated and (isinstance(updated, int) and updated > 0 or hasattr(updated, 'rowcount') and updated.rowcount > 0):
+        count = updated if isinstance(updated, int) else updated.rowcount
+        logger.info(f"⏰ Migration: Updated {count} users' news_time from 09:00 to 12:00 (new default)")
+except Exception as _mg_err:
+    logger.debug(f"News time migration skipped: {_mg_err}")

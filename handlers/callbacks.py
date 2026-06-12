@@ -11,7 +11,7 @@ from telegram.ext import ContextTypes
 
 from ai_engine import generate_company_report, generate_roadmap
 from memory import (
-    get_language, set_language, get_news_time,
+    get_language, set_language, get_news_time, set_news_time,
     subscribe_user, unsubscribe_user, is_subscribed,
 )
 from formatters import (
@@ -861,6 +861,10 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ═══ الاشتراك ═══
     elif data == "settings_subscribe":
         subscribe_user(user_id)
+        # 🔴 FIX: نتأكد إن news_time = "12:00" (الافتراضي الجديد)
+        current_nt = get_news_time(user_id)
+        if current_nt == "09:00":
+            set_news_time(user_id, "12:00")
         keyboard = get_main_keyboard(lang)
         await query.message.edit_text(
             subscription_confirmed(lang),

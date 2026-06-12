@@ -4111,8 +4111,13 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
 
     elif command == "subscribe_confirm":
         try:
-            from memory import subscribe_user
+            from memory import subscribe_user, get_news_time, set_news_time
             subscribe_user(wa_user_id)
+            # 🔴 FIX: نتأكد إن news_time = "12:00" (الافتراضي الجديد)
+            # لو المستخدم كان عنده "09:00" من الوقت القديم، نحدثه
+            current_time = get_news_time(wa_user_id)
+            if current_time == "09:00":
+                set_news_time(wa_user_id, "12:00")
             await _send_whatsapp_message(wa_id, "✅ تم الاشتراك بنجاح! 🎉\n\n📬 هنبعتلك أخبار AI كل يوم الساعة 12 الظهر (توقيت القاهرة).\n\n⏰ لو عايز تغير الوقت ابعت بصيغة HH:MM\nمثال: 14:30\n\nلو عايز تلغي الاشتراك ابعت: إلغاء")
         except Exception:
             await _send_whatsapp_message(wa_id, "✅ تم الاشتراك بنجاح! 🎉")
