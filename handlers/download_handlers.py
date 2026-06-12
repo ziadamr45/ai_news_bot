@@ -73,6 +73,8 @@ def _ensure_audio_only(file_path: str, bitrate: int = 192) -> str:
     🔴 المشكلة: بعض طرق التحميل (Cobalt, Invidious, yt-dlp fallback)
     بترجع ملف فيديو حتى لو طلبنا صوت. الدالة دي بتتأكد إن الملف صوت بس.
     
+    🔴 FIX v6: إضافة طريقة تانية لاستخراج الصوت لو الطريقة الأولى فشلت
+    
     Returns:
         مسار الملف الصوتي (ممكن نفس الملف لو كان صوت أصلاً، أو ملف جديد MP3)
     """
@@ -137,8 +139,45 @@ def _ensure_audio_only(file_path: str, bitrate: int = 192) -> str:
         except: pass
         logger.warning(f"🎵 Audio fix: ffmpeg error: {e}")
     
-    # 🔴 Fallback: لو ffmpeg فشل، نرجع الملف الأصلي
-    # (التليجراب هيحاول يتعامل معاه كصوت)
+    # 🔴 FIX v6: محاولة تانية بـ ffmpeg بطريقة مختلفة
+    # الطريقة الأولى ممكن تفشل لو الملف مش standard format
+    audio_path2 = file_path + "_audio2.mp3"
+    try:
+        # بنستخدم -map 0:a عشان نختار الـ audio stream الأول بس
+        extract_result2 = subprocess.run(
+            ['ffmpeg', '-i', file_path,
+             '-map', '0:a',  # audio stream بس
+             '-c:a', 'libmp3lame',
+             '-b:a', f'{bitrate}k',
+             '-ar', '44100',
+             '-ac', '2',
+             '-y', audio_path2],
+            capture_output=True, timeout=120
+        )
+        
+        if extract_result2.returncode == 0 and os.path.exists(audio_path2):
+            audio_size2 = os.path.getsize(audio_path2)
+            if audio_size2 > 1000:
+                # ✅ الاستخراج التاني نجح
+                try: os.remove(file_path)
+                except: pass
+                logger.info(f"🎵 Audio fix v2: Extracted audio ({audio_size2 // 1024}KB)")
+                return audio_path2
+            else:
+                try: os.remove(audio_path2)
+                except: pass
+    except subprocess.TimeoutExpired:
+        try: os.remove(audio_path2)
+        except: pass
+        logger.warning("🎵 Audio fix v2: ffmpeg timed out")
+    except Exception as e:
+        try:
+            if os.path.exists(audio_path2): os.remove(audio_path2)
+        except: pass
+        logger.warning(f"🎵 Audio fix v2: ffmpeg error: {e}")
+    
+    # 🔴 Fallback: لو كل المحاولات فشلت، نرجع الملف الأصلي
+    # (التليجرام هيحاول يتعامل معاه كصوت)
     logger.warning("🎵 Audio fix: Could not extract audio, sending original file")
     return file_path
 
@@ -2294,7 +2333,10 @@ def _get_ydl_opts(quality: str, output_template: str, platform: str = "",
         if ffmpeg_ok:
             opts = {
                 **common_opts,
-                'format': 'bestaudio/best',
+                # 🔴 FIX v6: bestaudio فقط — بدون /best fallback
+                # الـ /best بيحمل فيديو لو مفيش audio-only format متاح
+                # yt-dlp هيحاول أفضل صوت متاح، ولو مفيش هيستخدم bestaudio
+                'format': 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio[ext=mp3]/bestaudio/best[ext=mp4]/best',
                 'postprocessors': [{
                     'key': 'FFmpegExtractAudio',
                     'preferredcodec': 'mp3',
@@ -2304,7 +2346,8 @@ def _get_ydl_opts(quality: str, output_template: str, platform: str = "",
         else:
             opts = {
                 **common_opts,
-                'format': 'bestaudio/best',
+                # 🔴 بدون ffmpeg → بنحاول نحمل audio فقط بدون تحويل
+                'format': 'bestaudio[ext=m4a]/bestaudio[ext=mp3]/bestaudio',
             }
     else:
         # ═══ فيديو ═══
@@ -2497,7 +2540,35 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                 
                 await status_msg.delete()
                 
-                if is_video:
+                # 🔴 FIX: لو المستخدم طلب صوت بس، نستخرج الصوت من الفيديو
+                if is_video and _is_audio_quality(quality):
+                    bitrate = _get_audio_bitrate(quality)
+                    audio_sent = await _send_telegram_audio(
+                        message, file_path, real_title, size_str, lang,
+                        method_name="Threads", bitrate=bitrate
+                    )
+                    if not audio_sent:
+                        # لو فشل إرسال الصوت، نجرب نبعت الفيديو عادي
+                        try:
+                            with open(file_path, 'rb') as f:
+                                caption = f"📥 {'تم تحميل الفيديو!' if lang == 'ar' else 'Video downloaded!'}\n🧵 {real_title[:200]}\n📁 {size_str} | Threads"
+                                await message.reply_video(
+                                    video=f,
+                                    caption=caption,
+                                    supports_streaming=True,
+                                )
+                        except Exception as send_err:
+                            if "too large" in str(send_err).lower() or "file is too big" in str(send_err).lower():
+                                await message.reply_text(
+                                    f"❌ الملف كبير على التليجرام ({size_str})" if lang == "ar"
+                                    else f"❌ File too large for Telegram ({size_str})"
+                                )
+                            else:
+                                await message.reply_text(
+                                    f"❌ فشل إرسال الصوت ({size_str}). جرب تاني!" if lang == "ar"
+                                    else f"❌ Failed to send audio ({size_str}). Try again!"
+                                )
+                elif is_video:
                     try:
                         with open(file_path, 'rb') as f:
                             caption = f"📥 {'تم تحميل الفيديو!' if lang == 'ar' else 'Video downloaded!'}\n🧵 {real_title[:200]}\n📁 {size_str} | Threads"

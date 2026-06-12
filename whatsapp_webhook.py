@@ -1667,27 +1667,37 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
             is_facebook_family = platform in ("facebook", "instagram", "threads")
             
             if is_audio_only:
-                format_str = 'bestaudio/best'
+                # 🔴 FIX v2: نفس تحسينات التليجرام — audio-only format بدون /best fallback
+                # الـ /best بيحمل فيديو لو مفيش audio-only format متاح
+                format_str = 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio[ext=mp3]/bestaudio/best[ext=mp4]/best'
                 merge_output = None
                 remux = None
                 progress_msg = f"🎵 جاري استخراج الصوت من {platform_display}..."
             elif platform in ("dailymotion", "soundcloud"):
-                # 🔴 FIX: Dailymotion/SoundCloud — صيغة أبسط لأنهم مش زي YouTube
-                # Dailymotion بيرجع formats مختلفة → best+/best أحسن من bestvideo+bestaudio
+                # 🔴 FIX v2: Dailymotion/SoundCloud — نفس صيغة التليجرام بالظبط!
+                # Dailymotion بيوفر separate video+audio streams → لازم نجرب merge الأول
+                # التليجرام بيستخدم bestvideo+bestaudio وبيشتغل → نستخدم نفس الحاجة
                 if quality == "best":
                     format_str = (
+                        'bestvideo[vcodec^=avc1][ext=mp4][height<=1080]+bestaudio[ext=m4a]/'
+                        'bestvideo[vcodec^=avc1]+bestaudio/'
+                        'bestvideo[ext=mp4][height<=1080]+bestaudio/'
                         'best[ext=mp4][height<=1080]/'
                         'best[height<=1080]/'
                         'best'
                     )
                 elif quality == "medium":
                     format_str = (
+                        'bestvideo[vcodec^=avc1][ext=mp4][height<=720]+bestaudio[ext=m4a]/'
+                        'bestvideo[vcodec^=avc1][height<=720]+bestaudio/'
+                        'bestvideo[ext=mp4][height<=720]+bestaudio/'
                         'best[ext=mp4][height<=720]/'
                         'best[height<=720]/'
                         'best'
                     )
                 else:  # low
                     format_str = (
+                        'bestvideo[vcodec^=avc1][height<=480]+bestaudio/'
                         'best[ext=mp4][height<=480]/'
                         'best[height<=480]/'
                         'best'
@@ -2205,6 +2215,87 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                 except Exception as retry_err:
                     last_error = retry_err
                     logger.warning(f"⚠️ yt-dlp simple format retry failed for {platform}: {retry_err}")
+            
+            # 🔴 FIX v2: Dailymotion player API fallback — بنجرب نجيب الفيديو من الـ API مباشرة
+            # لو yt-dlp فشل تمام مع Dailymotion → نجرب الـ player API
+            if info is None and platform == "dailymotion":
+                try:
+                    logger.info(f"🔧 WhatsApp: Trying Dailymotion player API fallback for {url[:80]}")
+                    dm_video_id = None
+                    # استخراج الـ video ID من الرابط
+                    dm_match = re.search(r'dailymotion\.com/video/([a-zA-Z0-9]+)', url)
+                    if not dm_match:
+                        dm_match = re.search(r'dai\.ly/([a-zA-Z0-9]+)', url)
+                    if dm_match:
+                        dm_video_id = dm_match.group(1)
+                    
+                    if dm_video_id:
+                        import aiohttp as _aiohttp_dm
+                        dm_api_url = f"https://www.dailymotion.com/player/metadata/video/{dm_video_id}"
+                        async with _aiohttp_dm.ClientSession() as dm_session:
+                            async with dm_session.get(
+                                dm_api_url,
+                                headers={
+                                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                                    "Accept": "application/json",
+                                },
+                                timeout=_aiohttp_dm.ClientTimeout(total=30)
+                            ) as dm_resp:
+                                if dm_resp.status == 200:
+                                    dm_data = await dm_resp.json()
+                                    dm_title = dm_data.get("title", "Dailymotion Video")[:80]
+                                    dm_qualities = dm_data.get("qualities", {})
+                                    
+                                    # بنختار أفضل جودة متاحة
+                                    dm_stream_url = None
+                                    for q_key in ["1080", "720", "480", "380", "240", "auto"]:
+                                        q_list = dm_qualities.get(q_key, [])
+                                        for q_item in q_list:
+                                            if q_item.get("type") == "application/mp4" and q_item.get("url"):
+                                                dm_stream_url = q_item["url"]
+                                                break
+                                        if dm_stream_url:
+                                            break
+                                    
+                                    if dm_stream_url:
+                                        logger.info(f"🔧 Dailymotion player API: Got stream URL ({q_key}p)")
+                                        # نحمل الفيديو من الـ stream URL
+                                        dm_file_path = os.path.join(tmpdir, f"{dm_title[:50]}.mp4")
+                                        async with dm_session.get(
+                                            dm_stream_url,
+                                            timeout=_aiohttp_dm.ClientTimeout(total=180)
+                                        ) as dl_resp:
+                                            if dl_resp.status == 200:
+                                                dm_file_size = 0
+                                                with open(dm_file_path, 'wb') as dm_f:
+                                                    async for chunk in dl_resp.content.iter_chunked(8192):
+                                                        dm_f.write(chunk)
+                                                        dm_file_size += len(chunk)
+                                                
+                                                if dm_file_size > 10000:
+                                                    info = {
+                                                        "title": dm_title,
+                                                        "duration": 0,
+                                                        "height": int(q_key) if q_key.isdigit() else 720,
+                                                        "vcodec": "h264",
+                                                        "acodec": "aac",
+                                                        "_cobalt_file": dm_file_path,
+                                                        "_cobalt_size": dm_file_size,
+                                                    }
+                                                    logger.info(f"✅ Dailymotion player API: Download succeeded! Size: {dm_file_size // 1024}KB")
+                                                else:
+                                                    try: os.remove(dm_file_path)
+                                                    except: pass
+                                            else:
+                                                logger.warning(f"⚠️ Dailymotion stream download failed: HTTP {dl_resp.status}")
+                                    else:
+                                        logger.warning(f"⚠️ Dailymotion player API: No stream URL found in qualities")
+                                else:
+                                    logger.warning(f"⚠️ Dailymotion player API: HTTP {dm_resp.status}")
+                except asyncio.TimeoutError:
+                    logger.warning("⚠️ Dailymotion player API timed out")
+                except Exception as dm_err:
+                    logger.warning(f"⚠️ Dailymotion player API error: {dm_err}")
             
             # ═══ المرحلة 2: yt-dlp player_client fallback chain (YouTube فقط!) ═══
             # 🔴 FIX: player_client ده لليوتيوب بس — مش بيشتغل مع Dailymotion/SoundCloud
@@ -3499,17 +3590,38 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                             except: pass
                             return  # ✅ رفع السحابة نجح
                         else:
-                            # Supabase فشل — رسالة خطأ
+                            # 🔴 FIX v2: Supabase فشل → نجرب جودة أقل (زي الملفات الكبيرة)
+                            logger.warning(f"⚠️ Supabase upload failed for small file ({file_size / 1024 / 1024:.1f}MB), trying lower quality...")
+                            if quality != "low":
+                                try:
+                                    shutil.rmtree(tmpdir, ignore_errors=True)
+                                except Exception:
+                                    pass
+                                await feedback.complete()
+                                lower_quality = {"best": "medium", "medium": "low", "audio": "low"}.get(quality, "low")
+                                return await _download_and_send_video(wa_id, url, wa_user_id, contact_name, message_id, is_admin, quality=lower_quality)
+                            else:
+                                # جودة منخفضة بالفعل — رسالة خطأ نهائية
+                                await _send_whatsapp_message(wa_id,
+                                    f"📥 *{title}*\n\n"
+                                    f"🔗 المنصة: {platform_display}\n\n"
+                                    f"❌ فشل إرسال الملف. جرب تاني!")
+                    except Exception as sup_err:
+                        logger.error(f"☁️ Supabase upload error: {sup_err}")
+                        # 🔴 FIX v2: حتى لو Supabase رمي استثناء → نجرب جودة أقل
+                        if quality != "low":
+                            try:
+                                shutil.rmtree(tmpdir, ignore_errors=True)
+                            except Exception:
+                                pass
+                            await feedback.complete()
+                            lower_quality = {"best": "medium", "medium": "low", "audio": "low"}.get(quality, "low")
+                            return await _download_and_send_video(wa_id, url, wa_user_id, contact_name, message_id, is_admin, quality=lower_quality)
+                        else:
                             await _send_whatsapp_message(wa_id,
                                 f"📥 *{title}*\n\n"
                                 f"🔗 المنصة: {platform_display}\n\n"
                                 f"❌ فشل إرسال الملف. جرب تاني!")
-                    except Exception as sup_err:
-                        logger.error(f"☁️ Supabase upload error: {sup_err}")
-                        await _send_whatsapp_message(wa_id,
-                            f"📥 *{title}*\n\n"
-                            f"🔗 المنصة: {platform_display}\n\n"
-                            f"❌ فشل إرسال الملف. جرب تاني!")
             
             # 🔴 Step 2: لو الملف > 100MB → رفع على Supabase مباشرة (مع ضغط تلقائي)
             else:
