@@ -19,15 +19,22 @@ from config import RSS_FEEDS, REQUEST_TIMEOUT, MAX_RETRIES, RETRY_DELAY, NEWS_FE
 logger = logging.getLogger(__name__)
 
 
-def _is_recent(published: datetime = None) -> bool:
-    """فحص هل الخبر حديث — لو مفيش تاريخ نرفضه عشان ما ندخلش أخبار قديمة"""
+def _is_recent(published: datetime = None, max_hours: float = None) -> bool:
+    """فحص هل الخبر حديث
+    
+    🔴 FIX v2: لو مفيش تاريخ بنسيب الخبر يعدي عشان:
+    - كتير من الـ RSS feeds مش بتبعت تاريخ
+    - الأخبار دي ممكن تكون مهمة
+    - الفلترة الدقيقة بتتعمل بعدين في filters.py
+    """
     if published is None:
-        return False  # 🔴 FIX: أخبار بدون تاريخ = مش حديثة (قبل كده كانت True!)
+        return True  # 🔴 FIX v2: أخبار بدون تاريخ = نسيبها تعدي (قبل كده كانت False وده بيضيع أخبار كتير!)
     now = datetime.now(timezone.utc)
     if published.tzinfo is None:
         published = published.replace(tzinfo=timezone.utc)
     time_diff = now - published
-    return time_diff.total_seconds() <= NEWS_FETCH_HOURS * 3600
+    hours = max_hours if max_hours is not None else NEWS_FETCH_HOURS
+    return time_diff.total_seconds() <= hours * 3600
 
 
 def _parse_published(entry) -> Optional[datetime]:

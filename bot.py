@@ -60,10 +60,12 @@ logger = logging.getLogger(__name__)
 async def broadcast_daily_news(context: ContextTypes.DEFAULT_TYPE):
     """بث الأخبار اليومية لكل مشترك حسب وقته المخصص
     
-    🔴 FIX v2: 
+    🔴 FIX v3:
     - بث على التلجرام والواتساب
     - فلترة حسب الـ platform
+    - 🔴 CRITICAL FIX: الواتساب بيتستخدم wa_phone (رقم التليفون) مش user_id الداخلي
     - منطق الفترة: بنجيب الأخبار اللي حصلت من آخر مرة بعتنا فيها للمستخدم
+    - جلب الأخبار بفترة زمنية مبنية على last_news_delivery
     """
     logger.info("=" * 50)
     logger.info("Checking for scheduled news deliveries")
@@ -96,8 +98,45 @@ async def broadcast_daily_news(context: ContextTypes.DEFAULT_TYPE):
 
         logger.info(f"Found {len(tg_subscribers)} Telegram + {len(wa_subscribers)} WhatsApp subscribers for time {current_hour:02d}:{current_minute:02d}")
 
+        # ═══ حساب الفترة الزمنية للأخبار ═══
+        # 🔴 FIX v3: بنحدد الفترة بناءً على آخر مرة بعتنا فيها أخبار
+        # لو ده أول مرة نبعت، بنستخدم آخر 24 ساعة كـ fallback
+        from config import NEWS_FETCH_HOURS
+        fetch_hours = NEWS_FETCH_HOURS  # default: 24 hours
+        
+        # نجيب أكتر فترة قديمة بين كل المشتركين
+        all_subscribers = tg_subscribers + wa_subscribers
+        earliest_last_delivery = None
+        for sub in all_subscribers:
+            last_del = sub.get("last_news_delivery")
+            if last_del:
+                try:
+                    last_dt = datetime.fromisoformat(last_del)
+                    if last_dt.tzinfo is None:
+                        last_dt = tz.localize(last_dt)
+                    if earliest_last_delivery is None or last_dt < earliest_last_delivery:
+                        earliest_last_delivery = last_dt
+                except Exception:
+                    pass
+        
+        if earliest_last_delivery:
+            time_since_last = (now - earliest_last_delivery).total_seconds() / 3600
+            # بنزود ساعتين احتياط عشان مفيش أخبار تتفوت
+            fetch_hours = min(max(time_since_last + 2, 6), 72)
+            logger.info(f"📅 Last delivery was {time_since_last:.1f}h ago — fetching {fetch_hours:.1f}h of news")
+        else:
+            logger.info(f"📅 No previous delivery found — fetching default {fetch_hours}h of news")
+
         # ═══ جلب الأخبار ═══
-        articles = await fetch_news()
+        # 🔴 FIX v3: بنمرر الفترة الزمنية المحسوبة
+        import config as _config
+        original_hours = _config.NEWS_FETCH_HOURS
+        _config.NEWS_FETCH_HOURS = fetch_hours
+        try:
+            articles = await fetch_news()
+        finally:
+            _config.NEWS_FETCH_HOURS = original_hours
+        
         if not articles:
             logger.warning("No articles fetched. Skipping broadcast.")
             return
@@ -109,6 +148,10 @@ async def broadcast_daily_news(context: ContextTypes.DEFAULT_TYPE):
 
         ranked = rank_articles(filtered)
         summarized = await summarize_articles(ranked)
+        
+        if not summarized:
+            logger.warning("No articles after summarization. Skipping broadcast.")
+            return
 
         days_ar = ["الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت", "الأحد"]
         months_ar = ["", "يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"]
@@ -211,7 +254,17 @@ async def broadcast_daily_news(context: ContextTypes.DEFAULT_TYPE):
         wa_fail = 0
 
         for subscriber in wa_subscribers:
-            wa_id = str(subscriber["user_id"])
+            # 🔴 CRITICAL FIX v3: بنستخدم wa_phone (رقم التليفون الحقيقي) مش user_id الداخلي
+            # user_id هو رقم مشفر زي -1234567890 لكن واتساب عايز الرقم الحقيقي زي 201234567890
+            wa_phone = subscriber.get("wa_phone", "")
+            wa_user_id = subscriber["user_id"]  # ده الرقم الداخلي للداتابيز
+            
+            # لو مفيش wa_phone، محاولة استخراجه من user_id (للبيانات القديمة)
+            if not wa_phone:
+                logger.warning(f"⚠️ No wa_phone for WA subscriber {wa_user_id} — skipping (can't send to internal ID)")
+                wa_fail += 1
+                continue
+            
             lang = subscriber.get("language", "ar")
             message = messages.get(lang, messages["ar"])
             
@@ -223,17 +276,18 @@ async def broadcast_daily_news(context: ContextTypes.DEFAULT_TYPE):
 
             try:
                 from whatsapp_webhook import _send_whatsapp_message
-                await _send_whatsapp_message(wa_id, wa_message[:4000])
+                await _send_whatsapp_message(wa_phone, wa_message[:4000])
                 
-                set_last_news_delivery(int(wa_id), now.isoformat())
+                # 🔴 FIX: بنحدث last_news_delivery بـ user_id الداخلي مش wa_phone
+                set_last_news_delivery(wa_user_id, now.isoformat())
                 wa_success += 1
-                logger.info(f"✅ WhatsApp news sent to {wa_id}")
+                logger.info(f"✅ WhatsApp news sent to {wa_phone} (user_id: {wa_user_id})")
                 
                 await asyncio.sleep(BROADCAST_DELAY_SECONDS)
                 
             except Exception as e:
                 wa_fail += 1
-                logger.error(f"❌ Failed to send WA news to {wa_id}: {e}")
+                logger.error(f"❌ Failed to send WA news to {wa_phone} (user_id: {wa_user_id}): {e}")
 
         logger.info(f"📬 Broadcast complete: TG({tg_success} sent, {tg_fail} failed) WA({wa_success} sent, {wa_fail} failed)")
 
@@ -378,7 +432,7 @@ def main():
     _scheduler.add_job(
         scheduled_broadcast,
         trigger="cron",
-        hour="0,6,8,9,10,12,14,16,18,20,21,22",
+        hour="*",  # 🔴 FIX v3: كل ساعة — عشان نوصل لأي وقت المستخدم يختاره
         minute="0",
         id="daily_news_broadcast",
         name="Daily AI News Broadcast (per-user time)",

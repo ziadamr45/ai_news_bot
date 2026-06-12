@@ -1750,7 +1750,9 @@ def set_last_news_delivery(user_id: int, delivery_time: str):
 def get_subscribers_for_time(hour: int, minute: int, platform: str = None) -> List[Dict]:
     """الحصول على المشتركين اللي وقت أخبارهم matches الساعة دي
     
-    🔴 FIX v2: إضافة platform filter — عشان نبعت للتلجرام لوحده والواتساب لوحده
+    🔴 FIX v3: 
+    - إضافة platform filter — عشان نبعت للتلجرام لوحده والواتساب لوحده
+    - إضافة wa_phone — ضروري عشان بث الواتساب يحتاج رقم التليفون مش user_id الداخلي
     """
     # Format: "HH:MM" e.g., "14:00" or "12:00"
     time_str = f"{hour:02d}:{minute:02d}"
@@ -1758,20 +1760,20 @@ def get_subscribers_for_time(hour: int, minute: int, platform: str = None) -> Li
     
     if platform:
         rows = _execute(
-            f"SELECT user_id, language, news_time, name, last_news_delivery, platform FROM user_profiles WHERE subscribed = {ph} AND news_time = {ph} AND platform = {ph}",
+            f"SELECT user_id, language, news_time, name, last_news_delivery, platform, wa_phone FROM user_profiles WHERE subscribed = {ph} AND news_time = {ph} AND platform = {ph}",
             (1, time_str, platform),
             fetch=True
         )
     else:
         rows = _execute(
-            f"SELECT user_id, language, news_time, name, last_news_delivery, platform FROM user_profiles WHERE subscribed = {ph} AND news_time = {ph}",
+            f"SELECT user_id, language, news_time, name, last_news_delivery, platform, wa_phone FROM user_profiles WHERE subscribed = {ph} AND news_time = {ph}",
             (1, time_str),
             fetch=True
         )
     if rows:
         if _is_postgres():
-            return [{"user_id": r[0], "language": r[1], "news_time": r[2], "name": r[3], "last_news_delivery": r[4], "platform": r[5] if len(r) > 5 else "telegram"} for r in rows]
-        return [dict(r) for r in rows]
+            return [{"user_id": r[0], "language": r[1], "news_time": r[2], "name": r[3], "last_news_delivery": r[4], "platform": r[5] if len(r) > 5 else "telegram", "wa_phone": r[6] if len(r) > 6 else ""} for r in rows]
+        return [{"user_id": dict(r)["user_id"], "language": dict(r).get("language", "ar"), "news_time": dict(r).get("news_time", "12:00"), "name": dict(r).get("name", ""), "last_news_delivery": dict(r).get("last_news_delivery", None), "platform": dict(r).get("platform", "telegram"), "wa_phone": dict(r).get("wa_phone", "")} for r in rows]
     # fallback
     all_users = _load_all_users()
     subscribers = []
@@ -1784,6 +1786,7 @@ def get_subscribers_for_time(hour: int, minute: int, platform: str = None) -> Li
                 "news_time": data.get("news_time", "12:00"), "name": data.get("name", ""),
                 "last_news_delivery": data.get("last_news_delivery", None),
                 "platform": data.get("platform", "telegram"),
+                "wa_phone": data.get("wa_phone", ""),
             })
     return subscribers
 
