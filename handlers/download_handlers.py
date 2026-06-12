@@ -317,21 +317,252 @@ def _parse_threads_post(post: dict) -> dict | None:
     return None
 
 
-async def _download_threads_media(url: str, tmpdir: str, quality: str = "best") -> dict | None:
-    """تحميل فيديو/صورة من Threads — الحل النهائي v4
+async def _threads_playwright_download(url: str, tmpdir: str, quality: str = "best") -> dict | None:
+    """تحميل فيديو/صورة من Threads باستخدام Playwright (headless browser)
     
-    🔴 الترتيب (محدث 2025):
-    1. RapidAPI — الأسرع والأضمن (لو المفتاح متاح)
+    🔴 ده الحل الأضمن عشان:
+    - yt-dlp مش بيدعم Threads (مفيش extractor)
+    - الـ HTML مش فيه video data (SPA — client-rendered)
+    - GraphQL بيرجع null بدون session cookie
+    - Playwright بيرندر الصفحة بالكامل ويسحب رابط الفيديو من الـ <video> tag
+    
+    Returns: dict فيه {success, file_path, title, is_video, file_size} أو None
+    """
+    try:
+        from playwright.async_api import async_playwright
+    except ImportError:
+        logger.warning("🧵 Threads: Playwright not installed, skipping headless browser method")
+        return None
+    
+    # 🔴 حوّل threads.com → threads.net (Playwright بيتعامل مع الـ redirect صح)
+    normalized_url = url
+    if 'threads.com' in normalized_url:
+        normalized_url = normalized_url.replace('threads.com', 'threads.net')
+    
+    # 🔴 شيل الـ tracking parameters زي ?xmt=
+    clean_url = re.sub(r'\?xmt=.*$', '', normalized_url)
+    clean_url = re.sub(r'\?utm_.*$', '', clean_url)
+    # شيل أي query params مش لازمة
+    if '?' in clean_url:
+        base_url = clean_url.split('?')[0]
+        # احتفظ بـ post ID بس
+        clean_url = base_url
+    
+    logger.info(f"🧵 Threads: Trying Playwright headless browser for {clean_url[:80]}")
+    
+    try:
+        async with async_playwright() as p:
+            # 🔴 Launch headless Chromium
+            browser = await p.chromium.launch(
+                headless=True,
+                args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+            )
+            
+            context = await browser.new_context(
+                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+                viewport={'width': 1280, 'height': 720},
+                locale='en-US',
+            )
+            
+            page = await context.new_page()
+            
+            try:
+                # 🔴 Navigate to the Threads post
+                await page.goto(clean_url, wait_until='networkidle', timeout=30000)
+                
+                # 🔴 استنى شوية عشان الفيديو يتحمل
+                await page.wait_for_timeout(3000)
+                
+                # 🔴 استخرج رابط الفيديو من الـ <video> tag
+                video_url = await page.evaluate('''
+                    () => {
+                        const video = document.querySelector('video');
+                        if (video) {
+                            return video.src || video.currentSrc || 
+                                   (video.querySelector('source') ? video.querySelector('source').src : null);
+                        }
+                        return null;
+                    }
+                ''')
+                
+                # 🔴 لو ملقيناش video.src، نجرب نلاقيه في الـ network requests
+                if not video_url:
+                    # نجرب نلاقي رابط الفيديو من الـ performance entries
+                    video_url = await page.evaluate('''
+                        () => {
+                            const entries = performance.getEntriesByType('resource');
+                            for (const entry of entries) {
+                                if (entry.name && entry.name.includes('cdninstagram.com') && 
+                                    (entry.name.includes('.mp4') || entry.name.includes('video'))) {
+                                    return entry.name;
+                                }
+                            }
+                            return null;
+                        }
+                    ''')
+                
+                # 🔴 لو لسه ملقيناش، نجرب نضغط على الفيديو عشان يشتغل
+                if not video_url:
+                    try:
+                        play_button = await page.query_selector('[data-pressable-container="true"]')
+                        if play_button:
+                            await play_button.click()
+                            await page.wait_for_timeout(2000)
+                            
+                            video_url = await page.evaluate('''
+                                () => {
+                                    const video = document.querySelector('video');
+                                    if (video) {
+                                        return video.src || video.currentSrc;
+                                    }
+                                    return null;
+                                }
+                            ''')
+                    except Exception:
+                        pass
+                
+                # 🔴 استخرج عنوان البوست
+                title = await page.evaluate('''
+                    () => {
+                        // جرّب selector مختلفين للعنوان
+                        const selectors = [
+                            'div[data-pressable-container="true"] span',
+                            'span.x1lliihq',
+                            'div[role="main"] span',
+                        ];
+                        for (const sel of selectors) {
+                            const el = document.querySelector(sel);
+                            if (el && el.textContent.trim().length > 5) {
+                                return el.textContent.trim().substring(0, 200);
+                            }
+                        }
+                        return document.title || 'Threads Post';
+                    }
+                ''')
+                
+                # 🔴 لو ملقيناش فيديو، نجرب نلاقي صورة
+                image_url = None
+                if not video_url:
+                    image_url = await page.evaluate('''
+                        () => {
+                            const img = document.querySelector('article img[src*="fbcdn"]') ||
+                                       document.querySelector('article img[src*="cdninstagram"]');
+                            if (img) {
+                                return img.src;
+                            }
+                            return null;
+                        }
+                    ''')
+                
+                await browser.close()
+                
+            except Exception as nav_err:
+                await browser.close()
+                logger.warning(f"🧵 Threads: Playwright navigation error: {nav_err}")
+                return None
+        
+        # 🔴 الحمل الميديا اللي لقيناها
+        if video_url:
+            logger.info(f"🧵 Threads: Playwright found video URL: {video_url[:100]}...")
+            
+            import aiohttp
+            file_path = os.path.join(tmpdir, "threads_video.mp4")
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    video_url,
+                    headers={'Referer': 'https://www.threads.net/', 'User-Agent': 'Mozilla/5.0'},
+                    timeout=aiohttp.ClientTimeout(total=120)
+                ) as resp:
+                    if resp.status != 200:
+                        logger.warning(f"🧵 Threads: Video download failed with status {resp.status}")
+                        return None
+                    
+                    file_size = 0
+                    with open(file_path, 'wb') as f:
+                        async for chunk in resp.content.iter_chunked(8192):
+                            f.write(chunk)
+                            file_size += len(chunk)
+                    
+                    if file_size < 1000:
+                        try: os.remove(file_path)
+                        except: pass
+                        logger.warning(f"🧵 Threads: Downloaded file too small ({file_size} bytes)")
+                        return None
+            
+            return {
+                "success": True,
+                "file_path": file_path,
+                "file_size": file_size,
+                "title": title or "Threads Post",
+                "is_video": True,
+                "method": "playwright",
+            }
+        
+        elif image_url:
+            logger.info(f"🧵 Threads: Playwright found image URL: {image_url[:100]}...")
+            
+            import aiohttp
+            file_path = os.path.join(tmpdir, "threads_image.jpg")
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    image_url,
+                    headers={'Referer': 'https://www.threads.net/', 'User-Agent': 'Mozilla/5.0'},
+                    timeout=aiohttp.ClientTimeout(total=60)
+                ) as resp:
+                    if resp.status != 200:
+                        logger.warning(f"🧵 Threads: Image download failed with status {resp.status}")
+                        return None
+                    
+                    file_size = 0
+                    with open(file_path, 'wb') as f:
+                        async for chunk in resp.content.iter_chunked(8192):
+                            f.write(chunk)
+                            file_size += len(chunk)
+                    
+                    if file_size < 500:
+                        try: os.remove(file_path)
+                        except: pass
+                        return None
+            
+            return {
+                "success": True,
+                "file_path": file_path,
+                "file_size": file_size,
+                "title": title or "Threads Post",
+                "is_video": False,
+                "method": "playwright",
+            }
+        
+        else:
+            logger.warning("🧵 Threads: Playwright could not find any media on the page")
+            return None
+    
+    except asyncio.TimeoutError:
+        logger.warning("🧵 Threads: Playwright timed out")
+        return None
+    except Exception as e:
+        logger.warning(f"🧵 Threads: Playwright error: {e}")
+        return None
+
+
+async def _download_threads_media(url: str, tmpdir: str, quality: str = "best") -> dict | None:
+    """تحميل فيديو/صورة من Threads — الحل النهائي v5
+    
+    🔴 الترتيب (محدث 2025-06):
+    0. Playwright headless browser — الأضمن (بيرندر الصفحة ويسحب الفيديو)
+    1. RapidAPI — سريع لو المفتاح متاح
     2. data-sjs JSON parsing — استخراج من <script data-sjs> tags في HTML
        ⚠️ ملاحظة: Threads بيبقي video_versions=null في الـ HTML دلوقتي!
        بس image_versions2 لسه شغال → بنستخدمه للصور
     3. GraphQL API — طلب مباشر من threads.com/api/graphql
     4. Cobalt API — خدمة مفتوحة المصدر كـ fallback
     
-    🔴 تغييرات مهمة:
-    - threads.net بيعمل redirect لـ threads.com → لازم نتعامل مع الـ redirect
-    - video_versions بقي null في الـ HTML → لازم نعتمد على الـ APIs
-    - GraphQL doc_ids القديمة مش شغالة → محتاجين doc_ids جديدة
+    🔴 تغييرات v5:
+    - إضافة Playwright كطريقة أولى (الأضمن — الـ SPA بيتعمل render كامل)
+    - شيل الـ tracking parameters (?xmt=, ?utm_) من الروابط
+    - لا fallback لـ yt-dlp (مش بيدعم Threads)
     
     Returns: dict فيه {success, file_path, title, is_video, file_size} أو None
     """
@@ -347,10 +578,17 @@ async def _download_threads_media(url: str, tmpdir: str, quality: str = "best") 
         'Sec-Fetch-Site': 'none',
     }
     
+    # 🔴 FIX v5: شيل الـ tracking parameters (?xmt=, ?utm_) من الروابط
+    clean_url = re.sub(r'\?xmt=.*$', '', url)
+    clean_url = re.sub(r'\?utm_.*$', '', clean_url)
+    if '?' in clean_url:
+        base = clean_url.split('?')[0]
+        clean_url = base
+    
     # 🔴 FIX v4: threads.net بيعمل redirect لـ threads.com دلوقتي
     # نوحد الرابط — كلاهما يقبلوا threads.com و threads.net
     # بنحتفظ بالرابط الأصلي وبنجرب الاتنين لو الاول فشل
-    normalized_url = url
+    normalized_url = clean_url
     # حوّل threads.com → threads.net للتوافق (الاتنين بيرجعوا نفس البيانات)
     # بس threads.net أضمن عشان الـ redirect بيتعامل معاه صح
     if 'threads.com' in normalized_url:
@@ -364,8 +602,21 @@ async def _download_threads_media(url: str, tmpdir: str, quality: str = "best") 
         urls_to_try.append(normalized_url.replace('threads.com', 'threads.net'))
     
     # ═══════════════════════════════════════
-    # الطريقة 0: RapidAPI — الأسرع والأضمن (لو المفتاح متاح)
-    # 🔴 بنجرب الأول عشان الـ data-sjs و GraphQL مش شغالين للفيديو دلوقتي
+    # الطريقة 0: Playwright headless browser — الأضمن!
+    # 🔴 بيرندر الصفحة بالكامل ويسحب رابط الفيديو من <video> tag
+    # ═══════════════════════════════════════
+    try:
+        pw_result = await _threads_playwright_download(url, tmpdir, quality)
+        if pw_result:
+            logger.info(f"🧵 Threads: Playwright succeeded! ({pw_result.get('method', 'playwright')})")
+            return pw_result
+        else:
+            logger.warning("🧵 Threads: Playwright failed, trying other methods...")
+    except Exception as e:
+        logger.warning(f"🧵 Threads: Playwright error: {e}")
+    
+    # ═══════════════════════════════════════
+    # الطريقة 1: RapidAPI — سريع لو المفتاح متاح
     # ═══════════════════════════════════════
     try:
         from config import RAPIDAPI_KEY
@@ -2172,8 +2423,19 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                 except: pass
                 return  # ✅ Threads نجح!
             else:
-                # Threads method failed — try yt-dlp as fallback anyway
-                logger.warning("🧵 Threads custom method failed, trying yt-dlp as fallback...")
+                # 🔴 FIX v5: Threads مش مدعوم من yt-dlp — لا fallback!
+                # yt-dlp بيرجع "Unsupported URL" لـ threads.com/threads.net
+                logger.warning("🧵 Threads: All custom methods failed — yt-dlp doesn't support Threads, not trying it")
+                error_msg = (
+                    "❌ فشل تحميل الفيديو من Threads. جرب تاني!" if lang == "ar"
+                    else "❌ Failed to download from Threads. Try again!"
+                )
+                await message.reply_text(error_msg)
+                try:
+                    await status_msg.delete()
+                except:
+                    pass
+                return
         
         output_template = os.path.join(tmpdir, "%(title).100s.%(ext)s")
         

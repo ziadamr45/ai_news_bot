@@ -1252,12 +1252,13 @@ def _is_threads_url(url: str) -> bool:
 async def _download_threads_media_wa(url: str, tmpdir: str) -> dict | None:
     """تحميل فيديو/صورة من Threads — نفس الـ fallback chain زي التليجرام
     
-    🔴 الترتيب (مزامنة مع download_handlers.py v4):
-    0. RapidAPI — الأسرع والأضمن (لو المفتاح متاح)
-    1. data-sjs JSON parsing — استخراج من <script data-sjs> tags في HTML
+    🔴 الترتيب (مزامنة مع download_handlers.py v5):
+    0. Playwright headless browser — الأضمن (بيرندر الصفحة ويسحب الفيديو)
+    1. RapidAPI — الأسرع (لو المفتاح متاح)
+    2. data-sjs JSON parsing — استخراج من <script data-sjs> tags في HTML
        ⚠️ video_versions بيبقي null دلوقتي → شغال للصور بس
-    2. GraphQL API — طلب مباشر من threads.net/api/graphql
-    3. Cobalt API — خدمة مفتوحة المصدر كـ fallback
+    3. GraphQL API — طلب مباشر من threads.net/api/graphql
+    4. Cobalt API — خدمة مفتوحة المصدر كـ fallback
     
     Returns: dict فيه {success, file_path, title, is_video} أو None
     """
@@ -1265,7 +1266,7 @@ async def _download_threads_media_wa(url: str, tmpdir: str) -> dict | None:
         # 🔴 نستورد الدوال المشتركة من download_handlers (نفس الكود بالظبط)
         from handlers.download_handlers import _download_threads_media as _tg_threads_download
         
-        logger.info(f"🧵 Threads WA: Using shared 3-layer download (data-sjs → GraphQL → RapidAPI)")
+        logger.info(f"🧵 Threads WA: Using shared download (Playwright → RapidAPI → data-sjs → GraphQL → Cobalt)")
         
         result = await _tg_threads_download(url, tmpdir, quality="best")
         
@@ -1273,7 +1274,7 @@ async def _download_threads_media_wa(url: str, tmpdir: str) -> dict | None:
             logger.info(f"🧵 Threads WA: Download succeeded via {result.get('method', 'unknown')} method")
             return result
         
-        logger.warning(f"🧵 Threads WA: All 3 methods failed for {url[:80]}")
+        logger.warning(f"🧵 Threads WA: All methods failed for {url[:80]}")
         return None
     
     except Exception as e:
@@ -1639,8 +1640,12 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                     except: pass
                     return
             else:
-                # Threads custom method failed — fallback to yt-dlp main flow (زي التليجرام)
-                logger.warning("🧵 Threads WA custom method failed, trying yt-dlp main flow...")
+                # 🔴 FIX v5: Threads مش مدعوم من yt-dlp — لا fallback!
+                # yt-dlp بيرجع "Unsupported URL" لـ threads.com/threads.net
+                logger.warning("🧵 Threads WA: All custom methods failed — yt-dlp doesn't support Threads, not trying it")
+                await _send_whatsapp_message(wa_id, "❌ فشل تحميل الفيديو من Threads. جرب تاني!")
+                await feedback.error()
+                return
         
         # ═══════════════════════════════════════════════════════════════
         # 🔴 FIX v9: Cobalt API كـ fallback تالت!

@@ -529,6 +529,34 @@ def main():
         # حتى لو البوت واجه مشكلة 409 Conflict
         logger.info("✅ WhatsApp webhook server already running from background thread")
 
+        # ═══ Playwright Chromium Check — لو مش موجود نثبته ═══
+        # 🔴 Playwright مهم لتحميل فيديوهات Threads (الطريقة الوحيدة اللي بتشتغل)
+        try:
+            from playwright.async_api import async_playwright
+            # لو الاستيراد اشتغل → نتأكد إن Chromium موجود
+            import subprocess as _sp
+            check = _sp.run(['playwright', 'install', 'chromium', '--dry-run'],
+                           capture_output=True, timeout=10)
+            # لو --dry-run مش مدعوم، نجرب نبعت browser
+            try:
+                pw = async_playwright().start()
+                browser = await pw.chromium.launch(headless=True, args=['--no-sandbox'])
+                await browser.close()
+                pw.stop()
+                logger.info("✅ Playwright + Chromium ready for Threads downloads")
+            except Exception as pw_err:
+                logger.warning(f"⚠️ Playwright Chromium not installed, installing now...")
+                install = _sp.run(['playwright', 'install', 'chromium', '--with-deps'],
+                                 capture_output=True, timeout=120)
+                if install.returncode == 0:
+                    logger.info("✅ Playwright Chromium installed successfully")
+                else:
+                    logger.warning(f"⚠️ Playwright Chromium install failed: {install.stderr.decode()[:200]}")
+        except ImportError:
+            logger.warning("⚠️ Playwright not installed — Threads video downloads may fail")
+        except Exception as e:
+            logger.warning(f"⚠️ Playwright check error: {e}")
+
         # ═══ تشغيل Cookie Auto-Rotation ═══
         # 🍪 تدوير كوكيز YouTube — بس كوكيز مرفوعة من المستخدمين (لا كوكيز تلقائية)
         try:

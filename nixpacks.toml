@@ -1,0 +1,8 @@
+# Nixpacks configuration for Railway deployment
+# Playwright needs Chromium installed at build time
+
+[phases.install]
+cmds = ["pip install -r requirements.txt", "playwright install chromium"]
+
+[start]
+cmd = "python bot.py"
