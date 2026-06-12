@@ -3747,7 +3747,7 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
     elif command == "search":
         await _send_interactive_buttons(
             wa_id,
-            body_text="🔍 *بحث الويب*\n\nاكتب كلمة البحث بعد الأمر\nمثال: *بحث أحدث تقنيات AI*\n\nأو اختار من الاقتراحات:",
+            body_text="🔍 *بحث الويب*\n\nاكتب كلمة البحث بعد الأمر\nمثال: *بحث الحضارة الإسلامية*\n\nأو اختار من الاقتراحات:",
             buttons=[
                 {"id": "cmd_search_ai", "title": "🤖 أخبار AI"},
                 {"id": "cmd_search_code", "title": "👨‍💻 برمجة"},
@@ -4337,7 +4337,7 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
         await _send_whatsapp_message(wa_id,
             "🎬 *تحميل فيديو بالبحث*\n\n"
             "اكتب اللي عايز تبحث عنه وأنا هجيبلوك النتائج!\n\n"
-            "مثال: اغاني رمضان\n\n"
+            "مثال: قرآن ماهر المعيقلي\n\n"
             "💡 أو استخدم: /video كلمات البحث")
         return True
 
@@ -4392,7 +4392,7 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
         await _send_whatsapp_message(wa_id,
             "🖼️ *بحث عن صور*\n\n"
             "اكتب اللي عايز تبحث عنه وأنا هجيبلوك صور!\n\n"
-            "مثال: محمد صلاح\n\n"
+            "مثال: المسجد الأقصى\n\n"
             "💡 أو استخدم: /photo كلمات البحث")
         return True
 
@@ -4581,8 +4581,8 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
         await _send_whatsapp_message(wa_id,
             "🎨 *إنشاء صورة*\n\nاكتب وصف الصورة اللي عايزها!\n\n"
             "مثال:\n"
-            "/image قطة لطيفة جنب النافذة\n"
-            "/image sunset over mountains\n\n"
+            "/image مسجد جميل عند الغروب\n"
+            "/image sunset over mosque\n\n"
             "💡 كل ما الوصف يكون أدق، الصورة تكون أحسن!")
 
     # ══════════════════════════════════════
@@ -4605,7 +4605,7 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
             "1️⃣ ابعت الصورة اللي عايز تعدلها\n"
             "2️⃣ اكتب التعديل المطلوب في الـ Caption\n\n"
             "مثال: ابعت صورة واكتب في الـ Caption:\n"
-            "خلي الخلفية زرقاء")
+            "خلي الخلفية زرقاء زي السماء")
 
     # ══════════════════════════════════════
     # ADMIN BUTTON HANDLER
@@ -4699,7 +4699,7 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
                 pass
 
         await _send_whatsapp_message(wa_id,
-            f"📚 {study_action}\n\nاكتب الموضوع اللي عايز {study_action} فيه\n\nمثال: {study_action} Python")
+            f"📚 {study_action}\n\nاكتب الموضوع اللي عايز {study_action} فيه\n\nمثال: {study_action} الفقه الإسلامي")
 
     else:
         return False  # Not a command
@@ -6320,7 +6320,7 @@ async def _handle_command_with_arg(wa_id: str, cmd_name: str, arg: str, wa_user_
         else:
             await _send_whatsapp_message(wa_id,
                 "🖌️ عايز تعدّل صورة؟\n\n1️⃣ ابعت الصورة اللي عايز تعدلها\n2️⃣ بعد ما تبعتها، اكتب التعديل\n\n"
-                "📝 أمثلة:\n→ /edit غيّر الخلفية لبحر\n→ /edit خلي الصورة زي رسمة")
+                "📝 أمثلة:\n→ /edit غيّر الخلفية لمسجد\n→ /edit خلي الصورة زي لوحة إسلامية")
 
     elif cmd_name == "youtube":
         # YouTube summary — REAL YouTubeAgent (same as Telegram)

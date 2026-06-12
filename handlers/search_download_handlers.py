@@ -8,12 +8,12 @@ Media Search Handler 🔍🎬🎵🖼️
 - /photo <بحث> — بحث عن صور وتحميلها
 
 🔴 كيف بيشتغل:
-1. المستخدم يكتب /video اسم الاغنية مثلاً
+1. المستخدم يكتب /video قرآن كريم مثلاً
 2. البوت بيبحث في Dailymotion ويعرض 5 نتائج كأزرار
 3. المستخدم يدوس على نتيجة ويتحمل الفيديو/الصوت
 
 🔴 تحميل الصور:
-1. المستخدم يكتب /photo قطط مثلاً
+1. المستخدم يكتب /photo مسجد مثلاً
 2. البوت بيسأله: عايز كام صورة؟ وبيعرض أزرار (3 / 5 / 10 / 15)
 3. المستخدم يدوس على العدد ويتحملوا
 """
@@ -101,9 +101,9 @@ async def video_search_command(update: Update, context: ContextTypes.DEFAULT_TYP
     
     if not query:
         if lang == "ar":
-            msg = "🎬 <b>بحث فيديو Dailymotion</b>\n\nاكتب كلمة البحث بعد الأمر\nمثال: <code>/video اغنية سعاد ماسي</code>"
+            msg = "🎬 <b>بحث فيديو Dailymotion</b>\n\nاكتب كلمة البحث بعد الأمر\nمثال: <code>/video قرآن كريم عبد الباسط</code>"
         else:
-            msg = "🎬 <b>Dailymotion Video Search</b>\n\nType your search query after the command\nExample: <code>/video music video</code>"
+            msg = "🎬 <b>Dailymotion Video Search</b>\n\nType your search query after the command\nExample: <code>/video Quran recitation</code>"
         await update.message.reply_text(msg, parse_mode="HTML")
         return
     
@@ -211,9 +211,9 @@ async def audio_search_command(update: Update, context: ContextTypes.DEFAULT_TYP
     
     if not query:
         if lang == "ar":
-            msg = "🎵 <b>بحث صوت SoundCloud</b>\n\nاكتب كلمة البحث بعد الأمر\nمثال: <code>/audio اغنية سعاد ماسي</code>"
+            msg = "🎵 <b>بحث صوت SoundCloud</b>\n\nاكتب كلمة البحث بعد الأمر\nمثال: <code>/audio قرآن كريم عبد الباسط</code>"
         else:
-            msg = "🎵 <b>SoundCloud Audio Search</b>\n\nType your search query after the command\nExample: <code>/audio song name</code>"
+            msg = "🎵 <b>SoundCloud Audio Search</b>\n\nType your search query after the command\nExample: <code>/audio Quran recitation</code>"
         await update.message.reply_text(msg, parse_mode="HTML")
         return
     
@@ -322,9 +322,9 @@ async def photo_search_command(update: Update, context: ContextTypes.DEFAULT_TYP
     
     if not query:
         if lang == "ar":
-            msg = "🖼️ <b>بحث صور</b>\n\nاكتب كلمة البحث بعد الأمر\nمثال: <code>/photo قطط لطيفة</code>\n\n💡 هتختار عدد الصور من الأزرار"
+            msg = "🖼️ <b>بحث صور</b>\n\nاكتب كلمة البحث بعد الأمر\nمثال: <code>/photo المسجد الأقصى</code>\n\n💡 هتختار عدد الصور من الأزرار"
         else:
-            msg = "🖼️ <b>Image Search</b>\n\nType your search query after the command\nExample: <code>/photo cute cats</code>\n\n💡 You'll choose the number of images from buttons"
+            msg = "🖼️ <b>Image Search</b>\n\nType your search query after the command\nExample: <code>/photo Al-Aqsa Mosque</code>\n\n💡 You'll choose the number of images from buttons"
         await update.message.reply_text(msg, parse_mode="HTML")
         return
     

@@ -139,9 +139,9 @@ async def forget_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not keyword:
         if lang == "ar":
-            msg = "🧠 <b>حذف ذكرى</b>\n\nاكتب الكلمة اللي عايز تمسحها\nمثال: <code>/forget openai</code>"
+            msg = "🧠 <b>حذف ذكرى</b>\n\nاكتب الكلمة اللي عايز تمسحها\nمثال: <code>/forget الرياضة</code>"
         else:
-            msg = "🧠 <b>Forget Memory</b>\n\nType the keyword to forget\nExample: <code>/forget openai</code>"
+            msg = "🧠 <b>Forget Memory</b>\n\nType the keyword to forget\nExample: <code>/forget sports</code>"
         await update.message.reply_text(msg, parse_mode="HTML")
         return
 

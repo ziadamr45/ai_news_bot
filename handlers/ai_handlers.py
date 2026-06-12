@@ -45,9 +45,9 @@ async def ask_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not question:
         if lang == "ar":
-            msg = "🤖 <b>اسأل My Bro</b>\n\nاكتب سؤالك مباشرة أو بعد الأمر\nمثال: <code>/ask ما هي AI Agents؟</code>\n\n💡 يمكنك أيضاً الكتابة مباشرة بدون أوامر وسأفهمك!"
+            msg = "🤖 <b>اسأل My Bro</b>\n\nاكتب سؤالك مباشرة أو بعد الأمر\nمثال: <code>/ask ما هي علوم القرآن؟</code>\n\n💡 يمكنك أيضاً الكتابة مباشرة بدون أوامر وسأفهمك!"
         else:
-            msg = "🤖 <b>Ask My Bro</b>\n\nType your question directly or after the command\nExample: <code>/ask What are AI Agents?</code>\n\n💡 You can also just type naturally without commands!"
+            msg = "🤖 <b>Ask My Bro</b>\n\nType your question directly or after the command\nExample: <code>/ask What are the sciences of the Quran?</code>\n\n💡 You can also just type naturally without commands!"
         await update.message.reply_text(msg, parse_mode="HTML")
         return
 
@@ -94,9 +94,9 @@ async def learn_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not topic:
         if lang == "ar":
-            msg = "📚 <b>تعلم الذكاء الاصطناعي</b>\n\nاكتب الموضوع بعد الأمر\nمثال: <code>/learn transformers</code>\n\n💡 أو اختر من خرائط الطريق بالأسفل"
+            msg = "📚 <b>تعلم الذكاء الاصطناعي</b>\n\nاكتب الموضوع بعد الأمر\nمثال: <code>/learn الفقه الإسلامي</code>\n\n💡 أو اختر من خرائط الطريق بالأسفل"
         else:
-            msg = "📚 <b>Learn AI</b>\n\nType the topic after the command\nExample: <code>/learn transformers</code>\n\n💡 Or choose from roadmaps below"
+            msg = "📚 <b>Learn AI</b>\n\nType the topic after the command\nExample: <code>/learn Islamic jurisprudence</code>\n\n💡 Or choose from roadmaps below"
 
         keyboard = get_roadmap_keyboard(lang)
         await update.message.reply_text(msg, parse_mode="HTML", reply_markup=keyboard)
@@ -218,9 +218,9 @@ async def deepsearch_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     if not query:
         if lang == "ar":
-            msg = "🔬 <b>البحث العميق</b>\n\nاكتب ما تريد البحث عنه بعمق\nمثال: <code>/deepsearch مستقبل الذكاء الاصطناعي</code>\n\n💡 البحث العميق بيستخدم نماذج أقوى وبيبحث في أكتر من مصدر.\n⭐ متاح للمشتركين Premium فقط."
+            msg = "🔬 <b>البحث العميق</b>\n\nاكتب ما تريد البحث عنه بعمق\nمثال: <code>/deepsearch تاريخ الحضارة الإسلامية</code>\n\n💡 البحث العميق بيستخدم نماذج أقوى وبيبحث في أكتر من مصدر.\n⭐ متاح للمشتركين Premium فقط."
         else:
-            msg = "🔬 <b>Deep Search</b>\n\nType what you want to search in depth\nExample: <code>/deepsearch future of artificial intelligence</code>\n\n💡 Deep search uses more powerful models and searches multiple sources.\n⭐ Premium only feature."
+            msg = "🔬 <b>Deep Search</b>\n\nType what you want to search in depth\nExample: <code>/deepsearch history of Islamic civilization</code>\n\n💡 Deep search uses more powerful models and searches multiple sources.\n⭐ Premium only feature."
         await update.message.reply_text(msg, parse_mode="HTML")
         return
 

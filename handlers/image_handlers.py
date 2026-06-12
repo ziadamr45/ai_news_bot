@@ -125,9 +125,9 @@ async def image_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 اكتب الوصف بعد الأمر وهعملك صورة!
 
 💡 <b>أمثلة:</b>
-→ <code>/image قطه لطيفه في حديقه</code>
-→ <code>/image sunset over mountains with a lake</code>
-→ <code>/image مدينة مستقبلية بتقنية الذكاء الاصطناعي</code>
+→ <code>/image مسجد جميل عند الغروب</code>
+→ <code>/image sunset over Al-Aqsa Mosque</code>
+→ <code>/image حدائق إسلامية بنافورة</code>
 
 ⭐ الميزة دي للمشتركين Premium بس"""
         else:
@@ -136,9 +136,9 @@ async def image_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 Type your description after the command and I'll create an image!
 
 💡 <b>Examples:</b>
-→ <code>/image cute cat in a garden</code>
-→ <code>/image sunset over mountains with a lake</code>
-→ <code>/image futuristic AI city</code>
+→ <code>/image beautiful mosque at sunset</code>
+→ <code>/image sunset over Al-Aqsa Mosque</code>
+→ <code>/image Islamic garden with fountain</code>
 
 ⭐ This feature is Premium only"""
         await update.message.reply_text(msg, parse_mode="HTML")
@@ -289,9 +289,9 @@ async def edit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 → وبعدين اكتب <code>/edit خلي الألوان أدفأ</code>
 
 💡 <b>أمثلة للتعديل:</b>
-→ <code>/edit غيّر الخلفية لبحر</code>
+→ <code>/edit غيّر الخلفية لمسجد</code>
 → <code>/edit add a sunset sky</code>
-→ <code>/edit خلي الصورة زي رسمة</code>
+→ <code>/edit خلي الصورة زي لوحة إسلامية</code>
 
 ⭐ الميزة دي للمشتركين Premium بس"""
         else:
@@ -307,9 +307,9 @@ Two ways to use:
 → Then type <code>/edit make colors warmer</code>
 
 💡 <b>Edit examples:</b>
-→ <code>/edit change background to ocean</code>
+→ <code>/edit change background to mosque</code>
 → <code>/edit add a sunset sky</code>
-→ <code>/edit make it look like a painting</code>
+→ <code>/edit make it look like Islamic art</code>
 
 ⭐ This feature is Premium only"""
         await update.message.reply_text(msg, parse_mode="HTML")
@@ -318,7 +318,7 @@ Two ways to use:
     # لو مفيش وصف للتعديل
     if not prompt:
         if lang == "ar":
-            await update.message.reply_text("🖌️ اكتب الوصف بعد الأمر!\nمثال: <code>/edit غيّر الخلفية لغروب</code>", parse_mode="HTML")
+            await update.message.reply_text("🖌️ اكتب الوصف بعد الأمر!\nمثال: <code>/edit غيّر الخلفية لمسجد</code>", parse_mode="HTML")
         else:
             await update.message.reply_text("🖌️ Type the edit description after the command!\nExample: <code>/edit change background to sunset</code>", parse_mode="HTML")
         return

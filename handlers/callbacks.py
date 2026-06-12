@@ -794,9 +794,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
         
         if lang == "ar":
-            msg = "🖌️ <b>تعديل الصورة بالذكاء الاصطناعي</b>\n\nاكتب الوصف اللي عايز تعدّل بيه الصورة!\n\n💡 <b>أمثلة:</b>\n→ غيّر الخلفية لبحر\n→ خلي الألوان أدفأ\n→ ضيف إضاءة مسائية\n→ add a sunset sky\n→ make it look like a painting"
+            msg = "🖌️ <b>تعديل الصورة بالذكاء الاصطناعي</b>\n\nاكتب الوصف اللي عايز تعدّل بيه الصورة!\n\n💡 <b>أمثلة:</b>\n→ غيّر الخلفية لمسجد\n→ خلي الألوان أدفأ\n→ ضيف إضاءة مسائية\n→ add a sunset sky\n→ make it look like Islamic art"
         else:
-            msg = "🖌️ <b>AI Image Editing</b>\n\nType how you want to edit the image!\n\n💡 <b>Examples:</b>\n→ change background to ocean\n→ make colors warmer\n→ add evening lighting\n→ add a sunset sky\n→ make it look like a painting"
+            msg = "🖌️ <b>AI Image Editing</b>\n\nType how you want to edit the image!\n\n💡 <b>Examples:</b>\n→ change background to mosque\n→ make colors warmer\n→ add evening lighting\n→ add a sunset sky\n→ make it look like Islamic art"
         await query.message.reply_text(msg, parse_mode="HTML")
 
     # ═══ خرائط الطريق ═══

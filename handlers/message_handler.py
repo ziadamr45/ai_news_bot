@@ -785,9 +785,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         elif cmd == "/search":
             if lang == "ar":
-                msg = "🔍 <b>البحث في أخبار AI والويب</b>\n\nاكتب كلمة البحث بعد الأمر\nمثال: <code>/search الكلام</code>\n\nأو اضغط على زر 🔍 البحث واكتب ما تريد البحث عنه."
+                msg = "🔍 <b>البحث في أخبار AI والويب</b>\n\nاكتب كلمة البحث بعد الأمر\nمثال: <code>/search تفسير القرآن</code>\n\nأو اضغط على زر 🔍 البحث واكتب ما تريد البحث عنه."
             else:
-                msg = "🔍 <b>Search AI News & Web</b>\n\nType your search query after the command\nExample: <code>/search OpenAI</code>\n\nOr tap 🔍 Search and type what you want to find."
+                msg = "🔍 <b>Search AI News & Web</b>\n\nType your search query after the command\nExample: <code>/search Islamic history</code>\n\nOr tap 🔍 Search and type what you want to find."
             await update.message.reply_text(msg, parse_mode="HTML")
             return
         elif cmd == "/learn":
@@ -815,9 +815,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 pass  # fallback: الكيبورد بس هيقول يكتب الموضوع
             
             if lang == "ar":
-                msg = "📚 <b>وضع الدراسة</b>\n\nاكتب الموضوع اللي عايز تدرسه!\nمثال: machine learning, python, data science\n\n💡 اكتب /exit عشان تخرج من وضع الدراسة"
+                msg = "📚 <b>وضع الدراسة</b>\n\nاكتب الموضوع اللي عايز تدرسه!\nمثال: علوم القرآن, الفقه الإسلامي, السيرة النبوية\n\n💡 اكتب /exit عشان تخرج من وضع الدراسة"
             else:
-                msg = "📚 <b>Study Mode</b>\n\nType the topic you want to study!\nExample: machine learning, python, data science\n\n💡 Type /exit to leave Study Mode"
+                msg = "📚 <b>Study Mode</b>\n\nType the topic you want to study!\nExample: Quran sciences, Islamic jurisprudence, Prophetic biography\n\n💡 Type /exit to leave Study Mode"
             await update.message.reply_text(msg, parse_mode="HTML")
             return
         elif cmd == "pdf_upload":
@@ -853,23 +853,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         elif cmd == "video_search_prompt":
             if lang == "ar":
-                msg = "🎬 <b>بحث فيديو YouTube</b>\n\nاكتب كلمة البحث بعد الأمر\nمثال: <code>/video اغنية سعاد ماسي</code>\n\n💡 هندور في YouTube ونعرضلك نتائج تختار منها!"
+                msg = "🎬 <b>بحث فيديو YouTube</b>\n\nاكتب كلمة البحث بعد الأمر\nمثال: <code>/video قرآن كريم ماهر المعيقلي</code>\n\n💡 هندور في YouTube ونعرضلك نتائج تختار منها!"
             else:
-                msg = "🎬 <b>YouTube Video Search</b>\n\nType your search query after the command\nExample: <code>/video music video</code>\n\n💡 We'll search YouTube and show results to choose from!"
+                msg = "🎬 <b>YouTube Video Search</b>\n\nType your search query after the command\nExample: <code>/video Quran recitation</code>\n\n💡 We'll search YouTube and show results to choose from!"
             await update.message.reply_text(msg, parse_mode="HTML")
             return
         elif cmd == "audio_search_prompt":
             if lang == "ar":
-                msg = "🎵 <b>بحث صوت YouTube</b>\n\nاكتب كلمة البحث بعد الأمر\nمثال: <code>/audio اغنية سعاد ماسي</code>\n\n💡 هندور في YouTube ونعرضلك نتائج تختار منها ونحمّلها صوت MP3!"
+                msg = "🎵 <b>بحث صوت YouTube</b>\n\nاكتب كلمة البحث بعد الأمر\nمثال: <code>/audio قرآن كريم عبد الباسط</code>\n\n💡 هندور في YouTube ونعرضلك نتائج تختار منها ونحمّلها صوت MP3!"
             else:
-                msg = "🎵 <b>YouTube Audio Search</b>\n\nType your search query after the command\nExample: <code>/audio song name</code>\n\n💡 We'll search YouTube and download as MP3 audio!"
+                msg = "🎵 <b>YouTube Audio Search</b>\n\nType your search query after the command\nExample: <code>/audio Quran recitation</code>\n\n💡 We'll search YouTube and download as MP3 audio!"
             await update.message.reply_text(msg, parse_mode="HTML")
             return
         elif cmd == "photo_search_prompt":
             if lang == "ar":
-                msg = "🖼️ <b>بحث صور</b>\n\nاكتب كلمة البحث بعد الأمر\nمثال: <code>/photo قطط لطيفة</code>\n\n💡 هتختار عدد الصور من الأزرار (3 / 5 / 10 / 15)"
+                msg = "🖼️ <b>بحث صور</b>\n\nاكتب كلمة البحث بعد الأمر\nمثال: <code>/photo المسجد الأقصى</code>\n\n💡 هتختار عدد الصور من الأزرار (3 / 5 / 10 / 15)"
             else:
-                msg = "🖼️ <b>Image Search</b>\n\nType your search query after the command\nExample: <code>/photo cute cats</code>\n\n💡 You'll choose the number of images from buttons (3 / 5 / 10 / 15)"
+                msg = "🖼️ <b>Image Search</b>\n\nType your search query after the command\nExample: <code>/photo Al-Aqsa Mosque</code>\n\n💡 You'll choose the number of images from buttons (3 / 5 / 10 / 15)"
             await update.message.reply_text(msg, parse_mode="HTML")
             return
         else:

@@ -687,9 +687,9 @@ async def study_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not topic:
         if lang == "ar":
-            msg = "📚 <b>وضع الدراسة</b>\n\nاكتب الموضوع بعد الأمر\nمثال: <code>/study machine learning</code>\n\n💡 هيشرحلك الموضوع بطريقة تعليمية ممتعة!"
+            msg = "📚 <b>وضع الدراسة</b>\n\nاكتب الموضوع بعد الأمر\nمثال: <code>/study الفقه الإسلامي</code>\n\n💡 هيشرحلك الموضوع بطريقة تعليمية ممتعة!"
         else:
-            msg = "📚 <b>Study Mode</b>\n\nType the topic after the command\nExample: <code>/study machine learning</code>\n\n💡 I'll explain the topic in an engaging educational way!"
+            msg = "📚 <b>Study Mode</b>\n\nType the topic after the command\nExample: <code>/study Islamic jurisprudence</code>\n\n💡 I'll explain the topic in an engaging educational way!"
         await update.message.reply_text(msg, parse_mode="HTML")
         return
 
@@ -756,9 +756,9 @@ async def quiz_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not topic:
         if lang == "ar":
-            msg = "📝 <b>كويز</b>\n\nاكتب الموضوع بعد الأمر\nمثال: <code>/quiz python basics</code>"
+            msg = "📝 <b>كويز</b>\n\nاكتب الموضوع بعد الأمر\nمثال: <code>/quiz السيرة النبوية</code>"
         else:
-            msg = "📝 <b>Quiz</b>\n\nType the topic after the command\nExample: <code>/quiz python basics</code>"
+            msg = "📝 <b>Quiz</b>\n\nType the topic after the command\nExample: <code>/quiz Prophetic biography</code>"
         await update.message.reply_text(msg, parse_mode="HTML")
         return
 
@@ -818,9 +818,9 @@ async def exam_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not topic:
         if lang == "ar":
-            msg = "📋 <b>امتحان شامل</b>\n\nاكتب الموضوع بعد الأمر\nمثال: <code>/exam deep learning</code>"
+            msg = "📋 <b>امتحان شامل</b>\n\nاكتب الموضوع بعد الأمر\nمثال: <code>/exam علوم القرآن</code>"
         else:
-            msg = "📋 <b>Comprehensive Exam</b>\n\nType the topic after the command\nExample: <code>/exam deep learning</code>"
+            msg = "📋 <b>Comprehensive Exam</b>\n\nType the topic after the command\nExample: <code>/exam Quran sciences</code>"
         await update.message.reply_text(msg, parse_mode="HTML")
         return
 
@@ -880,9 +880,9 @@ async def studyplan_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not topic:
         if lang == "ar":
-            msg = "📚 <b>خطة دراسية</b>\n\nاكتب الموضوع بعد الأمر\nمثال: <code>/plan python</code>"
+            msg = "📚 <b>خطة دراسية</b>\n\nاكتب الموضوع بعد الأمر\nمثال: <code>/plan تعلم التجويد</code>"
         else:
-            msg = "📚 <b>Study Plan</b>\n\nType the topic after the command\nExample: <code>/plan python</code>"
+            msg = "📚 <b>Study Plan</b>\n\nType the topic after the command\nExample: <code>/plan learn Tajweed</code>"
         await update.message.reply_text(msg, parse_mode="HTML")
         return
 

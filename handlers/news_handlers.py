@@ -484,9 +484,9 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not query:
         if lang == "ar":
-            msg = "🔍 <b>البحث في أخبار AI والويب</b>\n\nاكتب كلمة البحث بعد الأمر\nمثال: <code>/search OpenAI</code>\n\nأو اضغط على زر 🔍 البحث واكتب ما تريد البحث عنه."
+            msg = "🔍 <b>البحث في أخبار AI والويب</b>\n\nاكتب كلمة البحث بعد الأمر\nمثال: <code>/search الحضارة الإسلامية</code>\n\nأو اضغط على زر 🔍 البحث واكتب ما تريد البحث عنه."
         else:
-            msg = "🔍 <b>Search AI News & Web</b>\n\nType your search query after the command\nExample: <code>/search OpenAI</code>\n\nOr tap 🔍 Search and type what you want to find."
+            msg = "🔍 <b>Search AI News & Web</b>\n\nType your search query after the command\nExample: <code>/search Islamic civilization</code>\n\nOr tap 🔍 Search and type what you want to find."
         await update.message.reply_text(msg, parse_mode="HTML")
         return
 
