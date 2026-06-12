@@ -320,8 +320,10 @@ def _get_download_url_from_invidious(instance_url: str, video_id: str, quality: 
         # اختيار أفضل تنسيق
         selected = _select_best_format(format_streams, quality, is_audio)
         
-        if not selected and not is_audio:
-            # محاولة مع adaptive formats
+        # 🔴 FIX: لازم نجرب adaptiveFormats للصوت كمان
+        # formatStreams = فيديو+صوت مدمجين (مفيش audio-only)
+        # adaptiveFormats = فيديو بس أو صوت بس (فينا ناخد صوت بس)
+        if not selected:
             selected = _select_best_format(adaptive_formats, quality, is_audio)
         
         if not selected:

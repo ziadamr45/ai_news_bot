@@ -67,6 +67,118 @@ def _get_audio_bitrate(quality: str) -> int:
     return 192  # default for plain "audio"
 
 
+def _ensure_audio_only(file_path: str, bitrate: int = 192) -> str:
+    """تأكد إن الملف صوت بس — لو فيه فيديو، استخرج الصوت بـ ffmpeg
+    
+    🔴 المشكلة: بعض طرق التحميل (Cobalt, Invidious, yt-dlp fallback)
+    بترجع ملف فيديو حتى لو طلبنا صوت. الدالة دي بتتأكد إن الملف صوت بس.
+    
+    Returns:
+        مسار الملف الصوتي (ممكن نفس الملف لو كان صوت أصلاً، أو ملف جديد MP3)
+    """
+    if not os.path.exists(file_path):
+        return file_path
+    
+    # 🔴 Step 1: فحص الملف بـ ffprobe
+    has_video = False
+    try:
+        probe = subprocess.run(
+            ['ffprobe', '-v', 'quiet', '-select_streams', 'v:0',
+             '-show_entries', 'stream=codec_type',
+             '-of', 'csv=p=0', file_path],
+            capture_output=True, timeout=10, text=True
+        )
+        if probe.returncode == 0 and probe.stdout.strip():
+            has_video = 'video' in probe.stdout.strip().lower()
+    except Exception:
+        # لو ffprobe فشل، نتاكد من الامتداد
+        ext = os.path.splitext(file_path)[1].lower()
+        if ext in ('.mp4', '.mkv', '.avi', '.webm', '.mov', '.flv'):
+            has_video = True
+    
+    if not has_video:
+        # ✅ الملف صوت بس — خلاص
+        return file_path
+    
+    # 🔴 Step 2: الملف فيه فيديو — استخرج الصوت بـ ffmpeg
+    logger.info(f"🎵 Audio fix: File has video stream, extracting audio only...")
+    
+    audio_path = file_path + "_audio.mp3"
+    try:
+        extract_result = subprocess.run(
+            ['ffmpeg', '-i', file_path,
+             '-vn',  # لا فيديو
+             '-acodec', 'libmp3lame',
+             '-ab', f'{bitrate}k',
+             '-ar', '44100',
+             '-ac', '2',
+             '-y', audio_path],
+            capture_output=True, timeout=120
+        )
+        
+        if extract_result.returncode == 0 and os.path.exists(audio_path):
+            audio_size = os.path.getsize(audio_path)
+            if audio_size > 1000:
+                # ✅ الاستخراج نجح — نحذف الملف القديم
+                try: os.remove(file_path)
+                except: pass
+                logger.info(f"🎵 Audio fix: Extracted audio ({audio_size // 1024}KB)")
+                return audio_path
+            else:
+                try: os.remove(audio_path)
+                except: pass
+    except subprocess.TimeoutExpired:
+        try: os.remove(audio_path)
+        except: pass
+        logger.warning("🎵 Audio fix: ffmpeg timed out")
+    except Exception as e:
+        try:
+            if os.path.exists(audio_path): os.remove(audio_path)
+        except: pass
+        logger.warning(f"🎵 Audio fix: ffmpeg error: {e}")
+    
+    # 🔴 Fallback: لو ffmpeg فشل، نرجع الملف الأصلي
+    # (التليجراب هيحاول يتعامل معاه كصوت)
+    logger.warning("🎵 Audio fix: Could not extract audio, sending original file")
+    return file_path
+
+
+async def _send_telegram_audio(message, file_path: str, title: str, size_str: str, 
+                                lang: str, method_name: str = "", bitrate: int = 192):
+    """إرسال ملف صوتي للتليجرام — مع التأكد إن الملف فعلاً صوت مش فيديو
+    
+    🔴 المشكلة: بعض طرق التحميل بترجع ملف فيديو حتى لو طلبنا صوت
+    الدالة دي بتتأكد إن الملف صوت بس قبل الإرسال
+    
+    Returns: True لو الإرسال نجح، False لو فشل
+    """
+    # 🔴 Step 1: تأكد إن الملف صوت بس
+    file_path = _ensure_audio_only(file_path, bitrate)
+    
+    if not os.path.exists(file_path):
+        return False
+    
+    filename = os.path.basename(file_path)
+    # لو الامتداد مش .mp3، غيّره
+    if not filename.lower().endswith('.mp3'):
+        filename = filename.rsplit('.', 1)[0] + '.mp3'
+    
+    method_tag = f" | {method_name}" if method_name else ""
+    caption = f"📥 {'تم تحميل الصوت!' if lang == 'ar' else 'Audio downloaded!'}\n🎵 {title[:200]}\n📁 {size_str}{method_tag}"
+    
+    try:
+        with open(file_path, 'rb') as f:
+            await message.reply_audio(
+                audio=f, filename=filename,
+                caption=caption,
+                parse_mode="HTML",
+            )
+        return True
+    except Exception as send_err:
+        logger.warning(f"⚠️ Audio send failed: {send_err}")
+        return False
+
+
 # ═══════════════════════════════════════
 # ملف Cookies — الحل الأقوى لتخطي Bot Detection
 # ═══════════════════════════════════════
@@ -2630,34 +2742,33 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                     await status_msg.delete()
                     
                     if _is_audio_quality(quality):
+                        bitrate = _get_audio_bitrate(quality)
+                        audio_sent = await _send_telegram_audio(message, file_path, real_title, size_str, lang, method_name="Invidious", bitrate=bitrate)
+                        if audio_sent:
+                            try: os.remove(file_path)
+                            except: pass
+                            return
+                        # 🔴 لو الإرسال فشل — نجرب Supabase
                         try:
-                            with open(file_path, 'rb') as f:
-                                caption = f"📥 {'تم تحميل الصوت!' if lang == 'ar' else 'Audio downloaded!'}\n🎵 {real_title[:200]}\n📁 {size_str} | Invidious"
-                                await message.reply_audio(
-                                    audio=f, filename=f"{real_title[:50]}.mp3",
-                                    caption=caption,
-                                    parse_mode="HTML",
-                                )
-                        except Exception as send_err:
-                            logger.warning(f"⚠️ Invidious audio send failed: {send_err}")
-                            # 🔴 لو الإرسال فشل — نجرب Supabase
-                            try:
-                                from supabase_storage import upload_and_get_link
-                                cloud_msg = await upload_and_get_link(
-                                    file_path=file_path, filename=f"{real_title[:50]}.mp3",
-                                    content_type="audio/mpeg", platform="telegram", title=real_title, lang=lang,
-                                )
-                                if cloud_msg:
-                                    await message.reply_text(cloud_msg, parse_mode="HTML", disable_web_page_preview=False)
-                                    try: os.remove(file_path)
-                                    except: pass
-                                    return
-                            except:
-                                pass
-                            await message.reply_text(
-                                f"❌ فشل إرسال الصوت ({size_str}). جرب تاني!" if lang == "ar"
-                                else f"❌ Failed to send audio ({size_str}). Try again!"
+                            from supabase_storage import upload_and_get_link
+                            cloud_msg = await upload_and_get_link(
+                                file_path=file_path, filename=f"{real_title[:50]}.mp3",
+                                content_type="audio/mpeg", platform="telegram", title=real_title, lang=lang,
                             )
+                            if cloud_msg:
+                                await message.reply_text(cloud_msg, parse_mode="HTML", disable_web_page_preview=False)
+                                try: os.remove(file_path)
+                                except: pass
+                                return
+                        except:
+                            pass
+                        await message.reply_text(
+                            f"❌ فشل إرسال الصوت ({size_str}). جرب تاني!" if lang == "ar"
+                            else f"❌ Failed to send audio ({size_str}). Try again!"
+                        )
+                        try: os.remove(file_path)
+                        except: pass
+                        return
                     else:
                         try:
                             with open(file_path, 'rb') as f:
@@ -2770,38 +2881,33 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                     await status_msg.delete()
                     
                     if _is_audio_quality(quality):
+                        bitrate = _get_audio_bitrate(quality)
+                        audio_sent = await _send_telegram_audio(message, file_path, real_title, size_str, lang, method_name="Piped", bitrate=bitrate)
+                        if audio_sent:
+                            try: os.remove(file_path)
+                            except: pass
+                            return
+                        # 🔴 لو الإرسال فشل — نجرب Supabase
                         try:
-                            with open(file_path, 'rb') as f:
-                                caption = f"📥 {'تم تحميل الصوت!' if lang == 'ar' else 'Audio downloaded!'}\n🎵 {real_title[:200]}\n📁 {size_str} | Piped"
-                                await message.reply_audio(
-                                    audio=f, filename=f"{real_title[:50]}.mp3",
-                                    caption=caption,
-                                    duration=int(real_duration) if real_duration else None,
-                                )
-                        except Exception as send_err:
-                            if "too large" in str(send_err).lower() or "file is too big" in str(send_err).lower():
-                                try:
-                                    from supabase_storage import upload_and_get_link
-                                    cloud_msg = await upload_and_get_link(
-                                        file_path=file_path, filename=f"{real_title[:50]}.mp3",
-                                        content_type="audio/mpeg", platform="telegram", title=real_title, lang=lang,
-                                    )
-                                    if cloud_msg:
-                                        await message.reply_text(cloud_msg, parse_mode="HTML", disable_web_page_preview=False)
-                                        try: os.remove(file_path)
-                                        except: pass
-                                        return
-                                except Exception:
-                                    pass
-                                await message.reply_text(
-                                    f"❌ الملف كبير على التليجرام ({size_str})" if lang == "ar"
-                                    else f"❌ File too large for Telegram ({size_str})"
-                                )
-                            else:
-                                await message.reply_text(
-                                    f"❌ فشل إرسال الصوت ({size_str}). جرب تاني!" if lang == "ar"
-                                    else f"❌ Failed to send audio ({size_str}). Try again!"
-                                )
+                            from supabase_storage import upload_and_get_link
+                            cloud_msg = await upload_and_get_link(
+                                file_path=file_path, filename=f"{real_title[:50]}.mp3",
+                                content_type="audio/mpeg", platform="telegram", title=real_title, lang=lang,
+                            )
+                            if cloud_msg:
+                                await message.reply_text(cloud_msg, parse_mode="HTML", disable_web_page_preview=False)
+                                try: os.remove(file_path)
+                                except: pass
+                                return
+                        except:
+                            pass
+                        await message.reply_text(
+                            f"❌ فشل إرسال الصوت ({size_str}). جرب تاني!" if lang == "ar"
+                            else f"❌ Failed to send audio ({size_str}). Try again!"
+                        )
+                        try: os.remove(file_path)
+                        except: pass
+                        return
                     else:
                         try:
                             with open(file_path, 'rb') as f:
@@ -2966,38 +3072,36 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                             await status_msg.delete()
                             
                             if _is_audio_quality(quality):
+                                bitrate = _get_audio_bitrate(quality)
+                                audio_sent = await _send_telegram_audio(message, cb_file_path, cb_title, cb_size_str, lang, method_name="Cobalt", bitrate=bitrate)
+                                if audio_sent:
+                                    try: os.remove(cb_file_path)
+                                    except: pass
+                                    return
+                                # 🔴 لو الإرسال فشل — نجرب Supabase
                                 try:
-                                    with open(cb_file_path, 'rb') as f:
-                                        caption = f"📥 {'تم تحميل الصوت!' if lang == 'ar' else 'Audio downloaded!'}\n🎵 {cb_title[:200]}\n📁 {cb_size_str} | Cobalt"
-                                        await message.reply_audio(
-                                            audio=f, filename=f"{cb_title[:50]}.mp3",
-                                            caption=caption,
-                                            parse_mode="HTML",
-                                        )
-                                except Exception as send_err:
-                                    logger.warning(f"⚠️ Cobalt audio send failed: {send_err}")
-                                    # 🔴 لو الإرسال فشل — نجرب Supabase
-                                    if cb_file_size > TELEGRAM_MAX_FREE:
-                                        try:
-                                            from supabase_storage import upload_and_get_link
-                                            cloud_msg = await upload_and_get_link(
-                                                file_path=cb_file_path, filename=f"{cb_title[:50]}.mp3",
-                                                content_type="audio/mpeg", platform="telegram",
-                                                title=cb_title, lang=lang,
-                                            )
-                                            if cloud_msg:
-                                                await message.reply_text(cloud_msg, parse_mode="HTML")
-                                                try: await status_msg.delete()
-                                                except: pass
-                                                try: os.remove(cb_file_path)
-                                                except: pass
-                                                return  # ✅ رفع السحابة نجح
-                                        except:
-                                            pass
-                                    if lang == "ar":
-                                        await message.reply_text(f"❌ فشل إرسال الصوت ({cb_size_str}). جرب تاني!")
-                                    else:
-                                        await message.reply_text(f"❌ Failed to send audio ({cb_size_str}). Try again!")
+                                    from supabase_storage import upload_and_get_link
+                                    cloud_msg = await upload_and_get_link(
+                                        file_path=cb_file_path, filename=f"{cb_title[:50]}.mp3",
+                                        content_type="audio/mpeg", platform="telegram",
+                                        title=cb_title, lang=lang,
+                                    )
+                                    if cloud_msg:
+                                        await message.reply_text(cloud_msg, parse_mode="HTML")
+                                        try: await status_msg.delete()
+                                        except: pass
+                                        try: os.remove(cb_file_path)
+                                        except: pass
+                                        return  # ✅ رفع السحابة نجح
+                                except:
+                                    pass
+                                if lang == "ar":
+                                    await message.reply_text(f"❌ فشل إرسال الصوت ({cb_size_str}). جرب تاني!")
+                                else:
+                                    await message.reply_text(f"❌ Failed to send audio ({cb_size_str}). Try again!")
+                                try: os.remove(cb_file_path)
+                                except: pass
+                                return
                             else:
                                 try:
                                     with open(cb_file_path, 'rb') as f:
@@ -3094,38 +3198,36 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                             await status_msg.delete()
                             
                             if _is_audio_quality(quality):
+                                bitrate = _get_audio_bitrate(quality)
+                                audio_sent = await _send_telegram_audio(message, af_file_path, af_title, af_size_str, lang, method_name="Apify", bitrate=bitrate)
+                                if audio_sent:
+                                    try: os.remove(af_file_path)
+                                    except: pass
+                                    return
+                                # 🔴 لو الإرسال فشل — نجرب Supabase
                                 try:
-                                    with open(af_file_path, 'rb') as f:
-                                        caption = f"📥 {'تم تحميل الصوت!' if lang == 'ar' else 'Audio downloaded!'}\n🎵 {af_title[:200]}\n📁 {af_size_str} | Apify"
-                                        await message.reply_audio(
-                                            audio=f, filename=f"{af_title[:50]}.mp3",
-                                            caption=caption,
-                                            parse_mode="HTML",
-                                        )
-                                except Exception as send_err:
-                                    logger.warning(f"⚠️ Apify audio send failed: {send_err}")
-                                    # 🔴 لو الإرسال فشل — نجرب Supabase
-                                    if af_file_size > TELEGRAM_MAX_FREE:
-                                        try:
-                                            from supabase_storage import upload_and_get_link
-                                            cloud_msg = await upload_and_get_link(
-                                                file_path=af_file_path, filename=f"{af_title[:50]}.mp3",
-                                                content_type="audio/mpeg", platform="telegram",
-                                                title=af_title, lang=lang,
-                                            )
-                                            if cloud_msg:
-                                                await message.reply_text(cloud_msg, parse_mode="HTML")
-                                                try: await status_msg.delete()
-                                                except: pass
-                                                try: os.remove(af_file_path)
-                                                except: pass
-                                                return  # ✅ رفع السحابة نجح
-                                        except:
-                                            pass
-                                    if lang == "ar":
-                                        await message.reply_text(f"❌ فشل إرسال الصوت ({af_size_str}). جرب تاني!")
-                                    else:
-                                        await message.reply_text(f"❌ Failed to send audio ({af_size_str}). Try again!")
+                                    from supabase_storage import upload_and_get_link
+                                    cloud_msg = await upload_and_get_link(
+                                        file_path=af_file_path, filename=f"{af_title[:50]}.mp3",
+                                        content_type="audio/mpeg", platform="telegram",
+                                        title=af_title, lang=lang,
+                                    )
+                                    if cloud_msg:
+                                        await message.reply_text(cloud_msg, parse_mode="HTML")
+                                        try: await status_msg.delete()
+                                        except: pass
+                                        try: os.remove(af_file_path)
+                                        except: pass
+                                        return  # ✅ رفع السحابة نجح
+                                except:
+                                    pass
+                                if lang == "ar":
+                                    await message.reply_text(f"❌ فشل إرسال الصوت ({af_size_str}). جرب تاني!")
+                                else:
+                                    await message.reply_text(f"❌ Failed to send audio ({af_size_str}). Try again!")
+                                try: os.remove(af_file_path)
+                                except: pass
+                                return
                             else:
                                 try:
                                     with open(af_file_path, 'rb') as f:
@@ -3287,20 +3389,33 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                     await status_msg.delete()
                     
                     if _is_audio_quality(quality):
+                        bitrate = _get_audio_bitrate(quality)
+                        audio_sent = await _send_telegram_audio(message, file_path, real_title, size_str, lang, method_name="Invidious", bitrate=bitrate)
+                        if audio_sent:
+                            try: os.remove(file_path)
+                            except: pass
+                            return
+                        # 🔴 لو الإرسال فشل — نجرب Supabase
                         try:
-                            with open(file_path, 'rb') as f:
-                                caption = f"📥 {'تم تحميل الصوت!' if lang == 'ar' else 'Audio downloaded!'}\n🎵 {real_title[:200]}\n📁 {size_str} | Invidious"
-                                await message.reply_audio(
-                                    audio=f, filename=f"{real_title[:50]}.mp3",
-                                    caption=caption,
-                                    parse_mode="HTML",
-                                )
-                        except Exception as send_err:
-                            logger.warning(f"⚠️ Invidious audio send failed: {send_err}")
-                            await message.reply_text(
-                                f"❌ فشل إرسال الصوت ({size_str}). جرب تاني!" if lang == "ar"
-                                else f"❌ Failed to send audio ({size_str}). Try again!"
+                            from supabase_storage import upload_and_get_link
+                            cloud_msg = await upload_and_get_link(
+                                file_path=file_path, filename=f"{real_title[:50]}.mp3",
+                                content_type="audio/mpeg", platform="telegram", title=real_title, lang=lang,
                             )
+                            if cloud_msg:
+                                await message.reply_text(cloud_msg, parse_mode="HTML", disable_web_page_preview=False)
+                                try: os.remove(file_path)
+                                except: pass
+                                return
+                        except:
+                            pass
+                        await message.reply_text(
+                            f"❌ فشل إرسال الصوت ({size_str}). جرب تاني!" if lang == "ar"
+                            else f"❌ Failed to send audio ({size_str}). Try again!"
+                        )
+                        try: os.remove(file_path)
+                        except: pass
+                        return
                     else:
                         try:
                             with open(file_path, 'rb') as f:
@@ -3415,41 +3530,35 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                     await status_msg.delete()
                     
                     if _is_audio_quality(quality):
+                        bitrate = _get_audio_bitrate(quality)
+                        audio_sent = await _send_telegram_audio(message, file_path, real_title, size_str, lang, method_name="Piped", bitrate=bitrate)
+                        if audio_sent:
+                            try: os.remove(file_path)
+                            except: pass
+                            return
+                        # 🔴 لو الإرسال فشل — نجرب Supabase
                         try:
-                            with open(file_path, 'rb') as f:
-                                caption = f"📥 {'تم تحميل الصوت!' if lang == 'ar' else 'Audio downloaded!'}\n🎵 {real_title[:200]}\n📁 {size_str} | Piped"
-                                await message.reply_audio(
-                                    audio=f, filename=f"{real_title[:50]}.mp3",
-                                    caption=caption,
-                                    duration=int(real_duration) if real_duration else None,
-                                )
-                        except Exception as send_err:
-                            if "too large" in str(send_err).lower() or "file is too big" in str(send_err).lower():
-                                # 🔴 لو الملف كبير → رفع على Supabase فوراً
-                                try:
-                                    from supabase_storage import upload_and_get_link
-                                    cloud_msg = await upload_and_get_link(
-                                        file_path=file_path, filename=f"{real_title[:50]}.mp3",
-                                        content_type="audio/mpeg", platform="telegram", title=real_title, lang=lang,
-                                    )
-                                    if cloud_msg:
-                                        await message.reply_text(cloud_msg, parse_mode="HTML", disable_web_page_preview=False)
-                                        try: await status_msg.delete()
-                                        except: pass
-                                        try: os.remove(file_path)
-                                        except: pass
-                                        return
-                                except Exception:
-                                    pass
-                                await message.reply_text(
-                                    f"❌ الملف كبير على التليجرام ({size_str})" if lang == "ar"
-                                    else f"❌ File too large for Telegram ({size_str})"
-                                )
-                            else:
-                                await message.reply_text(
-                                    f"❌ فشل إرسال الصوت ({size_str}). جرب تاني!" if lang == "ar"
-                                    else f"❌ Failed to send audio ({size_str}). Try again!"
-                                )
+                            from supabase_storage import upload_and_get_link
+                            cloud_msg = await upload_and_get_link(
+                                file_path=file_path, filename=f"{real_title[:50]}.mp3",
+                                content_type="audio/mpeg", platform="telegram", title=real_title, lang=lang,
+                            )
+                            if cloud_msg:
+                                await message.reply_text(cloud_msg, parse_mode="HTML", disable_web_page_preview=False)
+                                try: await status_msg.delete()
+                                except: pass
+                                try: os.remove(file_path)
+                                except: pass
+                                return
+                        except:
+                            pass
+                        await message.reply_text(
+                            f"❌ فشل إرسال الصوت ({size_str}). جرب تاني!" if lang == "ar"
+                            else f"❌ Failed to send audio ({size_str}). Try again!"
+                        )
+                        try: os.remove(file_path)
+                        except: pass
+                        return
                     else:
                         try:
                             with open(file_path, 'rb') as f:
@@ -3602,20 +3711,33 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                         await status_msg.delete()
                         
                         if _is_audio_quality(quality):
+                            bitrate = _get_audio_bitrate(quality)
+                            audio_sent = await _send_telegram_audio(message, file_path, video_title, size_str, lang, method_name="Cobalt JWT", bitrate=bitrate)
+                            if audio_sent:
+                                try: os.remove(file_path)
+                                except: pass
+                                return
+                            # 🔴 لو الإرسال فشل — نجرب Supabase
                             try:
-                                with open(file_path, 'rb') as f:
-                                    caption = f"📥 {'تم تحميل الصوت!' if lang == 'ar' else 'Audio downloaded!'}\n🎵 {video_title[:200]}\n📁 {size_str} | Cobalt JWT"
-                                    await message.reply_audio(
-                                        audio=f, filename=f"{video_title[:50]}.mp3",
-                                        caption=caption,
-                                        parse_mode="HTML",
-                                    )
-                            except Exception as send_err:
-                                logger.warning(f"⚠️ Cobalt JWT audio send failed: {send_err}")
-                                await message.reply_text(
-                                    f"❌ فشل إرسال الصوت ({size_str}). جرب تاني!" if lang == "ar"
-                                    else f"❌ Failed to send audio ({size_str}). Try again!"
+                                from supabase_storage import upload_and_get_link
+                                cloud_msg = await upload_and_get_link(
+                                    file_path=file_path, filename=f"{video_title[:50]}.mp3",
+                                    content_type="audio/mpeg", platform="telegram", title=video_title, lang=lang,
                                 )
+                                if cloud_msg:
+                                    await message.reply_text(cloud_msg, parse_mode="HTML", disable_web_page_preview=False)
+                                    try: os.remove(file_path)
+                                    except: pass
+                                    return
+                            except:
+                                pass
+                            await message.reply_text(
+                                f"❌ فشل إرسال الصوت ({size_str}). جرب تاني!" if lang == "ar"
+                                else f"❌ Failed to send audio ({size_str}). Try again!"
+                            )
+                            try: os.remove(file_path)
+                            except: pass
+                            return
                         else:
                             try:
                                 with open(file_path, 'rb') as f:
@@ -3920,6 +4042,15 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
         title = info.get("title", filename) if info else filename
         duration = info.get("duration", 0) if info else 0
         
+        # 🔴 FIX v5: لو الجودة صوت، نتأكد إن الملف فعلاً صوت بس
+        # بعض طرق التحميل بترجع فيديو حتى لو طلبنا صوت
+        if _is_audio_quality(quality):
+            bitrate = _get_audio_bitrate(quality)
+            filepath = _ensure_audio_only(filepath, bitrate)
+            if os.path.exists(filepath):
+                filesize = os.path.getsize(filepath)
+                filename = os.path.basename(filepath)
+        
         # 🔴 FIX v4: معلومات الجودة الحقيقية في الـ caption
         size_mb = filesize / (1024 * 1024)
         size_str = f"{size_mb:.1f}MB"
@@ -3930,22 +4061,15 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
         is_too_large = False
         
         if _is_audio_quality(quality):
-            try:
-                with open(filepath, 'rb') as f:
-                    caption = f"📥 {'تم تحميل الصوت!' if lang == 'ar' else 'Audio downloaded!'}\n🎵 {title[:200]}\n📁 {size_str}"
-                    await message.reply_audio(
-                        audio=f, filename=filename,
-                        caption=caption,
-                        parse_mode="HTML",
-                    )
-                # ✅ الإرسال نجح — نحذف status_msg
+            bitrate = _get_audio_bitrate(quality)
+            audio_sent = await _send_telegram_audio(message, filepath, title, size_str, lang, bitrate=bitrate)
+            if audio_sent:
                 try: await status_msg.delete()
                 except: pass
-            except Exception as send_err:
+            else:
                 send_failed = True
-                err_str = str(send_err).lower()
-                is_too_large = filesize > TELEGRAM_MAX_FREE and any(kw in err_str for kw in ["too large", "file is too big", "file too large", "exceeds", "413"])
-                logger.warning(f"⚠️ Audio send failed: {send_err} | is_too_large={is_too_large}")
+                is_too_large = filesize > TELEGRAM_MAX_FREE
+                logger.warning(f"⚠️ Audio send failed | is_too_large={is_too_large}")
         else:
             try:
                 with open(filepath, 'rb') as f:
