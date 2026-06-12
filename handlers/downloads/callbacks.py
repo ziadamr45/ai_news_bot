@@ -159,22 +159,8 @@ Send a cookies.txt file from your device and we'll add it to the bot to help wit
     status = _cookies_status()
     
     # 🔴 حالة نظام الكوكيز — بس كوكيز مرفوعة (لا تلقائية)
+    # cookie_rotator تم إزالته — كان معطل (كوكيز وهمية)
     auto_rotation_status = ""
-    try:
-        from cookie_rotator import is_rotation_running, get_cookie_rotation_status
-        rot_status = get_cookie_rotation_status()
-        if is_rotation_running():
-            auto_rotation_status = (
-                f"\n\n🔄 <b>مراقبة الكوكيز:</b> ✅ شغال"
-                f"\n⏰ آخر فحص: {rot_status.get('last_modified', 'غير معروف')}"
-                f"\n🔴 لا كوكيز تلقائية — بس كوكيز مرفوعة من المستخدمين"
-            )
-        else:
-            auto_rotation_status = "\n\n🔄 <b>مراقبة الكوكيز:</b> ❌ مش شغال"
-    except ImportError:
-        auto_rotation_status = ""
-    except Exception:
-        auto_rotation_status = ""
     
     if status.get("exists"):
         msg = f"""🍪 <b>حالة ملف الكوكيز</b>

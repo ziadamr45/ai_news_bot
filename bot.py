@@ -575,15 +575,8 @@ def main():
         except Exception as e:
             logger.warning(f"⚠️ Playwright check error: {e}")
 
-        # ═══ تشغيل Cookie Auto-Rotation ═══
-        # 🍪 تدوير كوكيز YouTube — بس كوكيز مرفوعة من المستخدمين (لا كوكيز تلقائية)
-        try:
-            from cookie_rotator import start_cookie_rotation, get_cookie_rotation_status
-            start_cookie_rotation()
-            status = get_cookie_rotation_status()
-            logger.info(f"✅ Cookie monitoring started (user uploads only, no auto) — {status['total_cookies']} cookies loaded")
-        except Exception as e:
-            logger.warning(f"⚠️ Cookie auto-rotation failed to start: {e}")
+        # 🔴 cookie_rotator تم إزالته — كان معطل ومش شغال (كوكيز وهمية بتبطل)
+        # الكوكيز الحقيقية بتنحط يدوي من /cookies أو PO_TOKEN من /potoken
 
         try:
             from telegram import BotCommand
