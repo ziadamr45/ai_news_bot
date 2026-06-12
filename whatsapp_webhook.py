@@ -1792,13 +1792,21 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                 }]
             
             # ═══ إضافة كوكيز + إعدادات YouTube المحسّنة ═══
-            cookies_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cookies.txt")
-            if os.path.exists(cookies_path):
+            # 🔴 FIX: استخدام _get_cookies_file() من التليجرام — بيدور في أماكن كتير
+            try:
+                from handlers.download_handlers import _get_cookies_file
+                cookies_path = _get_cookies_file()
+            except (ImportError, Exception):
+                cookies_path = None
+            
+            # Fallback: البحث المباشر لو _get_cookies_file مش متاح
+            if not cookies_path:
+                cookies_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cookies.txt")
+            
+            if cookies_path and os.path.exists(cookies_path):
                 try:
-                    with open(cookies_path, 'r') as f:
-                        content = f.read().strip()
-                        if content and len(content) > 50:
-                            ydl_opts['cookiefile'] = cookies_path
+                    ydl_opts['cookiefile'] = cookies_path
+                    logger.info(f"🍪 WhatsApp: Using cookies file: {cookies_path}")
                 except Exception:
                     pass
             
@@ -1897,7 +1905,8 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                 try:
                     from invidious_api import download_youtube_invidious_file
                     
-                    inv_quality_map = {"best": "best", "medium": "medium", "low": "low", "audio": "audio"}
+                    inv_quality_map = {"best": "best", "medium": "medium", "low": "low", "audio": "audio",
+                                       "audio_320": "audio", "audio_192": "audio", "audio_128": "audio", "audio_64": "audio"}
                     inv_quality = inv_quality_map.get(quality, "best")
                     
                     logger.info(f"🟣 WA Invidious (early): Attempting download quality={inv_quality} for {url[:80]}")
@@ -2020,7 +2029,8 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                 try:
                     from piped_api import download_youtube_piped_file
                     
-                    piped_quality_map = {"best": "best", "medium": "medium", "low": "low", "audio": "audio"}
+                    piped_quality_map = {"best": "best", "medium": "medium", "low": "low", "audio": "audio",
+                                         "audio_320": "audio", "audio_192": "audio", "audio_128": "audio", "audio_64": "audio"}
                     piped_quality = piped_quality_map.get(quality, "best")
                     
                     logger.info(f"🟢 WA Piped (early): Attempting download quality={piped_quality} for {url[:80]}")
@@ -2193,12 +2203,19 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
             
             # ═══ المرحلة 2: yt-dlp player_client fallback chain (YouTube فقط!) ═══
             # 🔴 FIX: player_client ده لليوتيوب بس — مش بيشتغل مع Dailymotion/SoundCloud
+            # 🔴 FIX v2: استخدام أزواج client زي التليجرام بالظبط — كل زوج فيه client + web fallback
             if info is None and is_youtube:
-                _YOUTUBE_PLAYER_CLIENTS = ['android', 'ios', 'mweb', 'tv', 'web']
+                _YOUTUBE_PLAYER_CLIENTS = [
+                    ['android', 'web'],    # Android client — fallback أول
+                    ['ios', 'web'],        # iOS client
+                    ['mweb', 'web'],       # Mobile Web
+                    ['tv', 'web'],         # TV client
+                    ['web'],               # Default web — آخر حل
+                ]
                 for pc_idx, pc in enumerate(_YOUTUBE_PLAYER_CLIENTS):
                     try:
                         alt_opts = dict(ydl_opts)
-                        alt_opts['extractor_args'] = {'youtube': {'player_client': [pc]}}
+                        alt_opts['extractor_args'] = {'youtube': {'player_client': pc}}
                         # 🔴 FIX: نشيل remote_components مع player_client (مش متوافقين)
                         alt_opts.pop('remote_components', None)
                         
@@ -2545,18 +2562,18 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
             
             # ═══ المرحلة 4.5: yt-dlp WITHOUT cookies (زي التليجرام بالظبط!) ═══
             # 🔴 أحياناً الكوكيز نفسها بتسبب مشاكل (expired/invalid) → نجرب بدونها
+            # 🔴 FIX: زي التليجرام — بنشيل الكوكيز بس، مش remote_components
             if info is None and is_youtube:
                 logger.info("🔄 WhatsApp: All methods failed (including Cobalt & Apify), trying WITHOUT cookies...")
                 
                 try:
-                    # المحاولة الأولى: default + deno بدون كوكيز
+                    # المحاولة الأولى: default + deno بدون كوكيز (بإبقاء remote_components زي التليجرام)
                     clean_opts = dict(ydl_opts)
                     clean_opts.pop('cookiefile', None)
-                    # نشيل remote_components كمان عشان نجرب clean
-                    clean_opts.pop('remote_components', None)
+                    # 🔴 FIX: مش بنشيل remote_components — زي التليجرام بالظبط
                     clean_opts['format'] = format_str if not is_audio_only else 'bestaudio/best'
                     
-                    logger.info("🔄 WhatsApp: Clean attempt (default, no cookies, no remote_components)...")
+                    logger.info("🔄 WhatsApp: Clean attempt (default, no cookies, keeping remote_components)...")
                     
                     def _run_ytdlp_clean():
                         with yt_dlp.YoutubeDL(clean_opts) as ydl:
@@ -2576,11 +2593,12 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                         # المحاولة التانية: android player_client بدون كوكيز
                         android_clean = dict(ydl_opts)
                         android_clean.pop('cookiefile', None)
+                        # 🔴 نشيل remote_components مع player_client (مش متوافقين)
                         android_clean.pop('remote_components', None)
-                        android_clean['extractor_args'] = {'youtube': {'player_client': ['android']}}
+                        android_clean['extractor_args'] = {'youtube': {'player_client': ['android', 'web']}}
                         android_clean['format'] = format_str if not is_audio_only else 'bestaudio/best'
                         
-                        logger.info("🔄 WhatsApp: Android player_client clean attempt (no cookies)...")
+                        logger.info("🔄 WhatsApp: Android+web player_client clean attempt (no cookies)...")
                         
                         def _run_ytdlp_android_clean():
                             with yt_dlp.YoutubeDL(android_clean) as ydl:
@@ -2599,151 +2617,18 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                 except Exception as clean_outer_err:
                     logger.warning(f"⚠️ WhatsApp yt-dlp without cookies error: {clean_outer_err}")
             
-            # ═══ المرحلة 5: Piped API (تم تجربته فوق — هنا fallback إضافي) ═══
-            # Piped = واجهة بديلة لليوتيوب مفتوحة المصدر — مختلفة عن Invidious
-            # بيستخدم NewPipe Extractor — أحياناً بيشتغل لما Invidious يبقى منطفي
-            if info is None and is_youtube:
-                try:
-                    from piped_api import download_youtube_piped_file
-                    
-                    piped_quality_map = {"best": "best", "medium": "medium", "low": "low", "audio": "audio"}
-                    piped_quality = piped_quality_map.get(quality, "best")
-                    
-                    logger.info(f"🟢 WhatsApp Piped: Attempting download quality={piped_quality} for {url[:80]}")
-                    # 🔴 WhatsApp: لا نرسل رسالة لكل خدمة
-                    
-                    piped_result = await asyncio.wait_for(
-                        download_youtube_piped_file(url, quality=piped_quality, output_dir=tmpdir),
-                        timeout=90
-                    )
-                    
-                    if piped_result and piped_result.get("success") and piped_result.get("file_path"):
-                        logger.info(f"🟢 WhatsApp Piped succeeded! File: {piped_result['file_path']}")
-                        
-                        piped_file = piped_result["file_path"]
-                        piped_size = piped_result.get("file_size", os.path.getsize(piped_file))
-                        piped_title = piped_result.get("title", "YouTube Video")
-                        piped_duration = piped_result.get("duration", 0)
-                        piped_format = piped_result.get("format_info", {})
-                        
-                        # Construct info dict for the send logic below
-                        info = {
-                            "title": piped_title,
-                            "duration": int(piped_duration) if piped_duration else 0,
-                            "height": 720,
-                            "vcodec": "h264",
-                            "acodec": "aac",
-                            "requested_downloads": [{"height": 720, "vcodec": "h264", "acodec": "aac"}],
-                        }
-                        
-                        # Move the Piped file to the expected location
-                        # The send logic below expects files in tmpdir
-                        if piped_file and os.path.exists(piped_file):
-                            target = os.path.join(tmpdir, f"{piped_title[:80]}.mp4")
-                            try:
-                                import shutil
-                                shutil.move(piped_file, target)
-                            except Exception:
-                                target = piped_file
-                            
-                            # 🛡️ Safety check on Piped downloaded media
-                            try:
-                                pp_file_type = "audio" if is_audio_only else "video"
-                                is_safe_pp, block_msg_pp, _ = await comprehensive_media_safety_check(
-                                    title=piped_title, file_path=target, file_type=pp_file_type,
-                                    platform="whatsapp", user_id=str(wa_user_id), lang="ar",
-                                )
-                                if not is_safe_pp:
-                                    await _send_whatsapp_message(wa_id, block_msg_pp)
-                                    try: os.remove(target)
-                                    except: pass
-                                    await feedback.error()
-                                    return
-                            except Exception:
-                                pass  # Fail-open
-                            
-                            # Send the file directly from here
-                            piped_size_mb = piped_size / (1024 * 1024)
-                            piped_quality_label = piped_format.get("quality_label", quality)
-                            
-                            if is_audio_only or quality == "audio" or quality.startswith("audio_"):
-                                try:
-                                    with open(target, 'rb') as af:
-                                        media_response = requests.post(
-                                            f"{WHATSAPP_API_URL}/{WHATSAPP_PHONE_NUMBER_ID}/media",
-                                            headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
-                                            files={"file": (f"{piped_title[:50]}.mp3", af, "audio/mpeg")},
-                                            data={"messaging_product": "whatsapp", "type": "audio"},
-                                            timeout=120
-                                        )
-                                        if media_response.status_code == 200:
-                                            media_id = media_response.json().get("id")
-                                            await _send_whatsapp_audio(wa_id, media_id)
-                                            await feedback.success()
-                                            try: os.remove(target)
-                                            except: pass
-                                            return
-                                except Exception as audio_send_err:
-                                    logger.warning(f"⚠️ Piped audio send failed: {audio_send_err}")
-                            else:
-                                if piped_size_mb <= 25:
-                                    try:
-                                        with open(target, 'rb') as vf:
-                                            media_response = requests.post(
-                                                f"{WHATSAPP_API_URL}/{WHATSAPP_PHONE_NUMBER_ID}/media",
-                                                headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
-                                                files={"file": (f"{piped_title[:50]}.mp4", vf, "video/mp4")},
-                                                data={"messaging_product": "whatsapp", "type": "video"},
-                                                timeout=180
-                                            )
-                                            if media_response.status_code == 200:
-                                                media_id = media_response.json().get("id")
-                                                await _send_whatsapp_video(wa_id, media_id, caption=f"🎬 {piped_title[:200]}\n📥 Piped | {piped_quality_label}")
-                                                await feedback.success()
-                                                try: os.remove(target)
-                                                except: pass
-                                                return
-                                    except Exception as video_send_err:
-                                        logger.warning(f"⚠️ Piped video send failed: {video_send_err}")
-                                else:
-                                    # File too large for WhatsApp — upload to Supabase
-                                    try:
-                                        from supabase_storage import upload_and_get_link
-                                        piped_size_str = f"{piped_size_mb:.1f}MB"
-                                        cloud_msg = await upload_and_get_link(
-                                            file_path=target, filename=f"{piped_title[:50]}.mp4",
-                                            content_type="video/mp4", platform="whatsapp", title=piped_title, lang="ar",
-                                        )
-                                        if cloud_msg:
-                                            await _send_whatsapp_message(wa_id, cloud_msg)
-                                            await feedback.success()
-                                            try: os.remove(target)
-                                            except: pass
-                                            return
-                                    except Exception:
-                                        pass
-                                    logger.warning(f"⚠️ WA Piped (retry): File downloaded but sending failed, trying next fallback...")
-                                    try: os.remove(target)
-                                    except: pass
-                    
-                    logger.warning(f"⚠️ Piped failed, trying Invidious...")
-                except ImportError:
-                    logger.warning("⚠️ piped_api module not available, skipping Piped")
-                except asyncio.TimeoutError:
-                    logger.warning(f"⚠️ Piped timed out, trying Invidious...")
-                except Exception as piped_err:
-                    logger.warning(f"⚠️ Piped error: {piped_err}, trying Invidious...")
-            
-            # ═══ المرحلة 6: Invidious API (تم تجربته فوق — هنا fallback إضافي) ═══
+            # ═══ المرحلة 5: Invidious API (تم تجربته فوق — هنا fallback إضافي) ═══
+            # 🔴 نفس ترتيب التليجرام: Invidious قبل Piped
             # Invidious = واجهة بديلة لليوتيوب مفتوحة المصدر
             if info is None and is_youtube:
                 try:
                     from invidious_api import download_youtube_invidious_file
                     
-                    inv_quality_map = {"best": "best", "medium": "medium", "low": "low", "audio": "audio"}
+                    inv_quality_map = {"best": "best", "medium": "medium", "low": "low", "audio": "audio",
+                                       "audio_320": "audio", "audio_192": "audio", "audio_128": "audio", "audio_64": "audio"}
                     inv_quality = inv_quality_map.get(quality, "best")
                     
-                    logger.info(f"🟣 WhatsApp Invidious: Attempting download quality={inv_quality} for {url[:80]}")
+                    logger.info(f"🟣 WhatsApp Invidious (retry): Attempting download quality={inv_quality} for {url[:80]}")
                     # 🔴 WhatsApp: لا نرسل رسالة لكل خدمة
                     
                     inv_result = await asyncio.wait_for(
@@ -2752,7 +2637,7 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                     )
                     
                     if inv_result and inv_result.get("success") and inv_result.get("file_path"):
-                        logger.info(f"🟣 WhatsApp Invidious succeeded! File: {inv_result['file_path']}")
+                        logger.info(f"🟣 WhatsApp Invidious (retry) succeeded! File: {inv_result['file_path']}")
                         
                         inv_file = inv_result["file_path"]
                         inv_size = inv_result.get("file_size", os.path.getsize(inv_file))
@@ -2814,7 +2699,7 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                             except: pass
                                             return
                                 except Exception as audio_send_err:
-                                    logger.warning(f"⚠️ Invidious audio send failed: {audio_send_err}")
+                                    logger.warning(f"⚠️ Invidious (retry) audio send failed: {audio_send_err}")
                             else:
                                 if inv_size_mb <= 25:
                                     try:
@@ -2834,12 +2719,11 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                                 except: pass
                                                 return
                                     except Exception as video_send_err:
-                                        logger.warning(f"⚠️ Invidious video send failed: {video_send_err}")
+                                        logger.warning(f"⚠️ Invidious (retry) video send failed: {video_send_err}")
                                 else:
-                                    # File too large for WhatsApp — upload to Supabase
+                                    # File too large for WhatsApp — upload to Supabase (silent)
                                     try:
                                         from supabase_storage import upload_and_get_link
-                                        inv_size_str = f"{inv_size_mb:.1f}MB"
                                         cloud_msg = await upload_and_get_link(
                                             file_path=target, filename=f"{inv_title[:50]}.mp4",
                                             content_type="video/mp4", platform="whatsapp", title=inv_title, lang="ar",
@@ -2856,13 +2740,148 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                     try: os.remove(target)
                                     except: pass
                     
-                    logger.warning(f"⚠️ Invidious failed, trying Cobalt...")
+                    logger.warning(f"⚠️ Invidious (retry) failed, trying Piped...")
                 except ImportError:
                     logger.warning("⚠️ invidious_api module not available, skipping Invidious")
                 except asyncio.TimeoutError:
-                    logger.warning(f"⚠️ Invidious timed out, trying Cobalt JWT...")
+                    logger.warning(f"⚠️ Invidious (retry) timed out, trying Piped...")
                 except Exception as inv_err:
-                    logger.warning(f"⚠️ Invidious error: {inv_err}, trying Cobalt JWT...")
+                    logger.warning(f"⚠️ Invidious (retry) error: {inv_err}, trying Piped...")
+            
+            # ═══ المرحلة 6: Piped API (تم تجربته فوق — هنا fallback إضافي) ═══
+            # 🔴 نفس ترتيب التليجرام: Piped بعد Invidious
+            # Piped = واجهة بديلة لليوتيوب مفتوحة المصدر — مختلفة عن Invidious
+            # بيستخدم NewPipe Extractor — أحياناً بيشتغل لما Invidious يبقى منطفي
+            if info is None and is_youtube:
+                try:
+                    from piped_api import download_youtube_piped_file
+                    
+                    piped_quality_map = {"best": "best", "medium": "medium", "low": "low", "audio": "audio",
+                                         "audio_320": "audio", "audio_192": "audio", "audio_128": "audio", "audio_64": "audio"}
+                    piped_quality = piped_quality_map.get(quality, "best")
+                    
+                    logger.info(f"🟢 WhatsApp Piped (retry): Attempting download quality={piped_quality} for {url[:80]}")
+                    # 🔴 WhatsApp: لا نرسل رسالة لكل خدمة
+                    
+                    piped_result = await asyncio.wait_for(
+                        download_youtube_piped_file(url, quality=piped_quality, output_dir=tmpdir),
+                        timeout=90
+                    )
+                    
+                    if piped_result and piped_result.get("success") and piped_result.get("file_path"):
+                        logger.info(f"🟢 WhatsApp Piped (retry) succeeded! File: {piped_result['file_path']}")
+                        
+                        piped_file = piped_result["file_path"]
+                        piped_size = piped_result.get("file_size", os.path.getsize(piped_file))
+                        piped_title = piped_result.get("title", "YouTube Video")
+                        piped_duration = piped_result.get("duration", 0)
+                        piped_format = piped_result.get("format_info", {})
+                        
+                        # Construct info dict for the send logic below
+                        info = {
+                            "title": piped_title,
+                            "duration": int(piped_duration) if piped_duration else 0,
+                            "height": 720,
+                            "vcodec": "h264",
+                            "acodec": "aac",
+                            "requested_downloads": [{"height": 720, "vcodec": "h264", "acodec": "aac"}],
+                        }
+                        
+                        # Move the Piped file to the expected location
+                        if piped_file and os.path.exists(piped_file):
+                            target = os.path.join(tmpdir, f"{piped_title[:80]}.mp4")
+                            try:
+                                import shutil
+                                shutil.move(piped_file, target)
+                            except Exception:
+                                target = piped_file
+                            
+                            # 🛡️ Safety check on Piped downloaded media
+                            try:
+                                pp_file_type = "audio" if is_audio_only else "video"
+                                is_safe_pp, block_msg_pp, _ = await comprehensive_media_safety_check(
+                                    title=piped_title, file_path=target, file_type=pp_file_type,
+                                    platform="whatsapp", user_id=str(wa_user_id), lang="ar",
+                                )
+                                if not is_safe_pp:
+                                    await _send_whatsapp_message(wa_id, block_msg_pp)
+                                    try: os.remove(target)
+                                    except: pass
+                                    await feedback.error()
+                                    return
+                            except Exception:
+                                pass  # Fail-open
+                            
+                            # Send the file directly from here
+                            piped_size_mb = piped_size / (1024 * 1024)
+                            piped_quality_label = piped_format.get("quality_label", quality)
+                            
+                            if is_audio_only or quality == "audio" or quality.startswith("audio_"):
+                                try:
+                                    with open(target, 'rb') as af:
+                                        media_response = requests.post(
+                                            f"{WHATSAPP_API_URL}/{WHATSAPP_PHONE_NUMBER_ID}/media",
+                                            headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
+                                            files={"file": (f"{piped_title[:50]}.mp3", af, "audio/mpeg")},
+                                            data={"messaging_product": "whatsapp", "type": "audio"},
+                                            timeout=120
+                                        )
+                                        if media_response.status_code == 200:
+                                            media_id = media_response.json().get("id")
+                                            await _send_whatsapp_audio(wa_id, media_id)
+                                            await feedback.success()
+                                            try: os.remove(target)
+                                            except: pass
+                                            return
+                                except Exception as audio_send_err:
+                                    logger.warning(f"⚠️ Piped (retry) audio send failed: {audio_send_err}")
+                            else:
+                                if piped_size_mb <= 25:
+                                    try:
+                                        with open(target, 'rb') as vf:
+                                            media_response = requests.post(
+                                                f"{WHATSAPP_API_URL}/{WHATSAPP_PHONE_NUMBER_ID}/media",
+                                                headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
+                                                files={"file": (f"{piped_title[:50]}.mp4", vf, "video/mp4")},
+                                                data={"messaging_product": "whatsapp", "type": "video"},
+                                                timeout=180
+                                            )
+                                            if media_response.status_code == 200:
+                                                media_id = media_response.json().get("id")
+                                                await _send_whatsapp_video(wa_id, media_id, caption=f"🎬 {piped_title[:200]}\n📥 Piped | {piped_quality_label}")
+                                                await feedback.success()
+                                                try: os.remove(target)
+                                                except: pass
+                                                return
+                                    except Exception as video_send_err:
+                                        logger.warning(f"⚠️ Piped (retry) video send failed: {video_send_err}")
+                                else:
+                                    # File too large for WhatsApp — upload to Supabase (silent)
+                                    try:
+                                        from supabase_storage import upload_and_get_link
+                                        cloud_msg = await upload_and_get_link(
+                                            file_path=target, filename=f"{piped_title[:50]}.mp4",
+                                            content_type="video/mp4", platform="whatsapp", title=piped_title, lang="ar",
+                                        )
+                                        if cloud_msg:
+                                            await _send_whatsapp_message(wa_id, cloud_msg)
+                                            await feedback.success()
+                                            try: os.remove(target)
+                                            except: pass
+                                            return
+                                    except Exception:
+                                        pass
+                                    logger.warning(f"⚠️ WA Piped (retry): File downloaded but sending failed, trying next fallback...")
+                                    try: os.remove(target)
+                                    except: pass
+                    
+                    logger.warning(f"⚠️ Piped (retry) failed, trying Cobalt Self-Hosted...")
+                except ImportError:
+                    logger.warning("⚠️ piped_api module not available, skipping Piped")
+                except asyncio.TimeoutError:
+                    logger.warning(f"⚠️ Piped (retry) timed out, trying Cobalt Self-Hosted...")
+                except Exception as piped_err:
+                    logger.warning(f"⚠️ Piped (retry) error: {piped_err}, trying Cobalt Self-Hosted...")
             
             # ═══ المرحلة 6.5: Cobalt Self-Hosted (زي التليجرام بالظبط!) ═══
             # 🔵 _try_cobalt_download بيجرب الـ COBALT_API_URL (self-hosted) 
@@ -2999,10 +3018,11 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                         jwt_payload = {
                             "url": url,
                             "videoQuality": jwt_v_quality,
-                            "filenameStyle": "basic",
+                            "filenameStyle": "classic",
                         }
                         if is_audio_jwt:
                             jwt_payload["downloadMode"] = "audio"
+                            jwt_payload["audioFormat"] = "mp3"
                         
                         jwt_headers = {
                             "Accept": "application/json",
