@@ -1573,10 +1573,7 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                     # 🔴 Step 3: لو الملف أكبر من 25MB أو الإرسال المباشر فشل → رفع على السحابة
                     logger.info(f"🧵 Threads WA: Trying Supabase cloud upload...")
                     
-                    if file_size > MAX_WHATSAPP_DIRECT_SIZE:
-                        await _send_whatsapp_message(wa_id, f"☁️ الملف كبير ({size_str})، جاري رفعه على السحابة...")
-                    else:
-                        await _send_whatsapp_message(wa_id, f"🧵 جاري رفع فيديو Threads على السحابة ({size_str})...")
+                    # 🔴 Silent: no user message for cloud upload
                     
                     try:
                         from supabase_storage import upload_and_get_link
@@ -1994,7 +1991,6 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                     try:
                                         from supabase_storage import upload_and_get_link
                                         inv_size_str = f"{inv_size_mb:.1f}MB"
-                                        await _send_whatsapp_message(wa_id, f"☁️ الملف كبير ({inv_size_str})، جاري ضغطه ورفعه على السحابة...")
                                         cloud_msg = await upload_and_get_link(
                                             file_path=target, filename=f"{inv_title[:50]}.mp4",
                                             content_type="video/mp4", platform="whatsapp", title=inv_title, lang="ar",
@@ -2007,11 +2003,9 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                             return
                                     except Exception:
                                         pass
-                                    await _send_whatsapp_message(wa_id, f"❌ فشل إرسال الفيديو من Invidious. جرب تاني!")
-                                    await feedback.error()
+                                    logger.warning(f"⚠️ WA Invidious: File downloaded but sending failed, trying next fallback...")
                                     try: os.remove(target)
                                     except: pass
-                                    return
                     
                     logger.warning(f"⚠️ WA Invidious (early) failed, trying Piped...")
                 except ImportError:
@@ -2120,7 +2114,6 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                     try:
                                         from supabase_storage import upload_and_get_link
                                         piped_size_str = f"{piped_size_mb:.1f}MB"
-                                        await _send_whatsapp_message(wa_id, f"☁️ الملف كبير ({piped_size_str})، جاري ضغطه ورفعه على السحابة...")
                                         cloud_msg = await upload_and_get_link(
                                             file_path=target, filename=f"{piped_title[:50]}.mp4",
                                             content_type="video/mp4", platform="whatsapp", title=piped_title, lang="ar",
@@ -2133,11 +2126,9 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                             return
                                     except Exception:
                                         pass
-                                    await _send_whatsapp_message(wa_id, f"❌ فشل إرسال الفيديو من Piped. جرب تاني!")
-                                    await feedback.error()
+                                    logger.warning(f"⚠️ WA Piped: File downloaded but sending failed, trying next fallback...")
                                     try: os.remove(target)
                                     except: pass
-                                    return
                     
                     logger.warning(f"⚠️ WA Piped (early) failed, falling back to yt-dlp...")
                 except ImportError:
@@ -2384,7 +2375,7 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                 except Exception as audio_send_err:
                                     logger.warning(f"⚠️ Cobalt audio send failed: {audio_send_err}")
                             else:
-                                # 🔴 استخدام Supabase للملفات الكبيرة
+                                # 🔴 استخدام Supabase للملفات الكبيرة — صامت، بدون رسالة للمستخدم
                                 if cobalt_size_mb > 25:
                                     try:
                                         from supabase_storage import upload_and_get_link
@@ -2404,31 +2395,30 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                             return
                                     except Exception as sup_err:
                                         logger.error(f"☁️ Supabase upload error: {sup_err}")
-                                    await _send_whatsapp_message(wa_id, f"❌ فشل إرسال الفيديو من Cobalt ({size_str}). جرب تاني!")
-                                    await feedback.error()
+                                    logger.warning(f"⚠️ WA Cobalt: File downloaded but sending failed, trying next fallback...")
                                     try: os.remove(cobalt_file)
                                     except: pass
-                                    return
-                                
-                                try:
-                                    with open(cobalt_file, 'rb') as vf:
-                                        media_response = requests.post(
-                                            f"{WHATSAPP_API_URL}/{WHATSAPP_PHONE_NUMBER_ID}/media",
-                                            headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
-                                            files={"file": (f"{cobalt_title[:50]}.mp4", vf, "video/mp4")},
-                                            data={"messaging_product": "whatsapp", "type": "video"},
-                                            timeout=180
-                                        )
-                                        if media_response.status_code == 200:
-                                            media_id = media_response.json().get("id")
-                                            tech_info = f"{cobalt_height}p | {size_str} | Cobalt"
-                                            await _send_whatsapp_video(wa_id, media_id, caption=f"🎬 {cobalt_title[:200]}\n📥 {tech_info}")
-                                            await feedback.success()
-                                            try: os.remove(cobalt_file)
-                                            except: pass
-                                            return
-                                except Exception as video_send_err:
-                                    logger.warning(f"⚠️ Cobalt video send failed: {video_send_err}")
+                                else:
+                                    # File <= 25MB — try direct WhatsApp send
+                                    try:
+                                        with open(cobalt_file, 'rb') as vf:
+                                            media_response = requests.post(
+                                                f"{WHATSAPP_API_URL}/{WHATSAPP_PHONE_NUMBER_ID}/media",
+                                                headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
+                                                files={"file": (f"{cobalt_title[:50]}.mp4", vf, "video/mp4")},
+                                                data={"messaging_product": "whatsapp", "type": "video"},
+                                                timeout=180
+                                            )
+                                            if media_response.status_code == 200:
+                                                media_id = media_response.json().get("id")
+                                                tech_info = f"{cobalt_height}p | {size_str} | Cobalt"
+                                                await _send_whatsapp_video(wa_id, media_id, caption=f"🎬 {cobalt_title[:200]}\n📥 {tech_info}")
+                                                await feedback.success()
+                                                try: os.remove(cobalt_file)
+                                                except: pass
+                                                return
+                                    except Exception as video_send_err:
+                                        logger.warning(f"⚠️ Cobalt video send failed: {video_send_err}")
                     
                     logger.warning(f"⚠️ Cobalt (3rd fallback) failed, trying Apify...")
                 except ImportError:
@@ -2500,7 +2490,7 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                 except Exception as audio_send_err:
                                     logger.warning(f"⚠️ Apify audio send failed: {audio_send_err}")
                             else:
-                                # 🔴 استخدام Supabase للملفات الكبيرة
+                                # 🔴 استخدام Supabase للملفات الكبيرة — صامت، بدون رسالة للمستخدم
                                 if apify_size_mb > 25:
                                     try:
                                         from supabase_storage import upload_and_get_link
@@ -2520,31 +2510,30 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                             return
                                     except Exception as sup_err:
                                         logger.error(f"☁️ Supabase upload error: {sup_err}")
-                                    await _send_whatsapp_message(wa_id, f"❌ فشل إرسال الفيديو من Apify ({size_str}). جرب تاني!")
-                                    await feedback.error()
+                                    logger.warning(f"⚠️ WA Apify: File downloaded but sending failed, trying next fallback...")
                                     try: os.remove(apify_file)
                                     except: pass
-                                    return
-                                
-                                try:
-                                    with open(apify_file, 'rb') as vf:
-                                        media_response = requests.post(
-                                            f"{WHATSAPP_API_URL}/{WHATSAPP_PHONE_NUMBER_ID}/media",
-                                            headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
-                                            files={"file": (f"{apify_title[:50]}.mp4", vf, "video/mp4")},
-                                            data={"messaging_product": "whatsapp", "type": "video"},
-                                            timeout=180
-                                        )
-                                        if media_response.status_code == 200:
-                                            media_id = media_response.json().get("id")
-                                            tech_info = f"{apify_height}p | {size_str} | Apify"
-                                            await _send_whatsapp_video(wa_id, media_id, caption=f"🎬 {apify_title[:200]}\n📥 {tech_info}")
-                                            await feedback.success()
-                                            try: os.remove(apify_file)
-                                            except: pass
-                                            return
-                                except Exception as video_send_err:
-                                    logger.warning(f"⚠️ Apify video send failed: {video_send_err}")
+                                else:
+                                    # File <= 25MB — try direct WhatsApp send
+                                    try:
+                                        with open(apify_file, 'rb') as vf:
+                                            media_response = requests.post(
+                                                f"{WHATSAPP_API_URL}/{WHATSAPP_PHONE_NUMBER_ID}/media",
+                                                headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
+                                                files={"file": (f"{apify_title[:50]}.mp4", vf, "video/mp4")},
+                                                data={"messaging_product": "whatsapp", "type": "video"},
+                                                timeout=180
+                                            )
+                                            if media_response.status_code == 200:
+                                                media_id = media_response.json().get("id")
+                                                tech_info = f"{apify_height}p | {size_str} | Apify"
+                                                await _send_whatsapp_video(wa_id, media_id, caption=f"🎬 {apify_title[:200]}\n📥 {tech_info}")
+                                                await feedback.success()
+                                                try: os.remove(apify_file)
+                                                except: pass
+                                                return
+                                    except Exception as video_send_err:
+                                        logger.warning(f"⚠️ Apify video send failed: {video_send_err}")
                     
                     logger.warning(f"⚠️ Apify (4th fallback) failed, trying yt-dlp without cookies...")
                 except ImportError:
@@ -2721,7 +2710,6 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                     try:
                                         from supabase_storage import upload_and_get_link
                                         piped_size_str = f"{piped_size_mb:.1f}MB"
-                                        await _send_whatsapp_message(wa_id, f"☁️ الملف كبير ({piped_size_str})، جاري ضغطه ورفعه على السحابة...")
                                         cloud_msg = await upload_and_get_link(
                                             file_path=target, filename=f"{piped_title[:50]}.mp4",
                                             content_type="video/mp4", platform="whatsapp", title=piped_title, lang="ar",
@@ -2734,11 +2722,9 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                             return
                                     except Exception:
                                         pass
-                                    await _send_whatsapp_message(wa_id, f"❌ فشل إرسال الفيديو من Piped. جرب تاني!")
-                                    await feedback.error()
+                                    logger.warning(f"⚠️ WA Piped (retry): File downloaded but sending failed, trying next fallback...")
                                     try: os.remove(target)
                                     except: pass
-                                    return
                     
                     logger.warning(f"⚠️ Piped failed, trying Invidious...")
                 except ImportError:
@@ -2854,7 +2840,6 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                     try:
                                         from supabase_storage import upload_and_get_link
                                         inv_size_str = f"{inv_size_mb:.1f}MB"
-                                        await _send_whatsapp_message(wa_id, f"☁️ الملف كبير ({inv_size_str})، جاري ضغطه ورفعه على السحابة...")
                                         cloud_msg = await upload_and_get_link(
                                             file_path=target, filename=f"{inv_title[:50]}.mp4",
                                             content_type="video/mp4", platform="whatsapp", title=inv_title, lang="ar",
@@ -2867,11 +2852,9 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                             return
                                     except Exception:
                                         pass
-                                    await _send_whatsapp_message(wa_id, f"❌ فشل إرسال الفيديو من Invidious. جرب تاني!")
-                                    await feedback.error()
+                                    logger.warning(f"⚠️ WA Invidious (retry): File downloaded but sending failed, trying next fallback...")
                                     try: os.remove(target)
                                     except: pass
-                                    return
                     
                     logger.warning(f"⚠️ Invidious failed, trying Cobalt...")
                 except ImportError:
@@ -2943,6 +2926,7 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                 except Exception as audio_send_err:
                                     logger.warning(f"⚠️ Cobalt Self-Hosted audio send failed: {audio_send_err}")
                             else:
+                                # 🔴 صامت — بدون رسالة للمستخدم
                                 if cobalt_sh_size_mb > 25:
                                     try:
                                         from supabase_storage import upload_and_get_link
@@ -2962,31 +2946,30 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                             return
                                     except Exception as sup_err:
                                         logger.error(f"☁️ Supabase upload error: {sup_err}")
-                                    await _send_whatsapp_message(wa_id, f"❌ فشل إرسال الفيديو من Cobalt Self-Hosted ({cobalt_sh_size_str}). جرب تاني!")
-                                    await feedback.error()
+                                    logger.warning(f"⚠️ WA Cobalt Self-Hosted: File downloaded but sending failed, trying next fallback...")
                                     try: os.remove(cobalt_sh_file)
                                     except: pass
-                                    return
-                                
-                                try:
-                                    with open(cobalt_sh_file, 'rb') as vf:
-                                        media_response = requests.post(
-                                            f"{WHATSAPP_API_URL}/{WHATSAPP_PHONE_NUMBER_ID}/media",
-                                            headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
-                                            files={"file": (f"{cobalt_sh_title[:50]}.mp4", vf, "video/mp4")},
-                                            data={"messaging_product": "whatsapp", "type": "video"},
-                                            timeout=180
-                                        )
-                                        if media_response.status_code == 200:
-                                            media_id = media_response.json().get("id")
-                                            tech_info = f"{cobalt_sh_height}p | {cobalt_sh_size_str} | Cobalt Self-Hosted"
-                                            await _send_whatsapp_video(wa_id, media_id, caption=f"🎬 {cobalt_sh_title[:200]}\n📥 {tech_info}")
-                                            await feedback.success()
-                                            try: os.remove(cobalt_sh_file)
-                                            except: pass
-                                            return
-                                except Exception as video_send_err:
-                                    logger.warning(f"⚠️ Cobalt Self-Hosted video send failed: {video_send_err}")
+                                else:
+                                    # File <= 25MB — try direct WhatsApp send
+                                    try:
+                                        with open(cobalt_sh_file, 'rb') as vf:
+                                            media_response = requests.post(
+                                                f"{WHATSAPP_API_URL}/{WHATSAPP_PHONE_NUMBER_ID}/media",
+                                                headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
+                                                files={"file": (f"{cobalt_sh_title[:50]}.mp4", vf, "video/mp4")},
+                                                data={"messaging_product": "whatsapp", "type": "video"},
+                                                timeout=180
+                                            )
+                                            if media_response.status_code == 200:
+                                                media_id = media_response.json().get("id")
+                                                tech_info = f"{cobalt_sh_height}p | {cobalt_sh_size_str} | Cobalt Self-Hosted"
+                                                await _send_whatsapp_video(wa_id, media_id, caption=f"🎬 {cobalt_sh_title[:200]}\n📥 {tech_info}")
+                                                await feedback.success()
+                                                try: os.remove(cobalt_sh_file)
+                                                except: pass
+                                                return
+                                    except Exception as video_send_err:
+                                        logger.warning(f"⚠️ Cobalt Self-Hosted video send failed: {video_send_err}")
                     
                     logger.warning(f"⚠️ Cobalt Self-Hosted failed, trying Cobalt JWT...")
                 except ImportError:
@@ -3109,7 +3092,6 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                             try:
                                                 from supabase_storage import upload_and_get_link
                                                 jwt_size_str = f"{jwt_size_mb:.1f}MB"
-                                                await _send_whatsapp_message(wa_id, f"☁️ الملف كبير ({jwt_size_str})، جاري ضغطه ورفعه على السحابة...")
                                                 cloud_msg = await upload_and_get_link(
                                                     file_path=jwt_file, filename=f"{jwt_title[:50]}.mp4",
                                                     content_type="video/mp4", platform="whatsapp", title=jwt_title, lang="ar",
@@ -3122,11 +3104,9 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                                                     return
                                             except Exception:
                                                 pass
-                                            await _send_whatsapp_message(wa_id, f"❌ فشل إرسال الفيديو من Cobalt JWT. جرب تاني!")
-                                            await feedback.error()
+                                            logger.warning(f"⚠️ WA Cobalt JWT: File downloaded but sending failed, trying next fallback...")
                                             try: os.remove(jwt_file)
                                             except: pass
-                                            return
                             
                             logger.warning(f"⚠️ Cobalt JWT failed, trying Cloudflare Worker...")
                         except asyncio.TimeoutError:
@@ -3471,8 +3451,7 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                     error_msg = str(result.get("error", ""))
                     logger.warning(f"⚠️ WhatsApp direct send failed: {error_msg}")
                     
-                    # 🔴 محاولة رفع على Supabase (مع ضغط تلقائي لو > 50MB)
-                    await _send_whatsapp_message(wa_id, "☁️ جاري رفع الملف على السحابة...")
+                    # 🔴 محاولة رفع على Supabase (مع ضغط تلقائي لو > 50MB) — silent, no user message
                     
                     content_type = "audio/mpeg" if is_audio_only else "video/mp4"
                     ext = ".mp3" if is_audio_only else ".mp4"
@@ -3509,9 +3488,8 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
             
             # 🔴 Step 2: لو الملف > 100MB → رفع على Supabase مباشرة (مع ضغط تلقائي)
             else:
-                # 🔴 FIX v3: Supabase free tier = 50MB limit, but upload_and_get_link auto-compresses
+                # 🔴 FIX v3: Supabase free tier = 50MB limit, but upload_and_get_link auto-compresses — silent, no user message
                 size_mb_str = f"{file_size / 1024 / 1024:.0f}MB"
-                await _send_whatsapp_message(wa_id, f"☁️ الملف كبير ({size_mb_str})، جاري ضغطه ورفعه على السحابة...")
                 
                 content_type = "audio/mpeg" if is_audio_only else "video/mp4"
                 ext = ".mp3" if is_audio_only else ".mp4"
@@ -3539,8 +3517,7 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                     logger.error("☁️ Supabase upload failed even after compression")
                     
                     if quality != "low":
-                        # نجرب نحمل بجودة أقل ونحاول تاني
-                        await _send_whatsapp_message(wa_id, "⏳ جاري تجربة جودة أقل...")
+                        # نجرب نحمل بجودة أقل ونحاول تاني — silent, no user message
                         try:
                             shutil.rmtree(tmpdir, ignore_errors=True)
                         except Exception:
