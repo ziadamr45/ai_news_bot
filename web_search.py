@@ -582,11 +582,21 @@ Question: {query}
         if dev_context:
             system += dev_context
 
-        response = call_ai_sync(prompt, system_prompt=system, task_type="chat", temperature=0.5, max_tokens=8192, user_id=user_id)
+        # 🔴 FIX: retry logic لما مفيش نتائج بحث كمان
+        response = None
+        for attempt in range(2):
+            response = call_ai_sync(prompt, system_prompt=system, task_type="chat", temperature=0.5, max_tokens=8192, user_id=user_id)
+            if response and response.strip():
+                break
+            logger.warning(f"⚠️ AI no-results response attempt {attempt+1}/2 failed for: {query}")
+            if attempt < 1:
+                import time as _time
+                _time.sleep(1)
+
         from formatters import clean_ai_response
         if response:
             response = clean_ai_response(response)
-        return response or ("لم أتمكن من العثور على معلومات. 🤖" if language == "ar" else "I couldn't find information. 🤖")
+        return response or ("⚠️ لم أتمكن من البحث حاليًا. حاول تاني بعد شوية. 🔄" if language == "ar" else "⚠️ Search temporarily unavailable. Please try again shortly. 🔄")
 
     # وجدنا نتائج بحث حقيقية! 🎉
     logger.info(f"✅ Found {len(results)} real search results, summarizing...")
@@ -656,11 +666,49 @@ Requirements:
     if dev_context:
         system += dev_context
 
-    response = call_ai_sync(prompt, system_prompt=system, task_type="chat", temperature=0.5, max_tokens=8192, user_id=user_id)
+    # 🔴 FIX: retry logic + raw results fallback
+    # لو AI فشل في التلخيص، نجرب تاني، ولو فشل تاني نعرض نتائج البحث الخام
+    response = None
+    for attempt in range(3):
+        response = call_ai_sync(prompt, system_prompt=system, task_type="chat", temperature=0.5, max_tokens=8192, user_id=user_id)
+        if response and response.strip():
+            break
+        logger.warning(f"⚠️ AI summarization attempt {attempt+1}/3 failed for search query: {query}")
+        if attempt < 2:
+            import time as _time
+            _time.sleep(1)  # انتظر ثانية قبل المحاولة التالية
+
     from formatters import clean_ai_response
     if response:
         response = clean_ai_response(response)
-    return response or ("لم أتمكن من معالجة نتائج البحث. 🤖" if language == "ar" else "I couldn't process search results. 🤖")
+
+    # 🔴 FIX: لو AI فشل في التلخيص، اعرض نتائج البحث الخام بدل رسالة خطأ
+    if not response or not response.strip():
+        logger.warning(f"⚠️ AI summarization failed completely, showing raw search results for: {query}")
+        if language == "ar":
+            raw_response = f"🔍 نتائج البحث عن: {query}\n━━━━━━━━━━━━━━━━━\n\n"
+            for i, r in enumerate(results, 1):
+                raw_response += f"{i}. {r['title']}\n"
+                if r.get('snippet'):
+                    raw_response += f"   {r['snippet'][:200]}\n"
+                if r.get('link'):
+                    raw_response += f"   🔗 {r['link']}\n"
+                raw_response += "\n"
+            raw_response += "⚠️ ملاحظة: محرك التلخيص مش متاح حاليًا، دي النتائج الخام من البحث."
+            return raw_response
+        else:
+            raw_response = f"🔍 Search results for: {query}\n━━━━━━━━━━━━━━━━━\n\n"
+            for i, r in enumerate(results, 1):
+                raw_response += f"{i}. {r['title']}\n"
+                if r.get('snippet'):
+                    raw_response += f"   {r['snippet'][:200]}\n"
+                if r.get('link'):
+                    raw_response += f"   🔗 {r['link']}\n"
+                raw_response += "\n"
+            raw_response += "⚠️ Note: Summarization engine unavailable, showing raw search results."
+            return raw_response
+
+    return response
 
 
 async def search_and_summarize_async(query: str, language: str = "ar", memory_context: str = "", user_id: int = None, username: str = None) -> str:
@@ -931,15 +979,50 @@ Do NOT fabricate information - if unsure, say so honestly."""
     if dev_context:
         system += dev_context
 
-    response = call_ai_sync(prompt, system_prompt=system, task_type="deep_search", temperature=0.4, max_tokens=8192, user_id=user_id)
+    # 🔴 FIX: retry logic + raw results fallback (زي search_and_summarize)
+    response = None
+    for attempt in range(3):
+        response = call_ai_sync(prompt, system_prompt=system, task_type="deep_search", temperature=0.4, max_tokens=8192, user_id=user_id)
+        if response and response.strip():
+            break
+        logger.warning(f"⚠️ Deep search AI summarization attempt {attempt+1}/3 failed for: {query}")
+        if attempt < 2:
+            import time as _time
+            _time.sleep(1)
+
     from formatters import clean_ai_response
     if response:
         response = clean_ai_response(response)
+
+    # 🔴 FIX: لو AI فشل، اعرض نتائج البحث الخام
+    if not response or not response.strip():
+        logger.warning(f"⚠️ Deep search AI summarization failed completely, showing raw results for: {query}")
+        if language == "ar":
+            raw_response = f"🔍 نتائج البحث العميق عن: {query}\n━━━━━━━━━━━━━━━━━\n\n"
+            for i, r in enumerate(results, 1):
+                raw_response += f"{i}. {r['title']}\n"
+                if r.get('snippet'):
+                    raw_response += f"   {r['snippet'][:200]}\n"
+                if r.get('link'):
+                    raw_response += f"   🔗 {r['link']}\n"
+                raw_response += "\n"
+            raw_response += "⚠️ ملاحظة: محرك التلخيص مش متاح حاليًا، دي النتائج الخام من البحث العميق."
+            return raw_response
+        else:
+            raw_response = f"🔍 Deep search results for: {query}\n━━━━━━━━━━━━━━━━━\n\n"
+            for i, r in enumerate(results, 1):
+                raw_response += f"{i}. {r['title']}\n"
+                if r.get('snippet'):
+                    raw_response += f"   {r['snippet'][:200]}\n"
+                if r.get('link'):
+                    raw_response += f"   🔗 {r['link']}\n"
+                raw_response += "\n"
+            raw_response += "⚠️ Note: Summarization engine unavailable, showing raw deep search results."
+            return raw_response
+
     # ⚡ كاش نتائج البحث
-    final = response or ("لم أتمكن من معالجة نتائج البحث العميق. 🤖" if language == "ar" else "I couldn't process deep search results. 🤖")
-    if final and response:
-        _set_cached_search(f"deep:{query}", language, final)
-    return final
+    _set_cached_search(f"deep:{query}", language, response)
+    return response
 
 
 async def deep_search_and_summarize_async(query: str, language: str = "ar", memory_context: str = "", user_id: int = None, username: str = None, progress_callback=None) -> str:
