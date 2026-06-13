@@ -246,8 +246,12 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Extract text
         logger.info(f"🔍 Extracting text from {filename}...")
         try:
+            # extract_text is synchronous — run in executor to avoid blocking the event loop
+            # and to allow timeout enforcement
+            import functools
+            loop = asyncio.get_event_loop()
             text = await asyncio.wait_for(
-                pdf_agent.extract_text(bytes(file_bytes), filename=filename),
+                loop.run_in_executor(None, functools.partial(pdf_agent.extract_text, bytes(file_bytes), filename=filename)),
                 timeout=120.0
             )
         except asyncio.TimeoutError:

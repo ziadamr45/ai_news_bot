@@ -1,0 +1,1058 @@
+     1→"""
+     2→Free chat handler with smart intent detection + Workflow State Management.
+     3→
+     4→v10.0 FIXES:
+     5→1. Workflow State Management: Active workflows are checked FIRST before AI
+     6→2. Conversation Saving: User messages + bot responses are saved to DB for context
+     7→3. Timeout + Retry: AI calls have timeout, Telegram sends have retry logic
+     8→"""
+     9→
+    10→import asyncio
+    11→import logging
+    12→
+    13→from i18n import t
+    14→from telegram import Update
+    15→from telegram.ext import ContextTypes
+    16→
+    17→from ai_engine import smart_chat
+    18→from memory import (
+    19→    get_language, increment_chat_count, is_subscribed,
+    20→    save_conversation, detect_interests, set_news_time,
+    21→)
+    22→from formatters import clean_ai_response, smart_split_message
+    23→from progress import ProgressManager, AI_STAGES, TelegramThinkingFeedback
+    24→from premium import (
+    25→    check_limit, increment_usage, premium_required_message,
+    26→    get_premium_keyboard,
+    27→)
+    28→from dashboard import track_event
+    29→
+    30→from handlers.keyboards import (
+    31→    get_settings_keyboard,
+    32→    get_roadmap_keyboard,
+    33→)
+    34→from handlers.dedup import _is_duplicate_update, _is_duplicate_user_message
+    35→from handlers.callbacks import _check_premium_limit, user_states, _user_pdf_context
+    36→
+    37→logger = logging.getLogger(__name__)
+    38→
+    39→
+    40→# ═══════════════════════════════════════
+    41→# دوال مساعدة للإرسال الآمن - Safe Send with Retry
+    42→# ═══════════════════════════════════════
+    43→
+    44→async def _safe_send_message(update: Update, text: str, parse_mode: str = "HTML",
+    45→                              disable_web_page_preview: bool = False, max_retries: int = 2,
+    46→                              reply_markup=None):
+    47→    """إرسال رسالة تيليجرام مع retry تلقائي لو فشل
+    48→    
+    49→    المشاكل اللي بتحل:
+    50→    - طول الرسالة أكتر من 4096 حرف → تقسيم تلقائي
+    51→    - فشل الإرسال بسبب شبكة → retry تلقائي
+    52→    - فشل الإرسال بسبب HTML غلط → إرسال بدون HTML
+    53→    """
+    54→    # لو الرسالة طويلة، قسمها الأول
+    55→    if len(text) > 4000:
+    56→        chunks = smart_split_message(text)
+    57→        for chunk in chunks:
+    58→            await _safe_send_single(update, chunk, parse_mode, disable_web_page_preview, max_retries)
+    59→        return
+    60→    
+    61→    await _safe_send_single(update, text, parse_mode, disable_web_page_preview, max_retries, reply_markup)
+    62→
+    63→
+    64→async def _safe_send_single(update: Update, text: str, parse_mode: str = "HTML",
+    65→                             disable_web_page_preview: bool = False, max_retries: int = 2,
+    66→                             reply_markup=None):
+    67→    """إرسال رسالة واحدة مع retry"""
+    68→    for attempt in range(max_retries + 1):
+    69→        try:
+    70→            await update.message.reply_text(
+    71→                text,
+    72→                parse_mode=parse_mode,
+    73→                disable_web_page_preview=disable_web_page_preview,
+    74→                reply_markup=reply_markup,
+    75→            )
+    76→            return
+    77→        except Exception as e:
+    78→            error_str = str(e).lower()
+    79→            
+    80→            # لو المشكلة في HTML → إرسال بدون HTML
+    81→            if "can't parse" in error_str or "html" in error_str:
+    82→                logger.warning(f"⚠️ HTML parse error, retrying without HTML: {e}")
+    83→                try:
+    84→                    clean_text = text.replace('<b>', '').replace('</b>', '')
+    85→                    clean_text = clean_text.replace('<i>', '').replace('</i>', '')
+    86→                    clean_text = clean_text.replace('<code>', '').replace('</code>', '')
+    87→                    clean_text = clean_text.replace('<a href=', '').replace('</a>', '')
+    88→                    await update.message.reply_text(clean_text[:4000])
+    89→                    return
+    90→                except Exception:
+    91→                    pass
+    92→            
+    93→            # لو المشكلة في طول الرسالة → تقسيم
+    94→            if "too long" in error_str or "message is too long" in error_str:
+    95→                logger.warning(f"⚠️ Message too long, splitting: {len(text)} chars")
+    96→                chunks = smart_split_message(text)
+    97→                for chunk in chunks:
+    98→                    try:
+    99→                        await update.message.reply_text(chunk, parse_mode=parse_mode, disable_web_page_preview=disable_web_page_preview)
+   100→                    except Exception:
+   101→                        pass
+   102→                return
+   103→            
+   104→            # retry لو في خطأ شبكة
+   105→            if attempt < max_retries:
+   106→                logger.warning(f"⚠️ Send failed (attempt {attempt+1}/{max_retries+1}): {e}")
+   107→                await asyncio.sleep(1)
+   108→            else:
+   109→                logger.error(f"❌ Send failed after {max_retries+1} attempts: {e}")
+   110→
+   111→
+   112→async def _safe_send_with_progress(update: Update, context: ContextTypes.DEFAULT_TYPE,
+   113→                                    response: str, lang: str = "ar",
+   114→                                    progress: ProgressManager = None,
+   115→                                    reply_markup=None):
+   116→    """إرسال رد مع progress + retry + تقسيم تلقائي
+   117→    
+   118→    دي الدالة الأساسية اللي بنستخدمها عشان نبعت رد AI:
+   119→    1. لو في progress نشط → نكمله
+   120→    2. لو الرسالة طويلة → نقسمها
+   121→    3. لو الإرسال فشل → نعمل retry
+   122→    """
+   123→    try:
+   124→        if len(response) > 4000:
+   125→            if progress:
+   126→                await progress.complete(delete_progress=True)
+   127→            chunks = smart_split_message(response)
+   128→            for i, chunk in enumerate(chunks):
+   129→                try:
+   130→                    await update.message.reply_text(
+   131→                        chunk,
+   132→                        parse_mode="HTML",
+   133→                        disable_web_page_preview=True,
+   134→                        reply_markup=reply_markup if i == len(chunks) - 1 else None,
+   135→                    )
+   136→                except Exception as e:
+   137→                    logger.warning(f"⚠️ Failed to send chunk {i}: {e}")
+   138→                    # retry بدون HTML
+   139→                    try:
+   140→                        clean = chunk.replace('<b>', '').replace('</b>', '').replace('<i>', '').replace('</i>', '').replace('<code>', '').replace('</code>', '')
+   141→                        await update.message.reply_text(clean[:4000])
+   142→                    except Exception:
+   143→                        pass
+   144→        else:
+   145→            if progress:
+   146→                try:
+   147→                    await progress.complete(final_message=response, reply_markup=reply_markup, delete_progress=False)
+   148→                except Exception as e:
+   149→                    # لو progress.complete فشل (مثلاً الرسالة طويلة)، نبعت يدوي
+   150→                    logger.warning(f"⚠️ progress.complete failed, sending manually: {e}")
+   151→                    try:
+   152→                        await progress.complete(delete_progress=True)
+   153→                    except Exception:
+   154→                        pass
+   155→                    await update.message.reply_text(response, parse_mode="HTML", disable_web_page_preview=True, reply_markup=reply_markup)
+   156→            else:
+   157→                await update.message.reply_text(response, parse_mode="HTML", disable_web_page_preview=True, reply_markup=reply_markup)
+   158→    except Exception as e:
+   159→        logger.error(f"❌ Critical error in _safe_send_with_progress: {e}")
+   160→        # آخر محاولة: إرسال بدون أي تنسيق
+   161→        try:
+   162→            plain = response[:4000].replace('<b>', '').replace('</b>', '').replace('<i>', '').replace('</i>', '').replace('<code>', '').replace('</code>', '')
+   163→            await update.message.reply_text(plain)
+   164→        except Exception:
+   165→            pass
+   166→
+   167→
+   168→async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+   169→    """معالجة الرسائل العادية - محادثة حرة مع AI + كشف ذكي
+   170→    
+   171→    أولوية التوجيه (Message Routing Priority):
+   172→    1. Workflow نشط → توجيه الرسالة للخدمة المسؤولة
+   173→    2. أزرار الكيبورد → توجيه للأمر المناسب
+   174→    3. أوامر ذكية (URL, ذاكرة) → توجيه للخدمة
+   175→    4. الذكاء الاصطناعي → محادثة حرة
+   176→    """
+   177→    # 🔴 FIX v2: هذه الموديولات تم تحميلها بالفعل في handlers/__init__.py
+   178→    try:
+   179→        from handlers.memory_handlers import memory_command
+   180→    except ImportError:
+   181→        memory_command = None
+   182→        logger.warning("⚠️ memory_command import failed (non-critical)")
+   183→
+   184→    try:
+   185→        from handlers.news_handlers import news_command, trending_command
+   186→    except ImportError:
+   187→        news_command = None
+   188→        trending_command = None
+   189→        logger.warning("⚠️ news_handlers import failed (non-critical)")
+   190→
+   191→    try:
+   192→        from handlers.basic_handlers import help_command, premium_command
+   193→    except ImportError:
+   194→        help_command = None
+   195→        premium_command = None
+   196→        logger.warning("⚠️ basic_handlers import failed (non-critical)")
+   197→
+   198→    # 🔴 FIX: استيراد اختياري — الوكلاء (agents) مش لازم للمحادثة العادية
+   199→    _YouTubeAgent = None
+   200→    _PDFAgent = None
+   201→    try:
+   202→        from agents.youtube_agent import YouTubeAgent as _YT
+   203→        _YouTubeAgent = _YT
+   204→    except ImportError as ie:
+   205→        logger.warning(f"⚠️ YouTubeAgent import failed (non-critical): {ie}")
+   206→
+   207→    try:
+   208→        from agents.pdf_agent import PDFAgent as _PDF
+   209→        _PDFAgent = _PDF
+   210→    except ImportError as ie:
+   211→        logger.warning(f"⚠️ PDFAgent import failed (non-critical): {ie}")
+   212→
+   213→    # استيراد اختياري — مش لازم يشتغل عشان المحادثة تفضل شغالة
+   214→    try:
+   215→        from handlers.media_handlers import _process_youtube_url
+   216→    except ImportError:
+   217→        _process_youtube_url = None
+   218→
+   219→    if await _is_duplicate_update(update.update_id):
+   220→        return
+   221→
+   222→    user_id = update.effective_user.id
+   223→    user_text = update.message.text or ""
+   224→    
+   225→    # 🔴 FIX: get_language محتاج try/except
+   226→    try:
+   227→        lang = get_language(user_id)
+   228→    except Exception:
+   229→        lang = "ar"
+   230→
+   231→    if not user_text.strip():
+   232→        return
+   233→
+   234→    # Rate limit check for messages
+   235→    from rate_limiter import rate_limiter
+   236→    if rate_limiter.is_rate_limited(user_id, "message"):
+   237→        await update.message.reply_text("⚠️ أنت بتبعت رسائل كتير أوي، استنى شوية" if lang == "ar" else "⚠️ Too many messages. Please wait a moment")
+   238→        return
+   239→
+   240→    if await _is_duplicate_user_message(user_id, user_text):
+   241→        return
+   242→
+   243→    # Check if user is banned
+   244→    try:
+   245→        from memory import is_banned
+   246→        if is_banned(user_id):
+   247→            return
+   248→    except Exception:
+   249→        pass
+   250→
+   251→    try:
+   252→        track_event("total_messages")
+   253→    except Exception:
+   254→        pass
+   255→
+   256→    # ═══════════════════════════════════════════════════════════════
+   257→    # 🥇 الأولوية 1: Workflow النشط — توجيه الرسالة للخدمة المسؤولة
+   258→    # ═══════════════════════════════════════════════════════════════
+   259→    # لو المستخدم داخل workflow نشط (وضع دراسة، سؤال PDF، تعديل صورة)
+   260→    # رسالته بتروح للخدمة المسؤولة مش للـ AI
+   261→    workflow = None
+   262→    try:
+   263→        from workflow_manager import get_workflow, clear_workflow, update_workflow_step, touch_workflow
+   264→        workflow = get_workflow(user_id)
+   265→    except ImportError:
+   266→        logger.warning("⚠️ workflow_manager not available, falling back to user_states")
+   267→    except Exception as e:
+   268→        logger.debug(f"Workflow check error (non-critical): {e}")
+   269→
+   270→    if workflow:
+   271→        workflow_name = workflow.get("workflow", "")
+   272→        workflow_step = workflow.get("step", "")
+   273→        workflow_data = workflow.get("data", {})
+   274→        
+   275→        logger.info(f"🔄 Active workflow for user {user_id}: {workflow_name}/{workflow_step}")
+   276→        
+   277→        # ═══ Study Mode Workflow ═══
+   278→        if workflow_name == "study_mode":
+   279→            # تمديد صلاحية الـ workflow
+   280→            try:
+   281→                touch_workflow(user_id)
+   282→            except Exception:
+   283→                pass
+   284→            
+   285→            if workflow_step == "waiting_for_subject":
+   286→                # المستخدم كتب الموضوع اللي عايز يدرسه
+   287→                topic = user_text.strip()
+   288→                
+   289→                # Premium check
+   290→                if not check_limit(user_id, "study_mode")["allowed"]:
+   291→                    await update.message.reply_text(
+   292→                        premium_required_message(t("feature.study_mode", lang), lang),
+   293→                        parse_mode="HTML",
+   294→                        reply_markup=get_premium_keyboard(lang, user_id=user_id)
+   295→                    )
+   296→                    clear_workflow(user_id)
+   297→                    return
+   298→                
+   299→                # حفظ رسالة المستخدم
+   300→                try:
+   301→                    save_conversation(user_id, "user", user_text[:1000])
+   302→                except Exception:
+   303→                    pass
+   304→                
+   305→                # تحديث الـ workflow للخطوة الجاية
+   306→                try:
+   307→                    update_workflow_step(user_id, "active", {"subject": topic})
+   308→                except Exception:
+   309→                    pass
+   310→                
+   311→                # Premium check for AI
+   312→                if not await _check_premium_limit(update, user_id, "ai_messages_per_day", lang):
+   313→                    return
+   314→                
+   315→                increment_usage(user_id, "ai_messages")
+   316→                try:
+   317→                    track_event("ai_requests")
+   318→                except Exception:
+   319→                    pass
+   320→                
+   321→                # شرح الموضوع
+   322→                try:
+   323→                    from agents.study_agent import StudyAgent
+   324→                    study_agent = StudyAgent()
+   325→                except ImportError:
+   326→                    study_agent = None
+   327→                
+   328→                if study_agent:
+   329→                    stages = AI_STAGES(lang)
+   330→                    title = f"دراسة: {topic}" if lang == "ar" else f"Studying: {topic}"
+   331→                    # 🟢 FIX: استخدام TelegramThinkingFeedback للعمليات السريعة
+   332→                    feedback = TelegramThinkingFeedback(update, context)
+   333→                    await feedback.start()
+   334→                    
+   335→                    try:
+   336→                        # 🔴 FIX: إضافة timeout للـ AI call
+   337→                        explanation = await asyncio.wait_for(
+   338→                            study_agent.explain_lesson(topic, language=lang, user_id=user_id),
+   339→                            timeout=120  # أقصى وقت 2 دقيقة
+   340→                        )
+   341→                        explanation = clean_ai_response(explanation)
+   342→                        
+   343→                        # حفظ رد البوت
+   344→                        try:
+   345→                            save_conversation(user_id, "bot", explanation[:1000])
+   346→                        except Exception:
+   347→                            pass
+   348→                        
+   349→                        try:
+   350→                            from memory import save_learning
+   351→                            save_learning(user_id, topic, "studied")
+   352→                            detect_interests(user_id, topic)
+   353→                        except Exception:
+   354→                            pass
+   355→                        
+   356→                        await feedback.success()
+   357→                        await _safe_send_with_progress(update, context, explanation, lang, progress=None)
+   358→                        
+   359→                        # المستخدم يقدر يكمل سؤال في وضع الدراسة
+   360→                        if lang == "ar":
+   361→                            followup = "\n\n📚 <i>أنت في وضع الدراسة — اكتب أي سؤال عن الموضوع أو اكتب /exit عشان تخرج</i>"
+   362→                        else:
+   363→                            followup = "\n\n📚 <i>You're in Study Mode — ask any question or type /exit to leave</i>"
+   364→                        await update.message.reply_text(followup, parse_mode="HTML")
+   365→                        
+   366→                    except asyncio.TimeoutError:
+   367→                        logger.error(f"⏰ Study mode AI timed out for: {topic}")
+   368→                        await feedback.error()
+   369→                        await update.message.reply_text("⏰ استغرق الشرح وقت طويل. جرب تاني!" if lang == "ar" else "⏰ Explanation timed out. Please try again!")
+   370→                        try:
+   371→                            track_event("total_errors")
+   372→                        except Exception:
+   373→                            pass
+   374→                    except Exception as e:
+   375→                        logger.error(f"Error in study_mode workflow: {e}")
+   376→                        try:
+   377→                            track_event("total_errors")
+   378→                        except Exception:
+   379→                            pass
+   380→                        await feedback.error()
+   381→                        await update.message.reply_text("❌ حصل خطأ في الشرح. جرب تاني!" if lang == "ar" else "❌ Error explaining. Please try again!")
+   382→                else:
+   383→                    # fallback للـ AI العادي
+   384→                    clear_workflow(user_id)
+   385→                
+   386→                return  # لا تكمل — الرسالة اتعالجت بواسطة الـ workflow
+   387→            
+   388→            elif workflow_step == "active":
+   389→                # المستخدم داخل وضع الدراسة وبيسأل سؤال
+   390→                subject = workflow_data.get("subject", "")
+   391→                
+   392→                # لو عايز يخرج من وضع الدراسة
+   393→                if user_text.strip().lower() in ("/exit", "خروج", "exit", "الغاء", "إلغاء", "cancel"):
+   394→                    clear_workflow(user_id)
+   395→                    if lang == "ar":
+   396→                        await update.message.reply_text("✅ خرجت من وضع الدراسة. اكتب أي حاجة وهرد عليك عادي! 🤖")
+   397→                    else:
+   398→                        await update.message.reply_text("✅ Exited Study Mode. Type anything and I'll respond normally! 🤖")
+   399→                    return
+   400→                
+   401→                # حفظ رسالة المستخدم
+   402→                try:
+   403→                    save_conversation(user_id, "user", f"[دراسة: {subject}] {user_text[:800]}")
+   404→                except Exception:
+   405→                    pass
+   406→                
+   407→                # Premium check
+   408→                if not await _check_premium_limit(update, user_id, "ai_messages_per_day", lang):
+   409→                    return
+   410→                
+   411→                increment_usage(user_id, "ai_messages")
+   412→                
+   413→                # بنبني سؤال فيه سياق الموضوع
+   414→                if subject:
+   415→                    contextual_message = f"المستخدم بيدرس {subject} وسأل: {user_text}" if lang == "ar" else f"User is studying {subject} and asked: {user_text}"
+   416→                else:
+   417→                    contextual_message = user_text
+   418→                
+   419→                stages = AI_STAGES(lang)
+   420→                title = "وضع الدراسة" if lang == "ar" else "Study Mode"
+   421→                # 🟢 FIX: استخدام TelegramThinkingFeedback للعمليات السريعة
+   422→                feedback = TelegramThinkingFeedback(update, context)
+   423→                await feedback.start()
+   424→                
+   425→                try:
+   426→                    # 🔴 FIX: إضافة timeout
+   427→                    response = await asyncio.wait_for(
+   428→                        smart_chat(contextual_message, lang, user_id=user_id, username=update.effective_user.username),
+   429→                        timeout=120
+   430→                    )
+   431→                    response = clean_ai_response(response)
+   432→                    
+   433→                    # حفظ رد البوت
+   434→                    try:
+   435→                        save_conversation(user_id, "bot", response[:1000])
+   436→                    except Exception:
+   437→                        pass
+   438→                    
+   439→                    # حفظ ذكريات تلقائية
+   440→                    if user_id and response:
+   441→                        try:
+   442→                            from memory_context import auto_save_conversation_memory
+   443→                            auto_save_conversation_memory(user_id, user_text, response)
+   444→                        except Exception:
+   445→                            pass
+   446→                    
+   447→                    await feedback.success()
+   448→                    await _safe_send_with_progress(update, context, response, lang, progress=None)
+   449→                    
+   450→                    # تذكير إنه في وضع الدراسة
+   451→                    if lang == "ar":
+   452→                        reminder = "\n\n📚 <i>وضع الدراسة — اكتب سؤال تاني أو /exit للخروج</i>"
+   453→                    else:
+   454→                        reminder = "\n\n📚 <i>Study Mode — ask another question or /exit to leave</i>"
+   455→                    await update.message.reply_text(reminder, parse_mode="HTML")
+   456→                    
+   457→                except asyncio.TimeoutError:
+   458→                    logger.error(f"⏰ Study mode chat timed out for user {user_id}")
+   459→                    await feedback.error()
+   460→                    await update.message.reply_text("⏰ الرد استغرق وقت طويل. جرب تاني!" if lang == "ar" else "⏰ Response timed out. Please try again!")
+   461→                except Exception as e:
+   462→                    logger.error(f"Error in study_mode active chat: {e}")
+   463→                    await feedback.error()
+   464→                    await update.message.reply_text("❌ حصل خطأ. جرب تاني!" if lang == "ar" else "❌ Error occurred. Please try again!")
+   465→                
+   466→                return  # لا تكمل — الرسالة اتعالجت
+   467→        
+   468→        # ═══ PDF Question Workflow ═══
+   469→        elif workflow_name == "pdf_question":
+   470→            try:
+   471→                touch_workflow(user_id)
+   472→            except Exception:
+   473→                pass
+   474→            
+   475→            from handlers.callbacks import _get_pdf_context
+   476→            ctx = _get_pdf_context(user_id)
+   477→            if ctx and _PDFAgent:
+   478→                pdf_agent = _PDFAgent()
+   479→                await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
+   480→                try:
+   481→                    # حفظ سؤال المستخدم
+   482→                    try:
+   483→                        save_conversation(user_id, "user", f"[PDF سؤال] {user_text[:800]}")
+   484→                    except Exception:
+   485→                        pass
+   486→                    
+   487→                    result = await asyncio.wait_for(
+   488→                        pdf_agent.answer_question(ctx["text"], user_text, lang, user_id=user_id),
+   489→                        timeout=120
+   490→                    )
+   491→                    result = clean_ai_response(result)
+   492→                    
+   493→                    # حفظ رد البوت
+   494→                    try:
+   495→                        save_conversation(user_id, "bot", result[:1000])
+   496→                    except Exception:
+   497→                        pass
+   498→                    
+   499→                    await _safe_send_message(update, result)
+   500→                except asyncio.TimeoutError:
+   501→                    logger.error(f"⏰ PDF question timed out for user {user_id}")
+   502→                    if lang == "ar":
+   503→                        await update.message.reply_text("⏰ استغرق الرد وقت طويل. جرب تاني!")
+   504→                    else:
+   505→                        await update.message.reply_text("⏰ Response timed out. Please try again!")
+   506→                except Exception as e:
+   507→                    logger.error(f"Error answering PDF question: {e}")
+   508→                    await update.message.reply_text("❌ حصل خطأ. جرب تاني." if lang == "ar" else "❌ Error occurred. Please try again.")
+   509→            
+   510→            # لا نمسح الـ workflow — المستخدم يقدر يسأل أسئلة كتير عن نفس PDF
+   511→            return
+   512→        
+   513→        # ═══ Image Edit Workflow ═══
+   514→        elif workflow_name == "image_edit":
+   515→            try:
+   516→                touch_workflow(user_id)
+   517→            except Exception:
+   518→                pass
+   519→            
+   520→            from handlers.image_handlers import _translate_prompt_to_english
+   521→            from provider_manager import get_provider_manager
+   522→            from premium import can_use_image_edit
+   523→            
+   524→            image_base64 = workflow_data.get("image_base64", "")
+   525→            clear_workflow(user_id)  # Clear after use
+   526→            
+   527→            if not can_use_image_edit(user_id):
+   528→                await update.message.reply_text("❌ الميزة دي Premium بس." if lang == "ar" else "❌ This feature is Premium only.")
+   529→                return
+   530→            
+   531→            if not image_base64:
+   532→                if lang == "ar":
+   533→                    await update.message.reply_text("❌ الصورة مش متاحة. ارفعها تاني.")
+   534→                else:
+   535→                    await update.message.reply_text("❌ Image not available. Please upload it again.")
+   536→                return
+   537→            
+   538→            # Progress
+   539→            stages = AI_STAGES(lang)
+   540→            title = "تعديل الصورة" if lang == "ar" else "Editing Image"
+   541→            progress = ProgressManager(update, context, stages, lang, title)
+   542→            await progress.start()
+   543→            
+   544→            try:
+   545→                await progress.update_stage(0)
+   546→                await progress.update_stage(1)
+   547→                
+   548→                original_prompt = user_text
+   549→                edit_prompt = await _translate_prompt_to_english(user_text, user_id=user_id)
+   550→                was_translated = (edit_prompt != original_prompt)
+   551→                
+   552→                manager = get_provider_manager()
+   553→                result = await asyncio.wait_for(
+   554→                    manager.edit_image_async(
+   555→                        prompt=edit_prompt,
+   556→                        image_base64=image_base64,
+   557→                        user_id=user_id,
+   558→                    ),
+   559→                    timeout=120
+   560→                )
+   561→                
+   562→                await progress.update_stage(2)
+   563→                
+   564→                if not result:
+   565→                    await progress.error("❌ حصل خطأ في تعديل الصورة. جرب وصف تاني!" if lang == "ar" else "❌ Error editing image. Try a different description!")
+   566→                    return
+   567→                
+   568→                # حفظ المحادثة
+   569→                try:
+   570→                    save_conversation(user_id, "user", f"[تعديل صورة] {user_text[:500]}")
+   571→                except Exception:
+   572→                    pass
+   573→                
+   574→                caption = f"🖌️ <b>{'الصورة المعدّلة جاهزه!' if lang == 'ar' else 'Edited image is ready!'}</b>\n\n📝 <i>{original_prompt[:200]}</i>"
+   575→                if was_translated:
+   576→                    caption = f"🖌️ <b>{'الصورة المعدّلة جاهزه!' if lang == 'ar' else 'Edited image is ready!'}</b>\n\n📝 <i>{original_prompt[:150]}</i>\n🌐 <i>{edit_prompt[:150]}</i>"
+   577→                
+   578→                if result.get("base64"):
+   579→                    import base64, io
+   580→                    image_bytes = base64.b64decode(result["base64"])
+   581→                    await progress.complete(delete_progress=True)
+   582→                    await update.message.reply_photo(photo=io.BytesIO(image_bytes), caption=caption, parse_mode="HTML")
+   583→                elif result.get("url"):
+   584→                    await progress.complete(delete_progress=True)
+   585→                    await update.message.reply_photo(photo=result["url"], caption=caption, parse_mode="HTML")
+   586→                else:
+   587→                    await progress.error("❌ حصل خطأ في تعديل الصورة. جرب تاني!" if lang == "ar" else "❌ Error editing image. Please try again!")
+   588→                
+   589→                increment_usage(user_id, "image_edits")
+   590→                try: track_event("image_edits")
+   591→                except: pass
+   592→                
+   593→            except asyncio.TimeoutError:
+   594→                logger.error(f"⏰ Image edit timed out for user {user_id}")
+   595→                await progress.error("⏰ تعديل الصورة استغرق وقت طويل. جرب تاني!" if lang == "ar" else "⏰ Image edit timed out. Please try again!")
+   596→            except Exception as e:
+   597→                logger.error(f"Error in image_edit workflow: {e}")
+   598→                await progress.error("❌ حصل خطأ في تعديل الصورة." if lang == "ar" else "❌ Error editing image.")
+   599→            
+   600→            return
+   601→
+   602→    # ═══════════════════════════════════════════════════════════════
+   603→    # 🥈 الأولوية 1.5: Backward compatibility — user_states القديم
+   604→    # ═══════════════════════════════════════════════════════════════
+   605→    # لو الـ workflow_manager مش متاح، بنستخدم user_states القديم
+   606→    user_state = user_states.get(user_id, {})
+   607→    if user_state.get("waiting_for") == "pdf_question":
+   608→        from handlers.callbacks import _get_pdf_context
+   609→        ctx = _get_pdf_context(user_id)
+   610→        if ctx and _PDFAgent:
+   611→            pdf_agent = _PDFAgent()
+   612→            await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
+   613→            try:
+   614→                try:
+   615→                    save_conversation(user_id, "user", f"[PDF سؤال] {user_text[:800]}")
+   616→                except Exception:
+   617→                    pass
+   618→                
+   619→                result = await asyncio.wait_for(
+   620→                    pdf_agent.answer_question(ctx["text"], user_text, lang, user_id=user_id),
+   621→                    timeout=120
+   622→                )
+   623→                result = clean_ai_response(result)
+   624→                
+   625→                try:
+   626→                    save_conversation(user_id, "bot", result[:1000])
+   627→                except Exception:
+   628→                    pass
+   629→                
+   630→                await _safe_send_message(update, result)
+   631→            except asyncio.TimeoutError:
+   632→                if lang == "ar":
+   633→                    await update.message.reply_text("⏰ استغرق الرد وقت طويل. جرب تاني!")
+   634→                else:
+   635→                    await update.message.reply_text("⏰ Response timed out. Please try again!")
+   636→            except Exception as e:
+   637→                logger.error(f"Error answering PDF question: {e}")
+   638→                await update.message.reply_text("❌ حصل خطأ. جرب تاني." if lang == "ar" else "❌ Error occurred. Please try again.")
+   639→            # لا نمسح — المستخدم يقدر يسأل كتير
+   640→            return
+   641→        else:
+   642→            user_states.pop(user_id, None)
+   643→
+   644→    if user_states.get(user_id, {}).get("waiting_for") == "image_edit":
+   645→        from handlers.image_handlers import _translate_prompt_to_english
+   646→        from provider_manager import get_provider_manager
+   647→        from premium import can_use_image_edit
+   648→        
+   649→        img_state = user_states.get(user_id, {})
+   650→        image_base64 = img_state.get("image_base64", "")
+   651→        user_states.pop(user_id, None)
+   652→        
+   653→        if not can_use_image_edit(user_id):
+   654→            await update.message.reply_text("❌ الميزة دي Premium بس." if lang == "ar" else "❌ This feature is Premium only.")
+   655→            return
+   656→        
+   657→        if not image_base64:
+   658→            if lang == "ar":
+   659→                await update.message.reply_text("❌ الصورة مش متاحة. ارفعها تاني.")
+   660→            else:
+   661→                await update.message.reply_text("❌ Image not available. Please upload it again.")
+   662→            return
+   663→        
+   664→        stages = AI_STAGES(lang)
+   665→        title = "تعديل الصورة" if lang == "ar" else "Editing Image"
+   666→        progress = ProgressManager(update, context, stages, lang, title)
+   667→        await progress.start()
+   668→        
+   669→        try:
+   670→            await progress.update_stage(0)
+   671→            await progress.update_stage(1)
+   672→            original_prompt = user_text
+   673→            edit_prompt = await _translate_prompt_to_english(user_text, user_id=user_id)
+   674→            was_translated = (edit_prompt != original_prompt)
+   675→            manager = get_provider_manager()
+   676→            result = await asyncio.wait_for(
+   677→                manager.edit_image_async(prompt=edit_prompt, image_base64=image_base64, user_id=user_id),
+   678→                timeout=120
+   679→            )
+   680→            await progress.update_stage(2)
+   681→            
+   682→            if not result:
+   683→                await progress.error("❌ حصل خطأ في تعديل الصورة. جرب وصف تاني!" if lang == "ar" else "❌ Error editing image.")
+   684→                return
+   685→            
+   686→            caption = f"🖌️ <b>{'الصورة المعدّلة جاهزه!' if lang == 'ar' else 'Edited image is ready!'}</b>\n\n📝 <i>{original_prompt[:200]}</i>"
+   687→            if was_translated:
+   688→                caption = f"🖌️ <b>{'الصورة المعدّلة جاهزه!' if lang == 'ar' else 'Edited image is ready!'}</b>\n\n📝 <i>{original_prompt[:150]}</i>\n🌐 <i>{edit_prompt[:150]}</i>"
+   689→            
+   690→            if result.get("base64"):
+   691→                import base64, io
+   692→                image_bytes = base64.b64decode(result["base64"])
+   693→                await progress.complete(delete_progress=True)
+   694→                await update.message.reply_photo(photo=io.BytesIO(image_bytes), caption=caption, parse_mode="HTML")
+   695→            elif result.get("url"):
+   696→                await progress.complete(delete_progress=True)
+   697→                await update.message.reply_photo(photo=result["url"], caption=caption, parse_mode="HTML")
+   698→            else:
+   699→                await progress.error("❌ حصل خطأ في تعديل الصورة." if lang == "ar" else "❌ Error editing image.")
+   700→            
+   701→            increment_usage(user_id, "image_edits")
+   702→            try: track_event("image_edits")
+   703→            except: pass
+   704→        except asyncio.TimeoutError:
+   705→            await progress.error("⏰ تعديل الصورة استغرق وقت طويل. جرب تاني!" if lang == "ar" else "⏰ Image edit timed out.")
+   706→        except Exception as e:
+   707→            logger.error(f"Error in image_edit state: {e}")
+   708→            await progress.error("❌ حصل خطأ في تعديل الصورة." if lang == "ar" else "❌ Error editing image.")
+   709→        return
+   710→
+   711→    # ═══════════════════════════════════════════════════════════════
+   712→    # 🥈 الأولوية 1.7: تغيير وقت الأخبار — كشف نمط HH:MM
+   713→    # ═══════════════════════════════════════════════════════════════
+   714→    # لو المستخدم كتب وقت بصيغة HH:MM (زي 14:30 أو 09:00)
+   715→    # ده معناه إنه عايز يغير وقت الأخبار اليومية
+   716→    import re as _time_re
+   717→    _time_match = _time_re.match(r'^([0-1]?[0-9]|2[0-3]):([0-5][0-9])$', user_text.strip())
+   718→    if _time_match:
+   719→        hour_str = _time_match.group(1).zfill(2)
+   720→        minute_str = _time_match.group(2).zfill(2)
+   721→        new_time = f"{hour_str}:{minute_str}"
+   722→        
+   723→        set_news_time(user_id, new_time)
+   724→        
+   725→        if lang == "ar":
+   726→            await update.message.reply_text(
+   727→                f"✅ <b>تم تغيير وقت الأخبار!</b>\n\n"
+   728→                f"⏰ الوقت الجديد: <code>{new_time}</code> (توقيت القاهرة)\n"
+   729→                f"📬 هابعتلك الأخبار كل يوم في الوقت ده.\n\n"
+   730→                f"💡 ممكن تغيره تاني من ⚙️ الإعدادات",
+   731→                parse_mode="HTML"
+   732→            )
+   733→        else:
+   734→            await update.message.reply_text(
+   735→                f"✅ <b>News time updated!</b>\n\n"
+   736→                f"⏰ New time: <code>{new_time}</code> (Cairo time)\n"
+   737→                f"📬 I'll send you news every day at this time.\n\n"
+   738→                f"💡 You can change it again from ⚙️ Settings",
+   739→                parse_mode="HTML"
+   740→            )
+   741→        return
+   742→
+   743→    # ═══════════════════════════════════════════════════════════════
+   744→    # 🥈 الأولوية 2: أزرار لوحة المفاتيح
+   745→    # ═══════════════════════════════════════════════════════════════
+   746→    keyboard_commands = {
+   747→        "📰 الأخبار": "/news", "📰 News": "/news",
+   748→        "🤖 اسأل My Bro": "/ask", "🤖 Ask My Bro": "/ask",
+   749→        "🔍 البحث": "/search", "🔍 Search": "/search",
+   750→        "🔍 بحث الويب": "/search", "🔍 Web Search": "/search",
+   751→        "📚 تعلم AI": "/learn", "📚 Learn AI": "/learn",
+   752→        "📚 وضع الدراسة": "/study", "📚 Study Mode": "/study",
+   753→        "⚙️ الإعدادات": "settings", "⚙️ Settings": "settings",
+   754→        "ℹ️ المساعدة": "/help", "ℹ️ Help": "/help",
+   755→        "⭐ Premium": "/premium", "⭐ Premium": "/premium",
+   756→        "📋 الخطة و حدود الإستخدام": "/premium", "📋 Plan & Usage": "/premium",
+   757→        "📄 تحليل ملف": "pdf_upload", "📄 Analyze File": "pdf_upload",
+   758→        "🎬 ملخص يوتيوب": "youtube_prompt", "🎬 YouTube Summary": "youtube_prompt",
+   759→        "🧠 ذاكرتي": "/memory", "🧠 My Memory": "/memory",
+   760→        "📈 التريندات": "/trending", "📈 Trending": "/trending",
+   761→        "🎨 صورة": "/image", "🎨 Image": "/image",
+   762→        "🎨 إنشاء صورة": "/image", "🎨 Create Image": "/image",
+   763→        "🖌️ عدّل صورة": "edit_prompt", "🖌️ Edit Image": "edit_prompt",
+   764→        "🖌️ تعديل": "edit_prompt", "🖌️ Edit": "edit_prompt",
+   765→        "📥 تحميل فيديو": "download_prompt", "📥 Download Video": "download_prompt",
+   766→        "📥 تحميل": "download_prompt", "📥 Download": "download_prompt",
+   767→        "🎬 فيديو بالبحث": "video_search_prompt", "🎬 Video Search": "video_search_prompt",
+   768→        "🎵 صوت بالبحث": "audio_search_prompt", "🎵 Audio Search": "audio_search_prompt",
+   769→        "🖼️ بحث صور": "photo_search_prompt", "🖼️ Image Search": "photo_search_prompt",
+   770→    }
+   771→
+   772→    quota_free_commands = {"settings", "/premium", "/help", "/memory"}
+   773→
+   774→    if user_text in keyboard_commands:
+   775→        cmd = keyboard_commands[user_text]
+   776→
+   777→        if cmd in quota_free_commands:
+   778→            if cmd == "settings":
+   779→                user_sub = is_subscribed(user_id)
+   780→                keyboard = get_settings_keyboard(lang, user_sub)
+   781→                from premium import get_user_plan
+   782→                plan = get_user_plan(user_id)
+   783→                if lang == "ar":
+   784→                    sub_status = "✅ مشترك" if user_sub else "❌ مش مشترك"
+   785→                    plan_display = "⭐ Premium" if plan == "premium" else "🆓 مجاني"
+   786→                    msg = f"⚙️ <b>الإعدادات</b>\n━━━━━━━━━━━━━━━━━\n\n👤 الخطة: {plan_display}\n📬 أخبار يومية: {sub_status}\n\nاختر ما تريد تغييره:"
+   787→                else:
+   788→                    sub_status_en = "✅ Subscribed" if user_sub else "❌ Not subscribed"
+   789→                    plan_display = "⭐ Premium" if plan == "premium" else "🆓 Free"
+   790→                    msg = f"⚙️ <b>Settings</b>\n━━━━━━━━━━━━━━━━━\n\n👤 Plan: {plan_display}\n📬 Daily News: {sub_status_en}\n\nChoose what to change:"
+   791→                await update.message.reply_text(msg, parse_mode="HTML", reply_markup=keyboard)
+   792→                return
+   793→            elif cmd == "/premium":
+   794→                if premium_command:
+   795→                    await premium_command(update, context)
+   796→                return
+   797→            elif cmd == "/help":
+   798→                if help_command:
+   799→                    await help_command(update, context)
+   800→                return
+   801→            elif cmd == "/memory":
+   802→                if memory_command:
+   803→                    await memory_command(update, context)
+   804→                return
+   805→
+   806→        from premium import check_limit as _check_quota
+   807→        quota_check = _check_quota(user_id, "ai_messages_per_day", update.effective_user.username if update.effective_user else None)
+   808→        if not quota_check["allowed"] and quota_check["plan"] == "free":
+   809→            from premium import limit_reached_message, get_premium_keyboard
+   810→            feature_name = "💬 رسائل AI" if lang == "ar" else "💬 AI Messages"
+   811→            await update.message.reply_text(
+   812→                limit_reached_message(feature_name, quota_check["remaining"], quota_check["limit"], lang),
+   813→                parse_mode="HTML",
+   814→                reply_markup=get_premium_keyboard(lang, user_id=user_id)
+   815→            )
+   816→            return
+   817→
+   818→        if cmd == "/ask":
+   819→            if lang == "ar":
+   820→                msg = "🤖 اكتب سؤالك وسأجيبك فوراً!"
+   821→            else:
+   822→                msg = "🤖 Type your question and I'll answer right away!"
+   823→            await update.message.reply_text(msg)
+   824→            return
+   825→        elif cmd == "/search":
+   826→            if lang == "ar":
+   827→                msg = "🔍 <b>البحث في أخبار AI والويب</b>\n\nاكتب كلمة البحث بعد الأمر\nمثال: <code>/search تفسير القرآن</code>\n\nأو اضغط على زر 🔍 البحث واكتب ما تريد البحث عنه."
+   828→            else:
+   829→                msg = "🔍 <b>Search AI News & Web</b>\n\nType your search query after the command\nExample: <code>/search Islamic history</code>\n\nOr tap 🔍 Search and type what you want to find."
+   830→            await update.message.reply_text(msg, parse_mode="HTML")
+   831→            return
+   832→        elif cmd == "/learn":
+   833→            keyboard = get_roadmap_keyboard(lang)
+   834→            if lang == "ar":
+   835→                msg = "📚 <b>اختر موضوع للتعلم</b>"
+   836→            else:
+   837→                msg = "📚 <b>Choose a topic to learn</b>"
+   838→            await update.message.reply_text(msg, parse_mode="HTML", reply_markup=keyboard)
+   839→            return
+   840→        elif cmd == "/study":
+   841→            # 🔴 FIX: وضع الدراسة — نحفظ الـ workflow عشان الرسالة الجاية تتوجه صح
+   842→            if not check_limit(user_id, "study_mode")["allowed"]:
+   843→                await update.message.reply_text(
+   844→                    premium_required_message(t("feature.study_mode", lang), lang),
+   845→                    parse_mode="HTML",
+   846→                    reply_markup=get_premium_keyboard(lang, user_id=user_id)
+   847→                )
+   848→                return
+   849→            # حفظ حالة وضع الدراسة
+   850→            try:
+   851→                from workflow_manager import set_workflow
+   852→                set_workflow(user_id, "study_mode", "waiting_for_subject")
+   853→            except Exception:
+   854→                pass  # fallback: الكيبورد بس هيقول يكتب الموضوع
+   855→            
+   856→            if lang == "ar":
+   857→                msg = "📚 <b>وضع الدراسة</b>\n\nاكتب الموضوع اللي عايز تدرسه!\nمثال: علوم القرآن, الفقه الإسلامي, السيرة النبوية\n\n💡 اكتب /exit عشان تخرج من وضع الدراسة"
+   858→            else:
+   859→                msg = "📚 <b>Study Mode</b>\n\nType the topic you want to study!\nExample: Quran sciences, Islamic jurisprudence, Prophetic biography\n\n💡 Type /exit to leave Study Mode"
+   860→            await update.message.reply_text(msg, parse_mode="HTML")
+   861→            return
+   862→        elif cmd == "pdf_upload":
+   863→            if lang == "ar":
+   864→                msg = "📄 <b>تحليل ملفات</b>\n\nابعتلي ملف PDF أو Word أو TXT وهحللهولك!\n\n💡 الملفات المدعومة:\n→ PDF\n→ Word (docx)\n→ TXT, MD, CSV, JSON\n→ ملفات الكود (py, js, html)\n\n📎 ابعت الملف دلوقتي!"
+   865→            else:
+   866→                msg = "📄 <b>File Analysis</b>\n\nSend me a PDF, Word, or TXT file and I'll analyze it!\n\n💡 Supported files:\n→ PDF\n→ Word (docx)\n→ TXT, MD, CSV, JSON\n→ Code files (py, js, html)\n\n📎 Send the file now!"
+   867→            await update.message.reply_text(msg, parse_mode="HTML")
+   868→            return
+   869→        elif cmd == "youtube_prompt":
+   870→            if lang == "ar":
+   871→                msg = "🎬 <b>ملخص يوتيوب</b>\n\nاستخدم أمر <code>/youtube</code> قبل الرابط وهلخصلك الفيديو!\n\n💡 <b>مثال:</b>\n<code>/youtube https://youtube.com/watch?v=...</code>\n\n⚠️ <b>ملاحظة:</b> لو بعت الرابط لوحده هيحملهولك فيديو\nلو عايز تلخيص لازم تستخدم /youtube"
+   872→            else:
+   873→                msg = "🎬 <b>YouTube Summary</b>\n\nUse <code>/youtube</code> before the URL to get a summary!\n\n💡 <b>Example:</b>\n<code>/youtube https://youtube.com/watch?v=...</code>\n\n⚠️ <b>Note:</b> Sending just the URL will download the video\nTo summarize, you must use /youtube"
+   874→            await update.message.reply_text(msg, parse_mode="HTML")
+   875→            return
+   876→        elif cmd == "/image":
+   877→            from handlers.image_handlers import image_command
+   878→            context.args = []
+   879→            await image_command(update, context)
+   880→            return
+   881→        elif cmd == "edit_prompt":
+   882→            from handlers.image_handlers import edit_command
+   883→            context.args = []
+   884→            await edit_command(update, context)
+   885→            return
+   886→        elif cmd == "download_prompt":
+   887→            if lang == "ar":
+   888→                msg = "📥 <b>تحميل وسائط من أي منصة</b>\n\n💡 <b>طريقتين:</b>\n1️⃣ ابعت الرابط لوحده وهيحملهولك تلقائي!\n2️⃣ أو استخدم: <code>/download الرابط</code>\n\n<b>المنصات المدعومة:</b>\n→ YouTube, Facebook, Instagram\n→ TikTok, Twitter/X, Telegram\n→ Threads, Reddit, Vimeo\n\n⭐ الميزة دي Premium بس"
+   889→            else:
+   890→                msg = "📥 <b>Download Media from Any Platform</b>\n\n💡 <b>Two ways:</b>\n1️⃣ Just paste the URL and it will auto-download!\n2️⃣ Or use: <code>/download URL</code>\n\n<b>Supported Platforms:</b>\n→ YouTube, Facebook, Instagram\n→ TikTok, Twitter/X, Telegram\n→ Threads, Reddit, Vimeo\n\n⭐ Premium only feature"
+   891→            await update.message.reply_text(msg, parse_mode="HTML")
+   892→            return
+   893→        elif cmd == "video_search_prompt":
+   894→            if lang == "ar":
+   895→                msg = "🎬 <b>بحث فيديو YouTube</b>\n\nاكتب كلمة البحث بعد الأمر\nمثال: <code>/video قرآن كريم ماهر المعيقلي</code>\n\n💡 هندور في YouTube ونعرضلك نتائج تختار منها!"
+   896→            else:
+   897→                msg = "🎬 <b>YouTube Video Search</b>\n\nType your search query after the command\nExample: <code>/video Quran recitation</code>\n\n💡 We'll search YouTube and show results to choose from!"
+   898→            await update.message.reply_text(msg, parse_mode="HTML")
+   899→            return
+   900→        elif cmd == "audio_search_prompt":
+   901→            if lang == "ar":
+   902→                msg = "🎵 <b>بحث صوت YouTube</b>\n\nاكتب كلمة البحث بعد الأمر\nمثال: <code>/audio قرآن كريم عبد الباسط</code>\n\n💡 هندور في YouTube ونعرضلك نتائج تختار منها ونحمّلها صوت MP3!"
+   903→            else:
+   904→                msg = "🎵 <b>YouTube Audio Search</b>\n\nType your search query after the command\nExample: <code>/audio Quran recitation</code>\n\n💡 We'll search YouTube and download as MP3 audio!"
+   905→            await update.message.reply_text(msg, parse_mode="HTML")
+   906→            return
+   907→        elif cmd == "photo_search_prompt":
+   908→            if lang == "ar":
+   909→                msg = "🖼️ <b>بحث صور</b>\n\nاكتب كلمة البحث بعد الأمر\nمثال: <code>/photo المسجد الأقصى</code>\n\n💡 هتختار عدد الصور من الأزرار (3 / 5 / 10 / 15)"
+   910→            else:
+   911→                msg = "🖼️ <b>Image Search</b>\n\nType your search query after the command\nExample: <code>/photo Al-Aqsa Mosque</code>\n\n💡 You'll choose the number of images from buttons (3 / 5 / 10 / 15)"
+   912→            await update.message.reply_text(msg, parse_mode="HTML")
+   913→            return
+   914→        else:
+   915→            context.args = []
+   916→            if cmd == "/news":
+   917→                if news_command:
+   918→                    await news_command(update, context)
+   919→            elif cmd == "/trending":
+   920→                if trending_command:
+   921→                    await trending_command(update, context)
+   922→            return
+   923→
+   924→    # ═══════════════════════════════════════════════════════════════
+   925→    # 🥉 الأولوية 3: فحص الكوتا
+   926→    # ═══════════════════════════════════════════════════════════════
+   927→    from premium import check_limit as _check_quota
+   928→    quota_check = _check_quota(user_id, "ai_messages_per_day", update.effective_user.username if update.effective_user else None)
+   929→    if not quota_check["allowed"] and quota_check["plan"] == "free":
+   930→        from premium import limit_reached_message, get_premium_keyboard
+   931→        feature_name = "💬 رسائل AI" if lang == "ar" else "💬 AI Messages"
+   932→        await update.message.reply_text(
+   933→            limit_reached_message(feature_name, quota_check["remaining"], quota_check["limit"], lang),
+   934→            parse_mode="HTML",
+   935→            reply_markup=get_premium_keyboard(lang, user_id=user_id)
+   936→        )
+   937→        return
+   938→
+   939→    # ═══ Only increment chat_count for actual AI chat messages ═══
+   940→    increment_chat_count(user_id)
+   941→
+   942→    # ═══════════════════════════════════════════════════════════════
+   943→    # 🥉 الأولوية 3.5: أوامر ذكية (ذاكرة، روابط)
+   944→    # ═══════════════════════════════════════════════════════════════
+   945→    # Smart Intent: Memory Questions
+   946→    memory_keywords_ar = ["ذاكرتك", "ذاكرتي", "فاكرك", "فاكرة", "تعرف عني", "معلوماتك عني", "ايه اللي فاكره", "بتفكرني", "عامل ايه ذاكرتك"]
+   947→    memory_keywords_en = ["your memory", "my memory", "remember me", "what do you know about me", "what you know about me", "do you remember"]
+   948→    text_lower = user_text.lower()
+   949→    is_memory_question = any(kw in text_lower for kw in memory_keywords_ar + memory_keywords_en)
+   950→    if is_memory_question:
+   951→        if memory_command:
+   952→            await memory_command(update, context)
+   953→            return
+   954→
+   955→    # Smart Intent: Any Media URL → Auto Download
+   956→    extracted_url = None
+   957→    try:
+   958→        from handlers.download_handlers import _detect_platform, _is_direct_media_url, _extract_url, _process_download_request
+   959→        extracted_url = _extract_url(user_text)
+   960→    except ImportError as de:
+   961→        logger.error(f"❌ Failed to import download_handlers: {de}")
+   962→    except Exception as de2:
+   963→        logger.error(f"❌ Error in URL detection: {de2}")
+   964→    
+   965→    if extracted_url:
+   966→        platform = _detect_platform(extracted_url)
+   967→        direct_type = _is_direct_media_url(extracted_url)
+   968→        is_social = platform != "unknown"
+   969→        is_direct_media = direct_type in ("image", "audio", "video")
+   970→        
+   971→        if is_social or is_direct_media:
+   972→            if not check_limit(user_id, "image_gen")["allowed"]:
+   973→                feature_name = t("feature.downloads", lang)
+   974→                await update.message.reply_text(
+   975→                    premium_required_message(feature_name, lang),
+   976→                    parse_mode="HTML",
+   977→                    reply_markup=get_premium_keyboard(lang, user_id=user_id)
+   978→                )
+   979→                return
+   980→            await _process_download_request(update, context, extracted_url, lang, user_id)
+   981→            return
+   982→
+   983→    # ═══════════════════════════════════════════════════════════════
+   984→    # 🏅 الأولوية 4: محادثة ذكية مع AI (المرحلة الأخيرة)
+   985→    # ═══════════════════════════════════════════════════════════════
+   986→    if not await _check_premium_limit(update, user_id, "ai_messages_per_day", lang):
+   987→        return
+   988→
+   989→    increment_usage(user_id, "ai_messages")
+   990→    try:
+   991→        track_event("ai_requests")
+   992→    except Exception:
+   993→        pass
+   994→
+   995→    # 🔴 NOTE: رسالة المستخدم بتتحفظ جوا smart_chat() تلقائي
+   996→    # لو الـ AI timeout، بنحفظ الرسالة في الـ timeout handler
+   997→
+   998→    stages = AI_STAGES(lang)
+   999→    title = "التفكير" if lang == "ar" else "Thinking"
+  1000→    # 🟢 FIX: استخدام TelegramThinkingFeedback للعمليات السريعة (💭 → ✅)
+  1001→    # أسرع من ProgressManager — مش بيستهلك API calls في edit رسائل
+  1002→    feedback = TelegramThinkingFeedback(update, context)
+  1003→    await feedback.start()
+  1004→
+  1005→    try:
+  1006→        # 🔴 FIX (Problem 3): إضافة timeout صريح للـ AI call
+  1007→        # لو الـ AI استغرق أكتر من 120 ثانية، نبعت رسالة خطأ بدل ما يعلق
+  1008→        try:
+  1009→            response = await asyncio.wait_for(
+  1010→                smart_chat(user_text, lang, user_id=user_id, username=update.effective_user.username),
+  1011→                timeout=120  # أقصى وقت 2 دقيقة للـ AI
+  1012→            )
+  1013→        except asyncio.TimeoutError:
+  1014→            logger.error(f"⏰ AI chat timed out after 120s for user {user_id}: {user_text[:50]}")
+  1015→            # 🔴 FIX: حفظ رسالة المستخدم حتى لو timeout — عشان السياق ما يضيعش
+  1016→            try:
+  1017→                save_conversation(user_id, "user", user_text[:1000])
+  1018→            except Exception:
+  1019→                pass
+  1020→            try:
+  1021→                track_event("total_errors")
+  1022→            except Exception:
+  1023→                pass
+  1024→            await feedback.error()
+  1025→            await update.message.reply_text(
+  1026→                "⏰ استغرق الرد وقت طويل. جرب تاني أو اختصر سؤالك!" if lang == "ar"
+  1027→                else "⏰ Response took too long. Please try again or simplify your question!"
+  1028→            )
+  1029→            return
+  1030→
+  1031→        response = clean_ai_response(response)
+  1032→
+  1033→        # 🔴 NOTE: رد البوت بيتحفظ جوا smart_chat() تلقائي — مش محتاجين نحفظه تاني
+  1034→
+  1035→        # حفظ ذكريات تلقائية (تفضيلات، معلومات شخصية)
+  1036→        if user_id and response:
+  1037→            try:
+  1038→                from memory_context import auto_save_conversation_memory
+  1039→                auto_save_conversation_memory(user_id, user_text, response)
+  1040→            except Exception as e:
+  1041→                logger.debug(f"Auto-save memory error (non-critical): {e}")
+  1042→
+  1043→        # 🟢 FIX: إرسال آمن مع retry + تقسيم (بدون progress bar — أسرع)
+  1044→        await feedback.success()
+  1045→        await _safe_send_with_progress(update, context, response, lang, progress=None)
+  1046→
+  1047→    except Exception as e:
+  1048→        logger.error(f"Error in handle_message: {e}", exc_info=True)
+  1049→        try:
+  1050→            track_event("total_errors")
+  1051→        except Exception:
+  1052→            pass
+  1053→        try:
+  1054→            await feedback.error()
+  1055→            await update.message.reply_text("❌ حصل خطأ. جرب تاني!" if lang == "ar" else "❌ Error occurred. Please try again.")
+  1056→        except Exception:
+  1057→            pass
+  1058→

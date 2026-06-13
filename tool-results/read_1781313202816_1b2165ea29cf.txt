@@ -1,0 +1,741 @@
+     1→"""
+     2→My Bro v9.4 - مساعد الذكاء الاصطناعي الشخصي المتكامل
+     3→بوت تيليجرام كامل مع:
+     4→+ أوامر + محادثة ذكية + بحث ويب + أزرار تفاعلية
+     5→+ تجربة متميزة مع مؤشرات الكتابة + نظام تقدم مباشر + جدولة الأخبار
+     6→+ نظام Premium + وكلاء AI (PDF, YouTube, Study, Voice)
+     7→+ لوحة تحكم Dashboard + تتبع الاستخدام
+     8→+ نظام ذاكرة متكامل (سياق 20 رسالة + ذاكرة طويلة المدى + استرجاع دلالي)
+     9→"""
+    10→
+    11→import logging
+    12→import sys
+    13→import asyncio
+    14→import signal
+    15→from datetime import datetime
+    16→
+    17→# 🐦 Sentry — must be one of the very first imports
+    18→from sentry_config import init_sentry
+    19→init_sentry()
+    20→
+    21→from telegram import Update
+    22→from telegram.ext import Application, ContextTypes
+    23→
+    24→from apscheduler.schedulers.asyncio import AsyncIOScheduler
+    25→import pytz
+    26→
+    27→from config import (
+    28→    BOT_TOKEN, BOT_NAME, BOT_VERSION,
+    29→    DAILY_NEWS_TIMEZONE, BROADCAST_DELAY_SECONDS, CHAT_ID,
+    30→)
+    31→from premium import init_premium_tables
+    32→from dashboard import init_dashboard_tables, track_event
+    33→from handlers import register_handlers
+    34→from handlers.error_monitor import get_error_stats
+    35→
+    36→# ═══ News broadcast imports ═══
+    37→from memory import (
+    38→    get_subscribers_for_time, set_last_news_delivery,
+    39→    unsubscribe_user,
+    40→)
+    41→from news_fetcher import fetch_news
+    42→from filters import filter_news
+    43→from scorer import rank_articles
+    44→from summarizer import summarize_articles
+    45→from formatters import (
+    46→    format_news_item, daily_news_header, daily_news_footer,
+    47→)
+    48→
+    49→# إعداد الـ Logging
+    50→logging.basicConfig(
+    51→    level=logging.INFO,
+    52→    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    53→    handlers=[
+    54→        logging.StreamHandler(sys.stdout),
+    55→    ]
+    56→)
+    57→logger = logging.getLogger(__name__)
+    58→
+    59→# ⚡ كاش أخبار AI المسبق — يتجهز في الخلفية كل ساعة
+    60→_precomputed_news_cache = {
+    61→    "ar": {"summary": "", "updated_at": 0},
+    62→    "en": {"summary": "", "updated_at": 0},
+    63→}
+    64→_NEWS_CACHE_TTL = 3600  # 1 ساعة
+    65→
+    66→
+    67→async def _precompute_news_background():
+    68→    """حساب أخبار AI في الخلفية — يتجهز كل ساعة عشان الرد يكون فوري"""
+    69→    global _precomputed_news_cache
+    70→
+    71→    while True:
+    72→        try:
+    73→            for lang in ["ar", "en"]:
+    74→                logger.info(f"📰 Pre-computing AI news summary ({lang})...")
+    75→
+    76→                if lang == "ar":
+    77→                    query = "أحدث أخبار الذكاء الاصطناعي اليوم"
+    78→                else:
+    79→                    query = "latest artificial intelligence news today"
+    80→
+    81→                # استخدم البحث العادي (مش عميق) عشان يكون أسرع
+    82→                from web_search import search_and_summarize_async
+    83→                summary = await search_and_summarize_async(query, language=lang)
+    84→
+    85→                if summary:
+    86→                    import time as _time
+    87→                    _precomputed_news_cache[lang] = {
+    88→                        "summary": summary,
+    89→                        "updated_at": _time.time(),
+    90→                    }
+    91→                    logger.info(f"📰 Pre-computed AI news ({lang}): {len(summary)} chars")
+    92→                else:
+    93→                    logger.warning(f"📰 Failed to pre-compute AI news ({lang})")
+    94→
+    95→        except Exception as e:
+    96→            logger.error(f"📰 News pre-computation error: {e}")
+    97→
+    98→        # انتظر ساعة قبل التحديث
+    99→        await asyncio.sleep(3600)
+   100→
+   101→
+   102→def get_precomputed_news(language: str = "ar") -> str:
+   103→    """الحصول على أخبار AI المسبقة — فوري من الكاش"""
+   104→    import time as _time
+   105→    cache = _precomputed_news_cache.get(language, {})
+   106→    if cache.get("summary") and _time.time() - cache.get("updated_at", 0) < _NEWS_CACHE_TTL:
+   107→        return cache["summary"]
+   108→    return None  # الكاش منتهي أو فاضي — هيضطر يبحث
+   109→
+   110→
+   111→# ═══════════════════════════════════════
+   112→# بث الأخبار اليومية - Daily News Broadcast
+   113→# ═══════════════════════════════════════
+   114→
+   115→async def broadcast_daily_news(context: ContextTypes.DEFAULT_TYPE):
+   116→    """بث الأخبار اليومية لكل مشترك حسب وقته المخصص
+   117→    
+   118→    🔴 FIX v3:
+   119→    - بث على التلجرام والواتساب
+   120→    - فلترة حسب الـ platform
+   121→    - 🔴 CRITICAL FIX: الواتساب بيتستخدم wa_phone (رقم التليفون) مش user_id الداخلي
+   122→    - منطق الفترة: بنجيب الأخبار اللي حصلت من آخر مرة بعتنا فيها للمستخدم
+   123→    - جلب الأخبار بفترة زمنية مبنية على last_news_delivery
+   124→    """
+   125→    logger.info("=" * 50)
+   126→    logger.info("Checking for scheduled news deliveries")
+   127→    logger.info("=" * 50)
+   128→
+   129→    try:
+   130→        tz = pytz.timezone(DAILY_NEWS_TIMEZONE)
+   131→        now = datetime.now(tz)
+   132→        current_hour = now.hour
+   133→        current_minute = now.minute
+   134→
+   135→        # ═══ بث التلجرام ═══
+   136→        tg_subscribers = get_subscribers_for_time(current_hour, current_minute, platform="telegram")
+   137→        
+   138→        # 🔴 FIX: لو مفيش مشتركين بالدقيقة دي، نجرب بنفس الساعة مع دقيقة 0
+   139→        if not tg_subscribers and current_minute != 0:
+   140→            tg_subscribers = get_subscribers_for_time(current_hour, 0, platform="telegram")
+   141→
+   142→        # ═══ بث الواتساب ═══
+   143→        wa_subscribers = get_subscribers_for_time(current_hour, current_minute, platform="whatsapp")
+   144→        
+   145→        if not wa_subscribers and current_minute != 0:
+   146→            wa_subscribers = get_subscribers_for_time(current_hour, 0, platform="whatsapp")
+   147→
+   148→        total_subscribers = len(tg_subscribers) + len(wa_subscribers)
+   149→
+   150→        if not total_subscribers:
+   151→            logger.info(f"No subscribers for time {current_hour:02d}:{current_minute:02d}. Skipping.")
+   152→            return
+   153→
+   154→        logger.info(f"Found {len(tg_subscribers)} Telegram + {len(wa_subscribers)} WhatsApp subscribers for time {current_hour:02d}:{current_minute:02d}")
+   155→
+   156→        # ═══ حساب الفترة الزمنية للأخبار ═══
+   157→        # 🔴 FIX v3: بنحدد الفترة بناءً على آخر مرة بعتنا فيها أخبار
+   158→        # لو ده أول مرة نبعت، بنستخدم آخر 24 ساعة كـ fallback
+   159→        from config import NEWS_FETCH_HOURS
+   160→        fetch_hours = NEWS_FETCH_HOURS  # default: 24 hours
+   161→        
+   162→        # نجيب أكتر فترة قديمة بين كل المشتركين
+   163→        all_subscribers = tg_subscribers + wa_subscribers
+   164→        earliest_last_delivery = None
+   165→        for sub in all_subscribers:
+   166→            last_del = sub.get("last_news_delivery")
+   167→            if last_del:
+   168→                try:
+   169→                    last_dt = datetime.fromisoformat(last_del)
+   170→                    if last_dt.tzinfo is None:
+   171→                        last_dt = tz.localize(last_dt)
+   172→                    if earliest_last_delivery is None or last_dt < earliest_last_delivery:
+   173→                        earliest_last_delivery = last_dt
+   174→                except Exception:
+   175→                    pass
+   176→        
+   177→        if earliest_last_delivery:
+   178→            time_since_last = (now - earliest_last_delivery).total_seconds() / 3600
+   179→            # بنزود ساعتين احتياط عشان مفيش أخبار تتفوت
+   180→            fetch_hours = min(max(time_since_last + 2, 6), 72)
+   181→            logger.info(f"📅 Last delivery was {time_since_last:.1f}h ago — fetching {fetch_hours:.1f}h of news")
+   182→        else:
+   183→            logger.info(f"📅 No previous delivery found — fetching default {fetch_hours}h of news")
+   184→
+   185→        # ═══ جلب الأخبار ═══
+   186→        # 🔴 FIX v3: بنمرر الفترة الزمنية المحسوبة
+   187→        import config as _config
+   188→        original_hours = _config.NEWS_FETCH_HOURS
+   189→        _config.NEWS_FETCH_HOURS = fetch_hours
+   190→        try:
+   191→            articles = await fetch_news()
+   192→        finally:
+   193→            _config.NEWS_FETCH_HOURS = original_hours
+   194→        
+   195→        if not articles:
+   196→            logger.warning("No articles fetched. Skipping broadcast.")
+   197→            return
+   198→
+   199→        filtered = filter_news(articles)
+   200→        if not filtered:
+   201→            logger.warning("No AI-related articles found. Skipping broadcast.")
+   202→            return
+   203→
+   204→        ranked = rank_articles(filtered)
+   205→        summarized = await summarize_articles(ranked)
+   206→        
+   207→        if not summarized:
+   208→            logger.warning("No articles after summarization. Skipping broadcast.")
+   209→            return
+   210→
+   211→        from i18n import format_date_ar, format_date_en
+   212→
+   213→        messages = {}
+   214→        for lang_code in ["ar", "en"]:
+   215→            if lang_code == "ar":
+   216→                date_str = format_date_ar(now)
+   217→            else:
+   218→                date_str = format_date_en(now)
+   219→
+   220→            header = daily_news_header(lang_code, date_str)
+   221→            items = []
+   222→            for i, article in enumerate(summarized):
+   223→                # 🔴 FIX v3: العربي يشوف تلخيص عربي، الإنجليزي يشوف تلخيص إنجليزي
+   224→                if lang_code == "ar":
+   225→                    # للمستخدم العربي: نستخدم العنوان العربي والتلخيص العربي
+   226→                    item_title = article.get("arabic_title") or article.get("title", "")
+   227→                    item_summary = article.get("arabic_summary", article.get("description", "")[:200])
+   228→                else:
+   229→                    # للمستخدم الإنجليزي: نستخدم العنوان الإنجليزي الأصلي والوصف الأصلي
+   230→                    item_title = article.get("title", "")
+   231→                    item_summary = article.get("description", "")[:300]
+   232→                
+   233→                item = format_news_item(
+   234→                    i + 1,
+   235→                    item_title,
+   236→                    item_summary,
+   237→                    article.get("link", ""),
+   238→                    article.get("is_top", False),
+   239→                    article.get("category", ""),
+   240→                    language=lang_code,
+   241→                )
+   242→                items.append(item)
+   243→
+   244→            footer = daily_news_footer("", lang_code)
+   245→            full_msg = header + "\n\n".join(items) + footer
+   246→            messages[lang_code] = full_msg
+   247→
+   248→        # ═══ بث التلجرام ═══
+   249→        tg_success = 0
+   250→        tg_fail = 0
+   251→
+   252→        for subscriber in tg_subscribers:
+   253→            chat_id = subscriber["user_id"]
+   254→            lang = subscriber.get("language", "ar")
+   255→            message = messages.get(lang, messages["ar"])
+   256→
+   257→            try:
+   258→                if len(message) > 4000:
+   259→                    from formatters import smart_split_message
+   260→                    chunks = smart_split_message(message, max_length=4000)
+   261→                    for chunk in chunks:
+   262→                        await context.bot.send_message(
+   263→                            chat_id=chat_id,
+   264→                            text=chunk,
+   265→                            parse_mode="HTML",
+   266→                            disable_web_page_preview=True
+   267→                        )
+   268→                else:
+   269→                    await context.bot.send_message(
+   270→                        chat_id=chat_id,
+   271→                        text=message,
+   272→                        parse_mode="HTML",
+   273→                        disable_web_page_preview=True
+   274→                    )
+   275→
+   276→                set_last_news_delivery(chat_id, now.isoformat())
+   277→                tg_success += 1
+   278→                logger.info(f"✅ Telegram news sent to {chat_id}")
+   279→
+   280→                await asyncio.sleep(BROADCAST_DELAY_SECONDS)
+   281→
+   282→            except Exception as e:
+   283→                tg_fail += 1
+   284→                error_str = str(e).lower()
+   285→                logger.error(f"❌ Failed to send to TG {chat_id}: {e}")
+   286→
+   287→                # Handle Telegram rate limiting (429 Too Many Requests)
+   288→                if "429" in str(e) or "flood" in error_str or "too many requests" in error_str:
+   289→                    retry_after = 5
+   290→                    try:
+   291→                        if hasattr(e, 'retry_after'):
+   292→                            retry_after = e.retry_after
+   293→                        elif hasattr(e, 'parameters') and hasattr(e.parameters, 'retry_after'):
+   294→                            retry_after = e.parameters.retry_after
+   295→                    except Exception:
+   296→                        pass
+   297→                    logger.warning(f"⏱️ Rate limited by Telegram, waiting {retry_after}s before continuing broadcast...")
+   298→                    await asyncio.sleep(retry_after)
+   299→                    try:
+   300→                        await context.bot.send_message(
+   301→                            chat_id=chat_id,
+   302→                            text=message[:4000],
+   303→                            parse_mode="HTML",
+   304→                            disable_web_page_preview=True
+   305→                        )
+   306→                        set_last_news_delivery(chat_id, now.isoformat())
+   307→                        tg_success += 1
+   308→                        tg_fail -= 1
+   309→                        logger.info(f"✅ TG News sent to {chat_id} after rate limit retry")
+   310→                    except Exception as retry_e:
+   311→                        logger.error(f"❌ Retry also failed for TG {chat_id}: {retry_e}")
+   312→
+   313→                if "blocked" in error_str or "deactivated" in error_str:
+   314→                    unsubscribe_user(chat_id)
+   315→                    logger.info(f"🗑️ Auto-unsubscribed blocked user {chat_id}")
+   316→
+   317→        # ═══ بث الواتساب ═══
+   318→        wa_success = 0
+   319→        wa_fail = 0
+   320→
+   321→        for subscriber in wa_subscribers:
+   322→            # 🔴 CRITICAL FIX v3: بنستخدم wa_phone (رقم التليفون الحقيقي) مش user_id الداخلي
+   323→            # user_id هو رقم مشفر زي -1234567890 لكن واتساب عايز الرقم الحقيقي زي 201234567890
+   324→            wa_phone = subscriber.get("wa_phone", "")
+   325→            wa_user_id = subscriber["user_id"]  # ده الرقم الداخلي للداتابيز
+   326→            
+   327→            # لو مفيش wa_phone، محاولة استخراجه من user_id (للبيانات القديمة)
+   328→            if not wa_phone:
+   329→                logger.warning(f"⚠️ No wa_phone for WA subscriber {wa_user_id} — skipping (can't send to internal ID)")
+   330→                wa_fail += 1
+   331→                continue
+   332→            
+   333→            lang = subscriber.get("language", "ar")
+   334→            message = messages.get(lang, messages["ar"])
+   335→            
+   336→            # WhatsApp مش بيدعم HTML — لازم نشيل الـ tags
+   337→            import re as _re
+   338→            wa_message = _re.sub(r'<[^>]+>', '', message)
+   339→            # نحول الـ &amp; وغيره
+   340→            wa_message = wa_message.replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>')
+   341→
+   342→            try:
+   343→                from whatsapp_webhook import _send_whatsapp_message
+   344→                await _send_whatsapp_message(wa_phone, wa_message[:4000])
+   345→                
+   346→                # 🔴 FIX: بنحدث last_news_delivery بـ user_id الداخلي مش wa_phone
+   347→                set_last_news_delivery(wa_user_id, now.isoformat())
+   348→                wa_success += 1
+   349→                logger.info(f"✅ WhatsApp news sent to {wa_phone} (user_id: {wa_user_id})")
+   350→                
+   351→                await asyncio.sleep(BROADCAST_DELAY_SECONDS)
+   352→                
+   353→            except Exception as e:
+   354→                wa_fail += 1
+   355→                logger.error(f"❌ Failed to send WA news to {wa_phone} (user_id: {wa_user_id}): {e}")
+   356→
+   357→        logger.info(f"📬 Broadcast complete: TG({tg_success} sent, {tg_fail} failed) WA({wa_success} sent, {wa_fail} failed)")
+   358→
+   359→    except Exception as e:
+   360→        logger.error(f"❌ Critical error in broadcast: {e}", exc_info=True)
+   361→
+   362→
+   363→# ═══════════════════════════════════════
+   364→# تشغيل البوت - Main
+   365→# ═══════════════════════════════════════
+   366→
+   367→_scheduler = None
+   368→
+   369→
+   370→def main():
+   371→    """تشغيل البوت مع الجدولة"""
+   372→    global _scheduler
+   373→
+   374→    logger.info("=" * 60)
+   375→    logger.info(f"🤖 {BOT_NAME} v{BOT_VERSION} Starting...")
+   376→    logger.info("=" * 60)
+   377→
+   378→    if not BOT_TOKEN:
+   379→        logger.error("❌ BOT_TOKEN not set! Set it as environment variable.")
+   380→        sys.exit(1)
+   381→
+   382→    # Initialize premium and dashboard tables
+   383→    try:
+   384→        init_premium_tables()
+   385→        logger.info("✅ Premium tables initialized")
+   386→    except Exception as e:
+   387→        logger.warning(f"Premium tables init error: {e}")
+   388→
+   389→    try:
+   390→        init_dashboard_tables()
+   391→        logger.info("✅ Dashboard tables initialized")
+   392→    except Exception as e:
+   393→        logger.warning(f"Dashboard tables init error: {e}")
+   394→
+   395→    # Initialize memory database (PostgreSQL or SQLite)
+   396→    try:
+   397→        from memory import init_database
+   398→        init_database()
+   399→        logger.info("✅ Memory database initialized")
+   400→    except Exception as e:
+   401→        logger.warning(f"Memory database init error: {e}")
+   402→
+   403→    # Initialize rate limiter with admin IDs
+   404→    try:
+   405→        from rate_limiter import rate_limiter
+   406→        from admin import ADMIN_USER_IDS
+   407→        rate_limiter.set_admin_ids(ADMIN_USER_IDS)
+   408→        logger.info("✅ Rate limiter initialized with admin IDs")
+   409→    except Exception as e:
+   410→        logger.warning(f"Rate limiter init error: {e}")
+   411→
+   412→    # Run database migrations
+   413→    from migrate import run_migrations
+   414→    run_migrations()
+   415→
+   416→    # 🔴 FIX: ابدأ الـ WhatsApp Webhook Server الأول عشان الـ healthcheck يشتغل
+   417→    # حتى لو البوت واجه مشكلة 409 Conflict، السيرفر لازم يكون شغال
+   418→    _webhook_runner = None
+   419→    try:
+   420→        import asyncio as _aio
+   421→        from whatsapp_webhook import start_webhook_server
+   422→        
+   423→        # بنبدأ الـ webhook server في event loop منفصل عشان ميعطلش البوت
+   424→        _webhook_loop = _aio.new_event_loop()
+   425→        
+   426→        def _start_webhook_in_thread():
+   427→            _aio.set_event_loop(_webhook_loop)
+   428→            _webhook_loop.run_until_complete(start_webhook_server())
+   429→            _webhook_loop.run_forever()
+   430→        
+   431→        import threading
+   432→        _whatsapp_thread = threading.Thread(target=_start_webhook_in_thread, name="WhatsAppWebhook", daemon=True)
+   433→        _whatsapp_thread.start()
+   434→        logger.info("✅ WhatsApp webhook server starting in background thread...")
+   435→    except Exception as e:
+   436→        logger.warning(f"⚠️ WhatsApp webhook server failed to start in thread: {e}")
+   437→    
+   438→    # بناء التطبيق مع إعدادات الاستقرار
+   439→    app = Application.builder().token(BOT_TOKEN).build()
+   440→
+   441→    # 🔴 FIX: إضافة error handler عشان الأخطاء مش بتوقف البوت بس مش بتتسجل صح
+   442→    async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+   443→        """معالج الأخطاء العام — يسجل الأخطاء ومنعش البوت يقع"""
+   444→        error = context.error
+   445→        error_type = type(error).__name__ if error else "UnknownError"
+   446→        error_msg = str(error)[:300] if error else "No error details"
+   447→        
+   448→        logger.error(f"❌ Unhandled error [{error_type}]: {error_msg}", exc_info=error)
+   449→        try:
+   450→            track_event("total_errors")
+   451→        except Exception:
+   452→            pass
+   453→        # لو في update موجود، نبعت رسالة خطأ أوضح للمستخدم
+   454→        if update and hasattr(update, 'effective_chat'):
+   455→            try:
+   456→                # 🔴 FIX: نبعت رسالة أوضح عشان المستخدم (والأدمن) يعرفوا إيه الخطأ
+   457→                # الأدمن يشوف التفاصيل، المستخدم العادي يشوف رسالة بسيطة
+   458→                chat_id = update.effective_chat.id
+   459→                is_admin_chat = str(chat_id) == str(CHAT_ID)
+   460→                
+   461→                if is_admin_chat:
+   462→                    # الأدمن يشوف التفاصيل الكاملة
+   463→                    await context.bot.send_message(
+   464→                        chat_id=chat_id,
+   465→                        text=f"❌ <b>خطأ غير متوقع</b>\n\n🔴 <b>النوع:</b> <code>{error_type}</code>\n📝 <b>التفاصيل:</b> <code>{error_msg}</code>\n\n💡 جرب تاني أو بص في الـ logs.",
+   466→                        parse_mode="HTML"
+   467→                    )
+   468→                else:
+   469→                    # المستخدم العادي يشوف رسالة بسيطة
+   470→                    await context.bot.send_message(
+   471→                        chat_id=chat_id,
+   472→                        text="❌ حصل خطأ غير متوقع. جرب تاني!\n💡 لو المشكلة مستمرة، تواصل مع الدعم @ziadamr"
+   473→                    )
+   474→            except Exception:
+   475→                pass
+   476→
+   477→    app.add_error_handler(error_handler)
+   478→
+   479→    # ═══ تسجيل الأوامر ═══
+   480→    register_handlers(app)
+   481→
+   482→    # ═══ إعداد الجدولة (APScheduler) ═══
+   483→    _scheduler = AsyncIOScheduler(timezone=pytz.timezone(DAILY_NEWS_TIMEZONE))
+   484→
+   485→    async def scheduled_broadcast():
+   486→        """بث مجدول - يشيك كل 30 دقيقة"""
+   487→        class FakeContext:
+   488→            def __init__(self, bot):
+   489→                self.bot = bot
+   490→        try:
+   491→            await broadcast_daily_news(FakeContext(app.bot))
+   492→        except Exception as e:
+   493→            logger.error(f"CRITICAL: Scheduled broadcast failed: {e}", exc_info=True)
+   494→            try:
+   495→                if CHAT_ID:
+   496→                    error_msg = (
+   497→                        f"\u26a0\ufe0f <b>Broadcast Failed</b>\n"
+   498→                        f"\ud83d\udd34 Error: <code>{str(e)[:200]}</code>\n"
+   499→                        f"\ud83d\udd52 Time: {datetime.now().isoformat()}\n"
+   500→                        f"\ud83d\udcca Check logs for details."
+   501→                    )
+   502→                    await app.bot.send_message(
+   503→                        chat_id=int(CHAT_ID),
+   504→                        text=error_msg,
+   505→                        parse_mode="HTML"
+   506→                    )
+   507→            except Exception as notify_err:
+   508→                logger.error(f"Failed to notify admin about broadcast failure: {notify_err}")
+   509→
+   510→    _scheduler.add_job(
+   511→        scheduled_broadcast,
+   512→        trigger="cron",
+   513→        hour="*",  # 🔴 FIX v3: كل ساعة — عشان نوصل لأي وقت المستخدم يختاره
+   514→        minute="0",
+   515→        id="daily_news_broadcast",
+   516→        name="Daily AI News Broadcast (per-user time)",
+   517→        jitter=60,
+   518→    )
+   519→
+   520→    # ═══ Supabase Storage Cleanup — حذف الملفات المنتهية (أكتر من 24 ساعة) ═══
+   521→    async def supabase_cleanup():
+   522→        """تنظيف ملفات Supabase المنتهية — كل ساعة"""
+   523→        try:
+   524→            from supabase_storage import cleanup_expired_files
+   525→            deleted = await cleanup_expired_files(max_age_hours=24)
+   526→            if deleted > 0:
+   527→                logger.info(f"☁️ Supabase cleanup: {deleted} expired file(s) deleted")
+   528→        except Exception as e:
+   529→            logger.warning(f"⚠️ Supabase cleanup failed: {e}")
+   530→
+   531→    _scheduler.add_job(
+   532→        supabase_cleanup,
+   533→        trigger="cron",
+   534→        hour="*",
+   535→        minute="0",
+   536→        id="supabase_cleanup",
+   537→        name="Supabase Storage Cleanup (delete files older than 24h)",
+   538→        jitter=120,
+   539→    )
+   540→
+   541→    # تعيين أوامر البوت + تشغيل الجدولة بعد بدء event loop
+   542→    async def post_init(application):
+   543→        """بعد تشغيل البوت - inside event loop"""
+   544→
+   545→        # ═══ WhatsApp Webhook Server — شغال بالفعل من الـ main thread ═══
+   546→        # 🔴 FIX: الـ webhook server بدأ قبل كده في thread منفصل عشان الـ healthcheck يشتغل
+   547→        # حتى لو البوت واجه مشكلة 409 Conflict
+   548→        logger.info("✅ WhatsApp webhook server already running from background thread")
+   549→
+   550→        # ═══ Playwright Chromium Check — لو مش موجود نثبته ═══
+   551→        # 🔴 Playwright مهم لتحميل فيديوهات Threads (الطريقة الوحيدة اللي بتشتغل)
+   552→        try:
+   553→            from playwright.async_api import async_playwright
+   554→            # لو الاستيراد اشتغل → نتأكد إن Chromium موجود
+   555→            import subprocess as _sp
+   556→            check = _sp.run(['playwright', 'install', 'chromium', '--dry-run'],
+   557→                           capture_output=True, timeout=10)
+   558→            # لو --dry-run مش مدعوم، نجرب نبعت browser
+   559→            try:
+   560→                pw = async_playwright().start()
+   561→                browser = await pw.chromium.launch(headless=True, args=['--no-sandbox'])
+   562→                await browser.close()
+   563→                pw.stop()
+   564→                logger.info("✅ Playwright + Chromium ready for Threads downloads")
+   565→            except Exception as pw_err:
+   566→                logger.warning(f"⚠️ Playwright Chromium not installed, installing now...")
+   567→                install = _sp.run(['playwright', 'install', 'chromium', '--with-deps'],
+   568→                                 capture_output=True, timeout=120)
+   569→                if install.returncode == 0:
+   570→                    logger.info("✅ Playwright Chromium installed successfully")
+   571→                else:
+   572→                    logger.warning(f"⚠️ Playwright Chromium install failed: {install.stderr.decode()[:200]}")
+   573→        except ImportError:
+   574→            logger.warning("⚠️ Playwright not installed — Threads video downloads may fail")
+   575→        except Exception as e:
+   576→            logger.warning(f"⚠️ Playwright check error: {e}")
+   577→
+   578→        # 🔴 cookie_rotator تم إزالته — كان معطل ومش شغال (كوكيز وهمية بتبطل)
+   579→        # الكوكيز الحقيقية بتنحط يدوي من /cookies أو PO_TOKEN من /potoken
+   580→
+   581→        try:
+   582→            from telegram import BotCommand
+   583→            await application.bot.set_my_commands([
+   584→                BotCommand("start", "بدء البوت / Start the bot"),
+   585→                BotCommand("help", "المساعدة / Help"),
+   586→                BotCommand("news", "أخبار AI / AI News"),
+   587→                BotCommand("breaking", "خبر عاجل / Breaking news"),
+   588→                BotCommand("weekly", "ملخص أسبوعي / Weekly summary"),
+   589→                BotCommand("trending", "الترندات / Trending"),
+   590→                BotCommand("search", "بحث / Search"),
+   591→                BotCommand("ask", "سؤال / Ask question"),
+   592→                BotCommand("learn", "تعلم / Learn topic"),
+   593→                BotCommand("roadmap", "خارطة طريق / Roadmap"),
+   594→                # company command removed — الشركات تم إزالتها
+   595→                BotCommand("study", "وضع الدراسة / Study mode (Premium)"),
+   596→                BotCommand("quiz", "كويز / Quiz (Premium)"),
+   597→                BotCommand("exam", "امتحان / Exam (Premium)"),
+   598→                BotCommand("youtube", "ملخص YouTube / YouTube summary"),
+   599→                BotCommand("pdf", "تحليل PDF / PDF analysis"),
+   600→                BotCommand("image", "إنشاء صورة / Generate image (Premium)"),
+   601→                BotCommand("edit", "تعديل صورة / Edit image (Premium)"),
+   602→                BotCommand("download", "تحميل فيديو/صورة/صوت / Download media (Premium)"),
+   603→                BotCommand("video", "فيديو Dailymotion / Dailymotion video search (Premium)"),
+   604→                BotCommand("audio", "صوت SoundCloud / SoundCloud audio search (Premium)"),
+   605→                BotCommand("photo", "بحث صور / Image search (Premium)"),
+   606→                BotCommand("cookies", "رفع كوكيز YouTube / Upload YouTube cookies"),
+   607→                BotCommand("premium", "الاشتراك / Premium status"),
+   608→                BotCommand("subscribe", "اشترك / Subscribe"),
+   609→                BotCommand("unsubscribe", "إلغاء اشتراك / Unsubscribe"),
+   610→                BotCommand("memory", "ذاكرتي / My memory"),
+   611→                BotCommand("progress", "تقدم التعلم / Learning progress"),
+   612→                BotCommand("favorite", "مفضلة / Favorite"),
+   613→                BotCommand("favorites", "المفضلات / Favorites"),
+   614→                BotCommand("forget", "امسح ذكرى / Forget memory"),
+   615→                BotCommand("resetmemory", "مسح الكل / Reset memory"),
+   616→                BotCommand("language", "اللغة / Language"),
+   617→                BotCommand("about", "عن البوت / About"),
+   618→                BotCommand("admin", "لوحة الأدمن / Admin panel"),
+   619→                BotCommand("dashboard", "لوحة التحكم / Dashboard (Admin)"),
+   620→                BotCommand("addadmin", "إضافة أدمن / Add admin (Owner)"),
+   621→                BotCommand("removeadmin", "شيل أدمن / Remove admin (Owner)"),
+   622→                BotCommand("listadmins", "قائمة الأدمنز / List admins"),
+   623→                BotCommand("resetlimit", "إعادة تعيين الحدود / Reset free limits (Admin)"),
+   624→            ])
+   625→            logger.info("✅ Bot commands registered with Telegram")
+   626→        except Exception as e:
+   627→            logger.warning(f"Failed to register commands: {e}")
+   628→
+   629→        # تشغيل الجدولة
+   630→        _scheduler.start()
+   631→        logger.info("✅ APScheduler started - news broadcasts scheduled")
+   632→
+   633→        # ⚡ بدء حساب الأخبار في الخلفية
+   634→        asyncio.create_task(_precompute_news_background())
+   635→        logger.info("📰 News pre-computation background task started")
+   636→
+   637→    # Graceful shutdown handler for SIGTERM
+   638→    _shutdown_requested = False
+   639→
+   640→    def _signal_handler(signum, frame):
+   641→        """Handle SIGTERM gracefully — cleanup database connections and stop scheduler"""
+   642→        nonlocal _shutdown_requested
+   643→        if _shutdown_requested:
+   644→            return
+   645→        _shutdown_requested = True
+   646→        logger.info(f"\u26a0\ufe0f Received signal {signum} — initiating graceful shutdown...")
+   647→
+   648→        # Stop the scheduler first
+   649→        try:
+   650→            if _scheduler and _scheduler.running:
+   651→                _scheduler.shutdown(wait=False)
+   652→                logger.info("\u2705 APScheduler stopped")
+   653→        except Exception as e:
+   654→            logger.warning(f"Scheduler shutdown error: {e}")
+   655→
+   656→        # Close PostgreSQL connection pool
+   657→        try:
+   658→            from memory import _pg_pool
+   659→            if _pg_pool is not None:
+   660→                _pg_pool.closeall()
+   661→                logger.info("\u2705 PostgreSQL connection pool closed")
+   662→        except Exception as e:
+   663→            logger.warning(f"Pool close error: {e}")
+   664→
+   665→        logger.info("\u2705 Graceful shutdown complete — exiting")
+   666→        sys.exit(0)
+   667→
+   668→    # Register signal handlers for SIGTERM and SIGINT
+   669→    signal.signal(signal.SIGTERM, _signal_handler)
+   670→    signal.signal(signal.SIGINT, _signal_handler)
+   671→    logger.info("\u2705 Graceful shutdown handlers registered (SIGTERM/SIGINT)")
+   672→
+   673→    # تشغيل البوت
+   674→    app.post_init = post_init
+   675→
+   676→    logger.info(f"🚀 {BOT_NAME} v{BOT_VERSION} is running!")
+   677→    
+   678→    # 🔴 FIX: حذف أي webhook نشط قبل البدء — ده بيمنع خطأ 409 Conflict
+   679→    # اللي بيحصل لما بوتين (القديم والجديد) بيحاولوا يشتغلوا في نفس الوقت
+   680→    # بنستخدم HTTP request مباشرة عشان منعملش مشكلة للـ event loop بتاع python-telegram-bot
+   681→    try:
+   682→        import urllib.request
+   683→        import json as _json
+   684→        webhook_api = f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook?drop_pending_updates=true"
+   685→        req = urllib.request.Request(webhook_api)
+   686→        with urllib.request.urlopen(req, timeout=10) as resp:
+   687→            result = _json.loads(resp.read().decode())
+   688→            if result.get('ok'):
+   689→                logger.info("✅ Deleted any active webhook before polling (via HTTP)")
+   690→            else:
+   691→                logger.warning(f"⚠️ deleteWebhook response: {result}")
+   692→    except Exception as e:
+   693→        logger.warning(f"⚠️ Could not delete webhook before polling: {e}")
+   694→    
+   695→    # 🔴 FIX: انتظر ثانية بعد حذف الـ webhook عشان Telegram يفرغ الـ pending updates
+   696→    import time as _time
+   697→    _time.sleep(2)
+   698→    
+   699→    # 🔴 FIX: drop_pending_updates=True عشان منع معالجة رسائل قديمة
+   700→    # ممكن تكون سبب الـ crash لو في رسائل كتير متراكمة
+   701→    app.run_polling(
+   702→        allowed_updates=Update.ALL_TYPES,
+   703→        drop_pending_updates=True,
+   704→    )
+   705→
+   706→
+   707→if __name__ == "__main__":
+   708→    try:
+   709→        main()
+   710→    except KeyboardInterrupt:
+   711→        logger.info("Bot stopped by keyboard interrupt")
+   712→    except SystemExit:
+   713→        # 🔴 FIX: لا تحاول إعادة التشغيل لو كان إغلاق مقصود (SIGTERM/signal)
+   714→        logger.info("Bot stopped by system exit (graceful shutdown)")
+   715→    except Exception as e:
+   716→        logger.critical(f"💥 FATAL: Bot crashed with unhandled exception: {e}", exc_info=True)
+   717→        # 🐦 Sentry — capture the fatal crash
+   718→        from sentry_config import capture_exception
+   719→        capture_exception(e)
+   720→        # 🔴 FIX: تنظيف الموارد قبل محاولة إعادة التشغيل
+   721→        # عشان مفيش تسريب للـ connections والموارد
+   722→        try:
+   723→            if _scheduler and _scheduler.running:
+   724→                _scheduler.shutdown(wait=False)
+   725→                logger.info("✅ Scheduler stopped before restart")
+   726→        except Exception:
+   727→            pass
+   728→        try:
+   729→            from memory import _pg_pool
+   730→            if _pg_pool is not None:
+   731→                _pg_pool.closeall()
+   732→                logger.info("✅ PostgreSQL pool closed before restart")
+   733→        except Exception:
+   734→            pass
+   735→        
+   736→        # 🔴 FIX: بدل ما نعمل main() تاني (بيسبب تسريب موارد)
+   737→        # Railway هيشغل البوت تاني لو process exit code مش 0
+   738→        # وده أحسن عشان يبدأ من الصفر من غير موارد متراكمة
+   739→        logger.info("🔄 Exiting to let Railway restart the bot cleanly...")
+   740→        sys.exit(1)
+   741→

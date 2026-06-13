@@ -1,0 +1,992 @@
+     1→"""
+     2→Message Handler — Full AI Integration
+     3→======================================
+     4→Extracted from whatsapp/callbacks.py — contains:
+     5→- _handle_incoming_message: Process an incoming WhatsApp message with full feature set
+     6→"""
+     7→
+     8→import os
+     9→import re
+    10→import logging
+    11→import asyncio
+    12→import hashlib
+    13→import time
+    14→
+    15→from whatsapp.state import (
+    16→    DEVELOPER_WHATSAPP_URL,
+    17→    WHATSAPP_ACCESS_TOKEN,
+    18→    ALLOWED_WA_NUMBERS,
+    19→    _set_user_state,
+    20→    _get_user_state,
+    21→    _clear_user_state,
+    22→    _wa_user_pdf_context,
+    23→    _wa_user_edit_images,
+    24→    _get_url,
+    25→    _detect_platform,
+    26→    _extract_url,
+    27→    _strip_html_for_whatsapp,
+    28→    _split_whatsapp_message,
+    29→    _log_event,
+    30→    _log_activity,
+    31→    _is_duplicate_wa_message,
+    32→    _is_wa_admin,
+    33→    _ensure_wa_admin_premium,
+    34→    _wa_phone_to_user_id,
+    35→    _wa_search_cache,
+    36→    _COMMAND_TRIGGERS,
+    37→)
+    38→
+    39→from whatsapp.api import (
+    40→    _send_whatsapp_message,
+    41→    _mark_message_read,
+    42→    _send_interactive_buttons,
+    43→    ThinkingFeedback,
+    44→)
+    45→
+    46→from content_safety import (
+    47→    check_query_safety,
+    48→    get_block_message,
+    49→)
+    50→
+    51→logger = logging.getLogger(__name__)
+    52→
+    53→
+    54→# ═══════════════════════════════════════
+    55→# Message Handler — Full AI Integration
+    56→# ═══════════════════════════════════════
+    57→
+    58→async def _handle_incoming_message(message: dict, value: dict):
+    59→    """Process an incoming WhatsApp message with full feature set."""
+    60→    # Lazy imports for media and commands (avoid circular dependency)
+    61→    from whatsapp.commands import _handle_command, _handle_command_with_arg
+    62→    from whatsapp.media import (
+    63→        _download_and_send_video,
+    64→        _generate_and_send_image,
+    65→        _edit_and_send_image,
+    66→        _execute_photo_search,
+    67→        _transcribe_audio,
+    68→        _download_wa_media_base64,
+    69→        _analyze_image,
+    70→        _analyze_document,
+    71→        _show_quality_selection,
+    72→        _show_quality_selection_for_search,
+    73→    )
+    74→    # Lazy imports for cross-module references within callbacks package
+    75→    from whatsapp.callbacks.ai_response import _send_ai_response
+    76→    from whatsapp.callbacks.admin_handler import _handle_admin_with_args
+    77→    from whatsapp.callbacks.search_handlers import (
+    78→        _wa_download_youtube,
+    79→        _handle_wa_video_search,
+    80→        _handle_wa_audio_search,
+    81→        _handle_wa_search_callback,
+    82→    )
+    83→
+    84→    try:
+    85→        wa_id = message.get("from", "")
+    86→        message_type = message.get("type", "")
+    87→        message_id = message.get("id", "")
+    88→        timestamp = message.get("timestamp", "")
+    89→
+    90→        # Deduplication
+    91→        if _is_duplicate_wa_message(message_id):
+    92→            logger.debug(f"⏭️ Duplicate WA message {message_id} — skipping")
+    93→            return
+    94→
+    95→        # Security: Check allowed numbers
+    96→        if ALLOWED_WA_NUMBERS and wa_id not in ALLOWED_WA_NUMBERS:
+    97→            logger.warning(f"🚫 WA message from unauthorized number: {wa_id}")
+    98→            return
+    99→
+   100→        # Mark message as read
+   101→        asyncio.create_task(_mark_message_read(message_id))
+   102→
+   103→        # Contact info
+   104→        contacts = value.get("contacts", [])
+   105→        contact_name = ""
+   106→        if contacts:
+   107→            contact_name = contacts[0].get("profile", {}).get("name", "Unknown")
+   108→
+   109→        # Generate user ID
+   110→        # ✅ FIX: First check if user already exists by wa_phone (handles hash changes after restarts)
+   111→        # If found, use their existing user_id to preserve all data
+   112→        from memory import find_user_by_wa_phone
+   113→        existing_user_id = find_user_by_wa_phone(wa_id)
+   114→        if existing_user_id is not None:
+   115→            wa_user_id = existing_user_id
+   116→        else:
+   117→            wa_user_id = _wa_phone_to_user_id(wa_id)
+   118→        is_admin = _is_wa_admin(wa_id)
+   119→
+   120→        # Ensure admin is premium
+   121→        if is_admin:
+   122→            _ensure_wa_admin_premium(wa_id)
+   123→
+   124→        # Check if user is banned (skip for admin)
+   125→        if not is_admin:
+   126→            try:
+   127→                from memory import _execute, _is_postgres
+   128→                ph = "%s" if _is_postgres() else "?"
+   129→                banned = _execute(f"SELECT user_id FROM banned_users WHERE user_id = {ph}", (wa_user_id,), fetchone=True)
+   130→                if banned:
+   131→                    await _send_whatsapp_message(wa_id, f"🚫 تم حظر حسابك. لو عندك استفسار تواصل مع المطور على واتساب:\n📱 {DEVELOPER_WHATSAPP_URL}")
+   132→                    return
+   133→            except Exception:
+   134→                pass
+   135→
+   136→        # Ensure user exists in DB
+   137→        try:
+   138→            from memory import _ensure_user_in_db
+   139→            _ensure_user_in_db(wa_user_id, platform="whatsapp")
+   140→            # Save name from WhatsApp profile
+   141→            updates = {}
+   142→            if contact_name and contact_name != "Unknown":
+   143→                updates["name"] = contact_name
+   144→                # 🔴 حفظ الاسم الأصلي من بروفايل واتساب (منفصل عن الاسم المفضل)
+   145→                updates["profile_name"] = contact_name
+   146→            # 🔴 حفظ رقم واتساب المستخدم — ضروري لإرسال الإشعارات من التليجرام
+   147→            if wa_id:
+   148→                updates["wa_phone"] = wa_id
+   149→            if updates:
+   150→                try:
+   151→                    from memory import update_user
+   152→                    update_user(wa_user_id, updates)
+   153→                except Exception:
+   154→                    pass
+   155→        except Exception:
+   156→            pass
+   157→
+   158→        # Extract message content
+   159→        content = ""
+   160→        is_audio = False
+   161→        is_image = False
+   162→        is_document = False
+   163→        image_media_id = ""
+   164→        audio_media_id = ""
+   165→        document_media_id = ""
+   166→        interactive_id = ""
+   167→
+   168→        if message_type == "text":
+   169→            content = message.get("text", {}).get("body", "")
+   170→        elif message_type == "audio":
+   171→            audio_media_id = message.get("audio", {}).get("id", "")
+   172→            is_audio = True
+   173→            content = "[Audio message]"
+   174→        elif message_type == "image":
+   175→            image_media_id = message.get("image", {}).get("id", "")
+   176→            caption = message.get("image", {}).get("caption", "")
+   177→            is_image = True
+   178→            content = caption if caption else "[Image]"
+   179→        elif message_type == "video":
+   180→            content = message.get("video", {}).get("caption", "[Video]")
+   181→        elif message_type == "document":
+   182→            document_media_id = message.get("document", {}).get("id", "")
+   183→            is_document = True
+   184→            content = message.get("document", {}).get("caption", "[Document]")
+   185→        elif message_type == "location":
+   186→            loc = message.get("location", {})
+   187→            content = f"[Location: {loc.get('latitude')}, {loc.get('longitude')}]"
+   188→        elif message_type == "interactive":
+   189→            interactive = message.get("interactive", {})
+   190→            interactive_type = interactive.get("type", "")
+   191→            if interactive_type == "button_reply":
+   192→                button_reply = interactive.get("button_reply", {})
+   193→                content = button_reply.get("title", "[Button]")
+   194→                interactive_id = button_reply.get("id", "")
+   195→            elif interactive_type == "list_reply":
+   196→                list_reply = interactive.get("list_reply", {})
+   197→                content = list_reply.get("title", "[List Item]")
+   198→                interactive_id = list_reply.get("id", "")
+   199→        elif message_type == "reaction":
+   200→            emoji = message.get("reaction", {}).get("emoji", "")
+   201→            content = f"[Reaction: {emoji}]"
+   202→        elif message_type == "sticker":
+   203→            content = "[Sticker]"
+   204→        elif message_type == "contacts":
+   205→            content = "[Contacts]"
+   206→        elif message_type == "order":
+   207→            content = "[Order]"
+   208→        else:
+   209→            content = f"[{message_type}]"
+   210→
+   211→        _log_event("IN", "message", {
+   212→            "from": wa_id,
+   213→            "contact_name": contact_name,
+   214→            "type": message_type,
+   215→            "content": content[:200],
+   216→            "message_id": message_id,
+   217→            "interactive_id": interactive_id,
+   218→        })
+   219→
+   220→        logger.info(f"📩 WA Message from {contact_name} ({wa_id}): {content[:100]}")
+   221→
+   222→        # Skip non-processable types
+   223→        if message_type in ("reaction", "sticker", "contacts", "order", "location"):
+   224→            return
+   225→
+   226→        # ═══ الأولوية الأولى: Workflow النشط ═══
+   227→        # لو المستخدم في وسط عملية تفاعلية (بحث صور، تعديل صورة، الخ)
+   228→        # الرسالة بتروح للخدمة المسؤولة مش للذكاء الاصطناعي
+   229→        active_state = _get_user_state(wa_id)
+   230→        if active_state and message_type == "text" and content.strip():
+   231→            flow = active_state.get("flow", "")
+   232→            state_data = active_state.get("data", {})
+   233→            
+   234→            # 🔴 لو المستخدم عايز يلغي — أي كلمة إلغاء
+   235→            cancel_words = ["إلغاء", "الغاء", "cancel", "خلاص", "لا", "ابقى لا", "امسح"]
+   236→            if content.strip().lower() in cancel_words:
+   237→                _clear_user_state(wa_id)
+   238→                await _send_whatsapp_message(wa_id, "✅ تم إلغاء العملية.")
+   239→                return
+   240→            
+   241→            if flow == "photo_search":
+   242→                # المستخدم بيرد على "كم صورة تريد؟"
+   243→                query = state_data.get("query", "")
+   244→                cache_key = state_data.get("cache_key", "")
+   245→                # محاولة استخراج رقم من الرسالة
+   246→                import re as _re_num
+   247→                num_match = _re_num.search(r'\d+', content.strip())
+   248→                if num_match:
+   249→                    count = int(num_match.group())
+   250→                    # أقصى 20 صورة
+   251→                    count = min(count, 20)
+   252→                    if count < 1:
+   253→                        count = 3
+   254→                    logger.info(f"📸 Photo search workflow: user wants {count} images for '{query}'")
+   255→                    _clear_user_state(wa_id)
+   256→                    # كمل البحث بالعدد المحدد
+   257→                    await _execute_photo_search(wa_id, query, count, wa_user_id, contact_name, message_id, is_admin, cache_key)
+   258→                    return
+   259→                else:
+   260→                    # مش رقم — ممكن المستخدم كتب حاجة تانية
+   261→                    await _send_whatsapp_message(wa_id, "📝 اكتب رقم (مثلاً: 3 أو 5 أو 10) أو اضغط إلغاء.")
+   262→                    return
+   263→            
+   264→            elif flow == "image_edit":
+   265→                # المستخدم بيرد بوصف التعديل بعد ما بعت صورة
+   266→                cached_image = _wa_user_edit_images.get(wa_user_id, {})
+   267→                if cached_image and cached_image.get("image_base64"):
+   268→                    edit_prompt = content.strip()
+   269→                    logger.info(f"🖌️ Image edit workflow: user says '{edit_prompt[:50]}'")
+   270→                    _clear_user_state(wa_id)
+   271→                    # كمل تعديل الصورة
+   272→                    await _edit_and_send_image(wa_id, cached_image["image_base64"], edit_prompt, wa_user_id, contact_name, message_id, is_admin)
+   273→                    return
+   274→                else:
+   275→                    _clear_user_state(wa_id)
+   276→                    await _send_whatsapp_message(wa_id, "⚠️ الصورة انتهت صلاحيتها. ابعت صورة تانية وحاول تاني.")
+   277→                    return
+   278→            
+   279→            elif flow == "video_search":
+   280→                # المستخدم يكتب رقم الفيديو من النتائج
+   281→                cache_key = state_data.get("cache_key", "")
+   282→                cached = _wa_search_cache.get(cache_key)
+   283→                if cached and cached.get("results"):
+   284→                    num_match = __import__('re').search(r'\d+', content.strip())
+   285→                    if num_match:
+   286→                        idx = int(num_match.group()) - 1  # المستخدم بيكتب 1-5 ونحوله لـ 0-4
+   287→                        if 0 <= idx < len(cached["results"]):
+   288→                            r = cached["results"][idx]
+   289→                            logger.info(f"🎬 Video search workflow: user selected #{idx+1}")
+   290→                            _clear_user_state(wa_id)
+   291→                            await _send_whatsapp_message(wa_id, f"🎬 جاري تحميل الفيديو...\n\n📺 {r['title']}")
+   292→                            await _wa_download_youtube(wa_id, r['url'], wa_user_id, contact_name, message_id, is_admin, format="720")
+   293→                            return
+   294→                    # مش رقم صحيح
+   295→                    await _send_whatsapp_message(wa_id, "📝 اكتب رقم الفيديو (1-5) من القائمة أو اضغط إلغاء.")
+   296→                    return
+   297→                else:
+   298→                    _clear_user_state(wa_id)
+   299→                    await _send_whatsapp_message(wa_id, "❌ انتهت صلاحية النتائج! ابحث تاني.")
+   300→                    return
+   301→            
+   302→            elif flow == "audio_search":
+   303→                # نفس video_search بس صوت
+   304→                cache_key = state_data.get("cache_key", "")
+   305→                cached = _wa_search_cache.get(cache_key)
+   306→                if cached and cached.get("results"):
+   307→                    num_match = __import__('re').search(r'\d+', content.strip())
+   308→                    if num_match:
+   309→                        idx = int(num_match.group()) - 1
+   310→                        if 0 <= idx < len(cached["results"]):
+   311→                            r = cached["results"][idx]
+   312→                            logger.info(f"🎵 Audio search workflow: user selected #{idx+1}")
+   313→                            _clear_user_state(wa_id)
+   314→                            await _send_whatsapp_message(wa_id, f"🎵 جاري تحميل الصوت...\n\n📺 {r['title']}")
+   315→                            await _wa_download_youtube(wa_id, r['url'], wa_user_id, contact_name, message_id, is_admin, format="mp3")
+   316→                            return
+   317→                    await _send_whatsapp_message(wa_id, "📝 اكتب رقم الصوت (1-5) من القائمة أو اضغط إلغاء.")
+   318→                    return
+   319→                else:
+   320→                    _clear_user_state(wa_id)
+   321→                    await _send_whatsapp_message(wa_id, "❌ انتهت صلاحية النتائج! ابحث تاني.")
+   322→                    return
+   323→            
+   324→            elif flow == "video_search_query":
+   325→                # المستخدم كتب كلمات البحث بعد ما ضغط "فيديو بالبحث"
+   326→                query = content.strip()
+   327→                logger.info(f"🎬 Video search query workflow: user typed '{query[:50]}'")
+   328→                _clear_user_state(wa_id)
+   329→                await _handle_wa_video_search(wa_id, query, wa_user_id, contact_name, message_id, is_admin)
+   330→                # حفظ حالة انتظار اختيار الفيديو
+   331→                cache_key = hashlib.md5(f"wa_vs_{wa_id}_{query}".encode()).hexdigest()[:12]
+   332→                _set_user_state(wa_id, "video_search", {"cache_key": cache_key})
+   333→                return
+   334→            
+   335→            elif flow == "audio_search_query":
+   336→                # المستخدم كتب كلمات البحث بعد ما ضغط "صوت بالبحث"
+   337→                query = content.strip()
+   338→                logger.info(f"🎵 Audio search query workflow: user typed '{query[:50]}'")
+   339→                _clear_user_state(wa_id)
+   340→                await _handle_wa_audio_search(wa_id, query, wa_user_id, contact_name, message_id, is_admin)
+   341→                # حفظ حالة انتظار اختيار الصوت
+   342→                cache_key = hashlib.md5(f"wa_as_{wa_id}_{query}".encode()).hexdigest()[:12]
+   343→                _set_user_state(wa_id, "audio_search", {"cache_key": cache_key})
+   344→                return
+   345→            
+   346→            elif flow == "photo_search_query":
+   347→                # المستخدم كتب كلمات البحث بعد ما ضغط "بحث صور"
+   348→                query = content.strip()
+   349→                logger.info(f"🖼️ Photo search query workflow: user typed '{query[:50]}'")
+   350→                _clear_user_state(wa_id)
+   351→                # نوجهه لـ photo search اللي هيبدأ الـ workflow
+   352→                await _handle_command_with_arg(wa_id, "photo_search_query", query, wa_user_id, contact_name, message_id, is_admin)
+   353→                return
+   354→
+   355→        # ═══ Handle Interactive Button/List Replies ═══
+   356→        if interactive_id:
+   357→            # Check for download quality selections first (dl_v_b_KEY, dl_v_m_KEY, dl_aq_320_KEY, etc.)
+   358→            if interactive_id.startswith("dl_"):
+   359→                quality_map = {
+   360→                    "dl_v_b_": "best",
+   361→                    "dl_v_m_": "medium",
+   362→                    "dl_v_l_": "low",
+   363→                    "dl_a_": "audio",
+   364→                }
+   365→                # 🔴 Audio quality with specific bitrate: dl_aq_{bitrate}_{key}
+   366→                audio_quality = None
+   367→                if interactive_id.startswith("dl_aq_"):
+   368→                    # dl_aq_320_abc123 → quality="audio_320", url_key="abc123"
+   369→                    aq_parts = interactive_id.split("_", 3)  # dl, aq, 320, abc123
+   370→                    if len(aq_parts) >= 4:
+   371→                        bitrate = aq_parts[2]
+   372→                        audio_quality = f"audio_{bitrate}"
+   373→                        url_key = aq_parts[3]
+   374→                
+   375→                if audio_quality:
+   376→                    cached_url = _get_url(url_key)
+   377→                    if cached_url:
+   378→                        logger.info(f"📥 Audio quality selection: {audio_quality} for URL key {url_key}")
+   379→                        await _download_and_send_video(wa_id, cached_url, wa_user_id, contact_name, message_id, is_admin, quality=audio_quality)
+   380→                    else:
+   381→                        await _send_whatsapp_message(wa_id, "⚠️ انتهت صلاحية الرابط. ابعت الرابط تاني! 📥")
+   382→                    return
+   383→                
+   384→                for prefix, q in quality_map.items():
+   385→                    if interactive_id.startswith(prefix):
+   386→                        url_key = interactive_id[len(prefix):]
+   387→                        cached_url = _get_url(url_key)
+   388→                        if cached_url:
+   389→                            logger.info(f"📥 Quality selection: {q} for URL key {url_key}")
+   390→                            # تحميل مباشر بـ yt-dlp لكل المنصات
+   391→                            await _download_and_send_video(wa_id, cached_url, wa_user_id, contact_name, message_id, is_admin, quality=q)
+   392→                        else:
+   393→                            await _send_whatsapp_message(wa_id, "⚠️ انتهت صلاحية الرابط. ابعت الرابط تاني! 📥")
+   394→                        return
+   395→                # Unknown dl_ prefix
+   396→                await _send_whatsapp_message(wa_id, "⚠️ اختيار مش معروف. جرب تاني! 📥")
+   397→                return
+   398→            
+   399→            command_map = {
+   400→                # Main features
+   401→                "cmd_chat": "chat",
+   402→                "cmd_commands": "commands",
+   403→                "cmd_news": "news",
+   404→                "cmd_more_news": "news",
+   405→                "cmd_about": "about",
+   406→                "cmd_admin": "admin",
+   407→                # News
+   408→                "cmd_breaking": "breaking",
+   409→                "cmd_weekly": "weekly",
+   410→                "cmd_trending": "trending",
+   411→                # AI
+   412→                "cmd_ask": "ask",
+   413→                "cmd_ask_ai": "cmd_ask_ai",
+   414→                "cmd_ask_code": "cmd_ask_code",
+   415→                "cmd_search": "search",
+   416→                "cmd_search_ai": "cmd_search_ai",
+   417→                "cmd_search_code": "cmd_search_code",
+   418→                "cmd_learn": "learn",
+   419→                "cmd_learn_ai": "cmd_learn_ai",
+   420→                "cmd_learn_ml": "cmd_learn_ml",
+   421→                "cmd_learn_dl": "cmd_learn_dl",
+   422→                "cmd_learn_nlp": "cmd_learn_nlp",
+   423→                "cmd_learn_llm": "cmd_learn_llm",
+   424→                "cmd_learn_python": "cmd_learn_python",
+   425→                "cmd_learn_web": "cmd_learn_web",
+   426→                "cmd_roadmap": "roadmap",
+   427→                "cmd_roadmap_ai": "cmd_roadmap_ai",
+   428→                "cmd_roadmap_ml": "cmd_roadmap_ml",
+   429→                "cmd_roadmap_dl": "cmd_roadmap_dl",
+   430→                "cmd_roadmap_nlp": "cmd_roadmap_nlp",
+   431→                "cmd_roadmap_llm": "cmd_roadmap_llm",
+   432→                # Company
+   433→                "cmd_company": "company",
+   434→                "cmd_company_openai": "cmd_company_openai",
+   435→                "cmd_company_google": "cmd_company_google",
+   436→                "cmd_company_anthropic": "cmd_company_anthropic",
+   437→                "cmd_company_meta": "cmd_company_meta",
+   438→                "cmd_company_xai": "cmd_company_xai",
+   439→                "cmd_company_nvidia": "cmd_company_nvidia",
+   440→                # Settings
+   441→                "cmd_subscribe": "subscribe",
+   442→                "cmd_subscribe_confirm": "subscribe_confirm",
+   443→                "cmd_skip_subscribe": "skip_subscribe",
+   444→                "cmd_unsubscribe_confirm": "unsubscribe_confirm",
+   445→                "cmd_language": "language",
+   446→                "cmd_lang_ar": "lang_ar",
+   447→                "cmd_lang_en": "lang_en",
+   448→                "cmd_settings": "settings",
+   449→                # Memory
+   450→                "cmd_memory": "memory",
+   451→                "cmd_memory_view": "memory_view",
+   452→                "cmd_memory_reset": "memory_reset",
+   453→                "cmd_memory_reset_confirm": "memory_reset_confirm",
+   454→                "cmd_forget": "forget",
+   455→                # Premium / Plan
+   456→                "cmd_premium": "premium",
+   457→                "cmd_plan": "plan",
+   458→                # Favorites
+   459→                "cmd_favorite": "favorite",
+   460→                "cmd_favorites": "favorites",
+   461→                # Download
+   462→                "cmd_download": "download",
+   463→                "cmd_download_yt": "download_yt",
+   464→                # Study
+   465→                "cmd_study": "study",
+   466→                "cmd_study_learn": "cmd_study_learn",
+   467→                "cmd_study_quiz": "cmd_study_quiz",
+   468→                "cmd_study_exam": "cmd_study_exam",
+   469→                "cmd_study_notes": "cmd_study_notes",
+   470→                "cmd_study_flash": "cmd_study_flash",
+   471→                # YouTube
+   472→                "cmd_youtube": "youtube",
+   473→                # Cookies
+   474→                "cmd_cookies": "cookies",
+   475→                # PDF
+   476→                "cmd_pdf": "pdf",
+   477→                "cmd_pdf_keypoints": "pdf_keypoints",
+   478→                "cmd_pdf_ask": "pdf_ask",
+   479→                # Image gen/edit
+   480→                "cmd_image_gen": "image_gen",
+   481→                "cmd_image_edit": "image_edit",
+   482→                # 🔴 إصلاح: أضفنا أزرار البحث اللي كانت مكسورة
+   483→                "video_search": "video_search",
+   484→                "audio_search": "audio_search",
+   485→                "photo_search": "photo_search",
+   486→            }
+   487→            cmd = command_map.get(interactive_id)
+   488→            if cmd:
+   489→                await _handle_command(wa_id, cmd, wa_user_id, contact_name, message_id)
+   490→                return
+   491→            
+   492→            # 🔍 Handle search callbacks (video/audio/photo selections)
+   493→            if interactive_id.startswith("wa_vs_") or interactive_id.startswith("wa_as_") or interactive_id.startswith("wa_ph_"):
+   494→                await _handle_wa_search_callback(wa_id, interactive_id, wa_user_id, contact_name, message_id, is_admin)
+   495→                return
+   496→
+   497→        # ═══ Handle Text Commands ═══
+   498→        if message_type == "text" and content.strip():
+   499→            content_lower = content.strip().lower()
+   500→
+   501→            # Check for admin commands with arguments (e.g., /grant 123456789)
+   502→            if is_admin:
+   503→                admin_arg_commands = ["/grant", "/revoke", "/resetlimit", "/ban", "/unban", "/userinfo", "/userstats", "/broadcast"]
+   504→                for admin_cmd in admin_arg_commands:
+   505→                    if content_lower.startswith(admin_cmd + " ") or content_lower == admin_cmd:
+   506→                        await _handle_admin_with_args(wa_id, content.strip(), wa_user_id, contact_name)
+   507→                        return True
+   508→
+   509→            # Check for prefix commands with arguments (e.g., /download URL, /study topic)
+   510→            prefix_commands = {
+   511→                "/download": "download",
+   512→                "/image": "image_gen",
+   513→                "/edit": "image_edit",
+   514→                "/youtube": "youtube",
+   515→                "/quiz": "quiz",
+   516→                "/exam": "exam",
+   517→                "/study": "study",
+   518→                "/search": "search",
+   519→                "/video": "video_search_query",
+   520→                "/audio": "audio_search_query",
+   521→                "/photo": "photo_search_query",
+   522→                "/cookies": "cookies",
+   523→                "/potoken": "potoken",
+   524→            }
+   525→            for prefix, cmd_name in prefix_commands.items():
+   526→                if content_lower.startswith(prefix + " "):
+   527→                    arg = content.strip()[len(prefix):].strip()
+   528→                    if arg:
+   529→                        await _handle_command_with_arg(wa_id, cmd_name, arg, wa_user_id, contact_name, message_id, is_admin)
+   530→                        return
+   531→
+   532→            # Arabic prefix commands
+   533→            arabic_prefix_map = {
+   534→                "تحميل": "download",
+   535→                "صورة": "image_gen",
+   536→                "عدل صورة": "image_edit",
+   537→                "يوتيوب": "youtube",
+   538→                "كويز": "quiz",
+   539→                "امتحان": "exam",
+   540→                "دراسة": "study",
+   541→                "بحث": "search",
+   542→                "فيديو بالبحث": "video_search_query",
+   543→                "فيديو بحث": "video_search_query",
+   544→                "صوت بالبحث": "audio_search_query",
+   545→                "صوت بحث": "audio_search_query",
+   546→                "بحث صور": "photo_search_query",
+   547→            }
+   548→            for arabic_prefix, cmd_name in arabic_prefix_map.items():
+   549→                if content_lower.startswith(arabic_prefix):
+   550→                    arg = content.strip()[len(arabic_prefix):].strip()
+   551→                    if arg:
+   552→                        await _handle_command_with_arg(wa_id, cmd_name, arg, wa_user_id, contact_name, message_id, is_admin)
+   553→                        return
+   554→
+   555→            # Check for simple command trigger
+   556→            command = _COMMAND_TRIGGERS.get(content_lower)
+   557→            if command:
+   558→                handled = await _handle_command(wa_id, command, wa_user_id, contact_name, message_id)
+   559→                if handled:
+   560→                    return
+   561→
+   562→            # ═══ Time Change Detection (HH:MM pattern) ═══
+   563→            # لو المستخدم كتب وقت بصيغة HH:MM (زي 14:30 أو 09:00)
+   564→            # ده معناه إنه عايز يغير وقت الأخبار اليومية
+   565→            import re as _time_re
+   566→            _time_match = _time_re.match(r'^([0-1]?[0-9]|2[0-3]):([0-5][0-9])$', content.strip())
+   567→            if _time_match:
+   568→                hour_str = _time_match.group(1).zfill(2)
+   569→                minute_str = _time_match.group(2).zfill(2)
+   570→                new_time = f"{hour_str}:{minute_str}"
+   571→                
+   572→                try:
+   573→                    from memory import set_news_time
+   574→                    set_news_time(wa_user_id, new_time)
+   575→                    await _send_whatsapp_message(wa_id,
+   576→                        f"✅ تم تغيير وقت الأخبار!\n\n"
+   577→                        f"⏰ الوقت الجديد: {new_time} (توقيت القاهرة)\n"
+   578→                        f"📬 هابعتلك الأخبار كل يوم في الوقت ده.\n\n"
+   579→                        f"💡 ممكن تغيره تاني من الإعدادات"
+   580→                    )
+   581→                except Exception:
+   582→                    await _send_whatsapp_message(wa_id, f"✅ تم تغيير وقت الأخبار إلى {new_time}")
+   583→                return
+   584→
+   585→            # ═══ PDF Follow-up Q&A ═══
+   586→            # If user has a PDF context and asks a question, answer based on the PDF
+   587→            if not command:  # Not a recognized command
+   588→                pdf_ctx = _wa_user_pdf_context.get(wa_user_id, {})
+   589→                if not pdf_ctx:
+   590→                    # Try loading from DB
+   591→                    try:
+   592→                        from memory import get_memories
+   593→                        mems = get_memories(wa_user_id)
+   594→                        pdf_text = mems.get("pdf_context_text", "")
+   595→                        pdf_fn = mems.get("pdf_context_filename", "")
+   596→                        if pdf_text:
+   597→                            pdf_ctx = {"text": pdf_text, "filename": pdf_fn}
+   598→                            _wa_user_pdf_context[wa_user_id] = pdf_ctx
+   599→                    except Exception:
+   600→                        pass
+   601→                
+   602→                if pdf_ctx and len(content.strip()) > 3:
+   603→                    # Check if it looks like a question about the document
+   604→                    question_indicators = ["ايه", "إيه", "ازاي", "إزاي", "ليه", "ليه", "هل", "كام", "فين", "مين", "ان", "أن", "what", "how", "why", "when", "where", "who", "is", "are", "can", "?", "؟"]
+   605→                    is_question = any(content.strip().lower().startswith(q) for q in question_indicators) or "؟" in content or "?" in content
+   606→                    
+   607→                    if is_question:
+   608→                        from ai_engine import smart_chat
+   609→                        from formatters import clean_ai_response
+   610→                        
+   611→                        # Start thinking feedback for PDF Q&A (uses document threshold)
+   612→                        feedback = ThinkingFeedback(wa_id, message_id, context_type="document")
+   613→                        await feedback.start()
+   614→                        
+   615→                        pdf_question_prompt = f"""بناءً على المستند ده ({pdf_ctx.get('filename', 'PDF')}), جاوب على السؤال:
+   616→
+   617→المحتوى:
+   618→{pdf_ctx['text'][:15000]}
+   619→
+   620→السؤال: {content}"""
+   621→                        
+   622→                        # 🔴 لو المستخدم هو الأدمن، نمرر username=ziadamr
+   623→                        _pdf_is_admin = _is_wa_admin(wa_id)
+   624→                        ai_response = await smart_chat(
+   625→                            user_message=pdf_question_prompt,
+   626→                            language="ar",
+   627→                            user_id=wa_user_id,
+   628→                            username="ziadamr" if _pdf_is_admin else (contact_name if contact_name != "Unknown" else None),
+   629→                        )
+   630→                        ai_response = clean_ai_response(ai_response)
+   631→                        wa_response = _strip_html_for_whatsapp(ai_response)
+   632→                        chunks = _split_whatsapp_message(wa_response)
+   633→                        for chunk in chunks:
+   634→                            await _send_whatsapp_message(wa_id, chunk)
+   635→                        
+   636→                        await feedback.complete()
+   637→                        
+   638→                        await _send_interactive_buttons(wa_id, body_text="عايز حاجة تانية مع الملف؟",
+   639→                            buttons=[
+   640→                                {"id": "cmd_pdf_keypoints", "title": "🔑 نقاط رئيسية"},
+   641→                                {"id": "cmd_study", "title": "📚 ادرسه"},
+   642→                                {"id": "cmd_commands", "title": "📋 الأوامر"},
+   643→                            ])
+   644→                        return
+   645→
+   646→        # ═══ Process Audio Messages ═══
+   647→        if is_audio and audio_media_id:
+   648→            try:
+   649→                # Start thinking feedback for voice
+   650→                feedback = ThinkingFeedback(wa_id, message_id, context_type="voice")
+   651→                await feedback.start()
+   652→
+   653→                audio_content = await _transcribe_audio(audio_media_id, wa_user_id=wa_user_id)
+   654→                if audio_content:
+   655→                    content = audio_content
+   656→                    logger.info(f"🎤 Audio transcribed from {wa_id}: {content[:80]}")
+   657→                    await feedback.complete()
+   658→                else:
+   659→                    await _send_whatsapp_message(wa_id, "⚠️ مش قادر أفهم الصوت ده. جرب تبعت رسالة نصية! 🎤")
+   660→                    await feedback.error()
+   661→                    return
+   662→            except Exception as e:
+   663→                logger.error(f"❌ Audio transcription error: {e}")
+   664→                await _send_whatsapp_message(wa_id, "⚠️ حصل خطأ في تحويل الصوت لنص. جرب تاني! 🎤")
+   665→                await feedback.error()
+   666→                return
+   667→
+   668→        # ═══ Process Image Messages ═══
+   669→        if is_image and image_media_id:
+   670→            try:
+   671→                # Start thinking feedback for image analysis
+   672→                feedback = ThinkingFeedback(wa_id, message_id, context_type="image")
+   673→                await feedback.start()
+   674→
+   675→                # Check premium for image analysis
+   676→                if not is_admin:
+   677→                    try:
+   678→                        from premium import check_limit
+   679→                        limit_check = check_limit(wa_user_id, "image_analyses_per_day")
+   680→                        if not limit_check.get("allowed", True):
+   681→                            await _send_whatsapp_message(wa_id, "⚠️ وصلت حد تحليل الصور اليومي!\n⭐ ترقية لـ Premium عشان استخدام غير محدود!")
+   682→                            await feedback.error()
+   683→                            return
+   684→                    except Exception:
+   685→                        pass
+   686→
+   687→                image_description = await _analyze_image(image_media_id, content, wa_user_id=wa_user_id)
+   688→                
+   689→                # Cache the image for later /edit (like Telegram caches photos)
+   690→                try:
+   691→                    cached_img_b64 = await _download_wa_media_base64(image_media_id)
+   692→                    if cached_img_b64:
+   693→                        _wa_user_edit_images[wa_user_id] = {
+   694→                            "image_base64": cached_img_b64,
+   695→                            "created_at": time.time(),
+   696→                        }
+   697→                        # Clean old entries (older than 1 hour)
+   698→                        expired_users = [uid for uid, data in _wa_user_edit_images.items() 
+   699→                                        if time.time() - data.get("created_at", 0) > 3600]
+   700→                        for uid in expired_users:
+   701→                            del _wa_user_edit_images[uid]
+   702→                except Exception as e:
+   703→                    logger.debug(f"Could not cache image for editing: {e}")
+   704→                
+   705→                if image_description:
+   706→                    response_text = _strip_html_for_whatsapp(image_description)
+   707→                    chunks = _split_whatsapp_message(response_text)
+   708→                    for chunk in chunks:
+   709→                        await _send_whatsapp_message(wa_id, chunk)
+   710→
+   711→                    # Increment usage
+   712→                    if not is_admin:
+   713→                        try:
+   714→                            from premium import increment_usage
+   715→                            increment_usage(wa_user_id, "image_analyses")
+   716→                        except Exception:
+   717→                            pass
+   718→
+   719→                    # Detect interests from image (same as Telegram)
+   720→                    try:
+   721→                        from memory import detect_interests
+   722→                        detect_interests(wa_user_id, f"[صورة] {image_description[:200]}", "ar")
+   723→                    except Exception:
+   724→                        pass
+   725→
+   726→                    await feedback.complete()
+   727→
+   728→                    # Quick action buttons
+   729→                    await _send_interactive_buttons(wa_id, body_text="عايز حاجة تانية؟",
+   730→                        buttons=[
+   731→                            {"id": "cmd_chat", "title": "💬 اسأل عنها"},
+   732→                            {"id": "cmd_image_edit", "title": "🖌️ عدّلها"},
+   733→                            {"id": "cmd_commands", "title": "📋 الأوامر"},
+   734→                        ])
+   735→                    
+   736→                    # 🔴 حفظ حالة المستخدم — لو كتب وصف تعديل يروح للخدمة مش AI
+   737→                    _set_user_state(wa_id, "image_edit", {"step": "awaiting_edit_prompt"})
+   738→                else:
+   739→                    await _send_whatsapp_message(wa_id, "⚠️ مش قادر أحلل الصورة دي. جرب صورة تانية! 👁️")
+   740→                    await feedback.error()
+   741→                return
+   742→            except Exception as e:
+   743→                logger.error(f"❌ Image analysis error: {e}")
+   744→                await _send_whatsapp_message(wa_id, "⚠️ حصل خطأ في تحليل الصورة. جرب تاني! 👁️")
+   745→                try:
+   746→                    await feedback.error()
+   747→                except Exception:
+   748→                    pass
+   749→                return
+   750→
+   751→        # ═══ Process Document — Cookies file check first ═══
+   752→        # 🍪 لو الملف اسمه cookies أو الرسالة فيها كلمة cookies → نوجهه لـ cookies handler
+   753→        if is_document and document_media_id:
+   754→            is_cookies_doc = False
+   755→            content_lower = (content or "").lower()
+   756→            # فحص الـ caption/الرسالة
+   757→            if 'cookie' in content_lower or 'كوكيز' in content_lower:
+   758→                is_cookies_doc = True
+   759→
+   760→            if is_cookies_doc:
+   761→                try:
+   762→                    # تحميل الملف من WhatsApp
+   763→                    import aiohttp
+   764→                    cookie_file_content = ""
+   765→                    async with aiohttp.ClientSession() as session:
+   766→                        media_url_resp = await session.get(
+   767→                            f"https://graph.facebook.com/v21.0/{document_media_id}",
+   768→                            headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
+   769→                        )
+   770→                        if media_url_resp.status == 200:
+   771→                            media_data = await media_url_resp.json()
+   772→                            download_url = media_data.get("url", "")
+   773→                            if download_url:
+   774→                                doc_resp = await session.get(
+   775→                                    download_url,
+   776→                                    headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
+   777→                                )
+   778→                                if doc_resp.status == 200:
+   779→                                    doc_bytes = await doc_resp.read()
+   780→                                    cookie_file_content = doc_bytes.decode('utf-8', errors='ignore')
+   781→
+   782→                    if cookie_file_content:
+   783→                        # 🔴 فحص المحتوى — نتأكد إنه ملف كوكيز حقيقي
+   784→                        has_netscape_header = '# Netscape HTTP Cookie File' in cookie_file_content
+   785→                        has_youtube = '.youtube.com' in cookie_file_content or 'youtube.com' in cookie_file_content
+   786→
+   787→                        is_valid = False
+   788→                        if has_netscape_header or has_youtube:
+   789→                            cookie_lines = [l for l in cookie_file_content.splitlines() if l.strip() and not l.strip().startswith('#')]
+   790→                            valid_lines = [l for l in cookie_lines if len(l.split('\t')) >= 7]
+   791→                            if valid_lines:
+   792→                                is_valid = True
+   793→
+   794→                        if is_valid:
+   795→                            # 🔴 دمج الكوكيز مع الملف الموجود
+   796→                            cookies_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cookies.txt")
+   797→                            existing_content = ""
+   798→                            if os.path.exists(cookies_path):
+   799→                                try:
+   800→                                    with open(cookies_path, 'r', encoding='utf-8') as f:
+   801→                                        existing_content = f.read()
+   802→                                except Exception:
+   803→                                    existing_content = ""
+   804→
+   805→                            if existing_content.strip():
+   806→                                # في ملف موجود — ندمج
+   807→                                from handlers.download_handlers import _merge_cookies
+   808→                                merged_content, new_added, new_yt_added = _merge_cookies(existing_content, cookie_file_content)
+   809→                                with open(cookies_path, 'w', encoding='utf-8') as f:
+   810→                                    f.write(merged_content)
+   811→                                logger.info(f"🍪 WA Cookies merged from user {wa_id}: {new_added} new cookies ({new_yt_added} YouTube)")
+   812→                            else:
+   813→                                # مفيش ملف موجود — نكتب مباشرة
+   814→                                with open(cookies_path, 'w', encoding='utf-8') as f:
+   815→                                    f.write(cookie_file_content)
+   816→                                new_added = 0
+   817→                                new_yt_added = 0
+   818→                                logger.info(f"🍪 WA Cookies file created by user {wa_id}")
+   819→
+   820→                            # التحقق
+   821→                            total_yt = 0
+   822→                            total_all = 0
+   823→                            try:
+   824→                                with open(cookies_path, 'r') as f:
+   825→                                    all_lines = f.readlines()
+   826→                                total_all = len([l for l in all_lines if l.strip() and not l.strip().startswith('#')])
+   827→                                total_yt = len([l for l in all_lines if 'youtube.com' in l.lower() and l.strip() and not l.strip().startswith('#')])
+   828→                            except Exception:
+   829→                                pass
+   830→
+   831→                            # ✅ للمستخدم العادي — رسالة بسيطة
+   832→                            if not is_admin:
+   833→                                await _send_whatsapp_message(wa_id, "✅ تم رفع ملف الكوكيز بنجاح! شكراً لمساعدتنا 🎬")
+   834→                            else:
+   835→                                # 🔴 للأدمن — تفاصيل كاملة
+   836→                                if new_added > 0:
+   837→                                    await _send_whatsapp_message(wa_id,
+   838→                                        f"✅ *تم دمج الكوكيز بنجاح!*\n\n"
+   839→                                        f"🆕 كوكيز جديدة: {new_added} ({new_yt_added} YouTube)\n"
+   840→                                        f"📊 إجمالي الكوكيز: {total_all}\n"
+   841→                                        f"▶️ كوكيز YouTube: {total_yt}\n\n"
+   842→                                        f"🎬 التحميل هيشتغل بشكل أفضل!")
+   843→                                else:
+   844→                                    await _send_whatsapp_message(wa_id,
+   845→                                        f"✅ *تم رفع ملف الكوكيز بنجاح!*\n\n"
+   846→                                        f"▶️ كوكيز YouTube: {total_yt}\n\n"
+   847→                                        f"🎬 التحميل هيشتغل بشكل أفضل!")
+   848→                        else:
+   849→                            await _send_whatsapp_message(wa_id, "❌ الملف ده مش ملف كوكيز صحيح. لازم يكون Netscape HTTP Cookie File وفيه كوكيز YouTube.")
+   850→                    else:
+   851→                        await _send_whatsapp_message(wa_id, "❌ مش قادر أحمل الملف. جرب تاني!")
+   852→                except Exception as e:
+   853→                    logger.error(f"🍪 WA Cookies document handling error: {e}")
+   854→                    await _send_whatsapp_message(wa_id, f"❌ حصل خطأ في رفع الكوكيز: {e}")
+   855→                return  # 🍪 مهم — منع الملف يروح لـ PDF analysis
+   856→
+   857→        # ═══ Process Document (PDF) ═══
+   858→        if is_document and document_media_id:
+   859→            try:
+   860→                # Start thinking feedback for document analysis (10s threshold)
+   861→                feedback = ThinkingFeedback(wa_id, message_id, context_type="document")
+   862→                await feedback.start()
+   863→
+   864→                # Check premium for PDF
+   865→                if not is_admin:
+   866→                    try:
+   867→                        from premium import check_limit
+   868→                        limit_check = check_limit(wa_user_id, "pdf_analyses_per_day")
+   869→                        if not limit_check.get("allowed", True):
+   870→                            await _send_whatsapp_message(wa_id, "⚠️ وصلت حد تحليل PDF اليومي!\n⭐ ترقية لـ Premium!")
+   871→                            await feedback.error()
+   872→                            return
+   873→                    except Exception:
+   874→                        pass
+   875→
+   876→                pdf_result = await _analyze_document(document_media_id, content, wa_user_id=wa_user_id)
+   877→                if pdf_result:
+   878→                    response_text = _strip_html_for_whatsapp(pdf_result)
+   879→                    chunks = _split_whatsapp_message(response_text)
+   880→                    for chunk in chunks:
+   881→                        await _send_whatsapp_message(wa_id, chunk)
+   882→
+   883→                    # Increment usage
+   884→                    if not is_admin:
+   885→                        try:
+   886→                            from premium import increment_usage
+   887→                            increment_usage(wa_user_id, "pdf_analyses")
+   888→                        except Exception:
+   889→                            pass
+   890→
+   891→                    # Detect interests from document (same as Telegram)
+   892→                    try:
+   893→                        from memory import detect_interests, save_conversation
+   894→                        detect_interests(wa_user_id, f"[PDF: {content[:100]}]", "ar")
+   895→                        save_conversation(wa_user_id, "user", f"[PDF: {content[:50]}]", platform="whatsapp")
+   896→                    except Exception:
+   897→                        pass
+   898→
+   899→                    await feedback.complete()
+   900→
+   901→                    # PDF interactive buttons (same as Telegram)
+   902→                    pdf_filename = ""
+   903→                    pdf_ctx = _wa_user_pdf_context.get(wa_user_id, {})
+   904→                    if pdf_ctx:
+   905→                        pdf_filename = pdf_ctx.get("filename", "")
+   906→                    
+   907→                    pdf_body = "عايز حاجة تانية مع الملف ده؟"
+   908→                    if pdf_filename:
+   909→                        pdf_body = f"📄 {pdf_filename}\n\nعايز حاجة تانية؟"
+   910→                    
+   911→                    await _send_interactive_buttons(wa_id, body_text=pdf_body,
+   912→                        buttons=[
+   913→                            {"id": "cmd_pdf_keypoints", "title": "🔑 نقاط رئيسية"},
+   914→                            {"id": "cmd_study", "title": "📚 ادرسه"},
+   915→                            {"id": "cmd_chat", "title": "💬 اسأل عنه"},
+   916→                        ])
+   917→                else:
+   918→                    await _send_whatsapp_message(wa_id, "⚠️ مش قادر أحلل الملف ده. جرب تاني! 📄")
+   919→                    await feedback.error()
+   920→                return
+   921→            except Exception as e:
+   922→                logger.error(f"❌ Document analysis error: {e}")
+   923→                await _send_whatsapp_message(wa_id, "⚠️ حصل خطأ في تحليل الملف. جرب تاني! 📄")
+   924→                try:
+   925→                    await feedback.error()
+   926→                except Exception:
+   927→                    pass
+   928→                return
+   929→
+   930→        # ═══ Skip empty content ═══
+   931→        if not content.strip() or content.startswith("["):
+   932→            if not content.strip() or content in ("[Video]", "[Document]"):
+   933→                await _handle_command(wa_id, "start", wa_user_id, contact_name)
+   934→            return
+   935→
+   936→        # ═══ Auto-detect URLs for download (like Telegram auto-download) ═══
+   937→        if message_type == "text":
+   938→            url = _extract_url(content.strip())
+   939→            if url:
+   940→                platform = _detect_platform(url)
+   941→                if platform != "unknown":
+   942→                    # 🔴 فحص Premium — التحميل من المنصات مميز بريميوم بس
+   943→                    if not is_admin:
+   944→                        try:
+   945→                            from premium import get_user_plan
+   946→                            plan = get_user_plan(wa_user_id)
+   947→                            if plan not in ("premium", "premium_plus"):
+   948→                                await _send_whatsapp_message(wa_id,
+   949→                                    f"📥 تحميل الفيديوهات مميز Premium بس!\n\n"
+   950→                                    f"⭐ مع Premium تقدر:\n"
+   951→                                    f"• تحميل من أي منصة 📥\n"
+   952→                                    f"  (YouTube, Insta, TikTok, FB, Twitter...)\n"
+   953→                                    f"• فيديو بالبحث 🎬\n"
+   954→                                    f"• صوت بالبحث 🎵\n\n"
+   955→                                    f"📩 تواصل مع المطور على واتساب:\n📱 {DEVELOPER_WHATSAPP_URL}")
+   956→                                return
+   957→                        except Exception:
+   958→                            pass
+   959→                    
+   960→                    # 🛡️ Safety: Check URL/query before proceeding with download
+   961→                    try:
+   962→                        is_safe, reason = await check_query_safety(url, platform="whatsapp", user_id=str(wa_user_id))
+   963→                        if not is_safe:
+   964→                            await _send_whatsapp_message(wa_id, get_block_message("ar", reason))
+   965→                            return
+   966→                    except Exception as e:
+   967→                        logger.warning(f"🛡️ URL safety check failed (allowing): {e}")
+   968→                    
+   969→                    # User sent a video/social media URL — show quality selection!
+   970→                    logger.info(f"🔗 Auto-detected {platform} URL from {wa_id}: {url[:80]}")
+   971→                    await _show_quality_selection(wa_id, url, wa_user_id, contact_name, message_id, is_admin)
+   972→                    return
+   973→
+   974→        # ═══ Route to AI Engine with Thinking Feedback ═══
+   975→        # Rate limit check for AI chat actions
+   976→        from rate_limiter import rate_limiter
+   977→        if rate_limiter.is_rate_limited(wa_user_id, "ai_chat"):
+   978→            await _send_whatsapp_message(wa_id, "⚠️ أنت بتبعت رسائل كتير أوي، استنى شوية وجرّب تاني")
+   979→            return
+   980→
+   981→        logger.info(f"🤖 Routing WA message to AI: {content[:80]}")
+   982→
+   983→        await _send_ai_response(wa_id, content, wa_user_id, contact_name, message_id, context_type="general")
+   984→
+   985→    except Exception as e:
+   986→        logger.error(f"❌ Error handling WA message: {e}", exc_info=True)
+   987→        _log_activity("message_handler_error", {"error": str(e)[:200]}, "error")
+   988→        # 🐦 Sentry — capture message handler errors
+   989→        from sentry_config import capture_exception, set_context
+   990→        set_context("whatsapp_message", {"wa_id": wa_id if 'wa_id' in dir() else "unknown"})
+   991→        capture_exception(e)
+   992→

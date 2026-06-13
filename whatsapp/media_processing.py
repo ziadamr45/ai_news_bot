@@ -272,8 +272,12 @@ async def _analyze_document(media_id: str, caption: str = "", wa_user_id: int = 
         from agents.pdf_agent import PDFAgent
         pdf_agent = PDFAgent()
 
+        # extract_text is synchronous — run in executor to avoid blocking the event loop
+        # and to allow timeout enforcement
+        import functools
+        loop = asyncio.get_event_loop()
         text = await asyncio.wait_for(
-            pdf_agent.extract_text(doc_bytes, filename=filename),
+            loop.run_in_executor(None, functools.partial(pdf_agent.extract_text, doc_bytes, filename=filename)),
             timeout=120.0
         )
 

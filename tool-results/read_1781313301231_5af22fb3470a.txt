@@ -1,0 +1,893 @@
+     1→"""
+     2→Media handling handlers: PDF, YouTube, Photos, Voice, and Study commands.
+     3→"""
+     4→
+     5→import logging
+     6→import asyncio
+     7→import base64
+     8→
+     9→from telegram import Update
+    10→from telegram.ext import ContextTypes
+    11→
+    12→from config import PDF_MAX_FILE_SIZE
+    13→from i18n import t
+    14→from ai_engine import analyze_image
+    15→from memory import (
+    16→    get_language, increment_command_count, increment_chat_count,
+    17→    save_conversation, save_learning, detect_interests,
+    18→)
+    19→from formatters import clean_ai_response, smart_split_message
+    20→from progress import ProgressManager, YOUTUBE_STAGES, TelegramThinkingFeedback
+    21→from dashboard import track_event
+    22→
+    23→from handlers.keyboards import (
+    24→    get_pdf_inline_buttons, get_youtube_inline_buttons, get_image_inline_buttons,
+    25→)
+    26→from handlers.dedup import _is_duplicate_update, _is_duplicate_user_message
+    27→from handlers.callbacks import _check_premium_limit, _user_pdf_context, _user_yt_context
+    28→
+    29→logger = logging.getLogger(__name__)
+    30→
+    31→
+    32→async def pdf_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    33→    """أمر /pdf - تعليمات رفع PDF"""
+    34→    user_id = update.effective_user.id
+    35→    lang = get_language(user_id)
+    36→    increment_command_count(user_id)
+    37→
+    38→    if lang == "ar":
+    39→        msg = """📄 <b>تحليل ملفات PDF</b>
+    40→
+    41→ارفع ملف PDF مباشرة في المحادثة وهحللوله!
+    42→
+    43→💡 <b>اللي هعمله:</b>
+    44→• تلخيص المحتوى
+    45→• استخراج النقاط الرئيسية
+    46→• إنشاء كويز من المحتوى
+    47→• ملاحظات دراسية
+    48→• الإجابة على أسئلتك
+    49→
+    50→⭐ الحد المجاني: 2 ملفات في اليوم"""
+    51→    else:
+    52→        msg = """📄 <b>PDF File Analysis</b>
+    53→
+    54→Upload a PDF file directly in chat and I'll analyze it!
+    55→
+    56→💡 <b>What I can do:</b>
+    57→• Summarize the content
+    58→• Extract key points
+    59→• Create a quiz from the content
+    60→• Generate study notes
+    61→• Answer your questions
+    62→
+    63→⭐ Free limit: 2 files per day"""
+    64→
+    65→    await update.message.reply_text(msg, parse_mode="HTML")
+    66→
+    67→
+    68→async def youtube_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    69→    """أمر /youtube <url> - تلخيص فيديو YouTube"""
+    70→    from premium import increment_usage
+    71→    from agents.youtube_agent import YouTubeAgent
+    72→    yt_agent = YouTubeAgent()
+    73→
+    74→    user_id = update.effective_user.id
+    75→    lang = get_language(user_id)
+    76→    increment_command_count(user_id)
+    77→
+    78→    # Premium check
+    79→    if not await _check_premium_limit(update, user_id, "youtube_summaries_per_day", lang):
+    80→        return
+    81→
+    82→    url = " ".join(context.args) if context.args else ""
+    83→
+    84→    if not url or not yt_agent.is_youtube_url(url):
+    85→        if lang == "ar":
+    86→            msg = "🎬 <b>ملخص فيديو YouTube</b>\n\nاستخدم الأمر <code>/youtube</code> قبل الرابط وهلخصلك الفيديو!\n\n💡 <b>مثال:</b>\n<code>/youtube https://youtube.com/watch?v=...</code>\n\n⚠️ <b>ملاحظة:</b> لو بعت الرابط لوحده هيحملهولك فيديو\nلو عايز تلخيص لازم تستخدم /youtube"
+    87→        else:
+    88→            msg = "🎬 <b>YouTube Video Summary</b>\n\nUse <code>/youtube</code> before the URL to get a summary!\n\n💡 <b>Example:</b>\n<code>/youtube https://youtube.com/watch?v=...</code>\n\n⚠️ <b>Note:</b> Sending just the URL will download the video\nTo summarize, you must use /youtube"
+    89→        await update.message.reply_text(msg, parse_mode="HTML")
+    90→        return
+    91→
+    92→    increment_usage(user_id, "youtube_summaries")
+    93→    try:
+    94→        track_event("youtube_summaries")
+    95→    except Exception:
+    96→        pass
+    97→
+    98→    await _process_youtube_url(update, context, url, lang, user_id)
+    99→
+   100→
+   101→async def _process_youtube_url(update: Update, context: ContextTypes.DEFAULT_TYPE, url: str, lang: str, user_id: int):
+   102→    """Process a YouTube URL - summarize and show buttons
+   103→    
+   104→    🔴 FIX v2:
+   105→    - استخدم YOUTUBE_STAGES (4 مراحل) بدل AI_STAGES (3 مراحل) — تقدم أدق
+   106→    - زيادة الـ timeout لـ 180 ثانية (التلخيص بياخد وقت)
+   107→    """
+   108→    from agents.youtube_agent import YouTubeAgent
+   109→    from agents.pdf_agent import PDFAgent
+   110→    yt_agent = YouTubeAgent()
+   111→
+   112→    video_id = yt_agent.extract_video_id(url)
+   113→
+   114→    stages = YOUTUBE_STAGES(lang)
+   115→    title = "تلخيص فيديو YouTube" if lang == "ar" else "Summarizing YouTube video"
+   116→    progress = ProgressManager(update, context, stages, lang, title, timeout=180)
+   117→    await progress.start()
+   118→
+   119→    try:
+   120→        # Stage 0: جلب معلومات الفيديو (0% → 25%)
+   121→        await progress.update_stage(0)
+   122→        
+   123→        # Stage 1: استخراج الترجمة + تلخيص (25% → 50%)
+   124→        # summarize_video() internally does: get_video_info() → get_transcript() → call_ai()
+   125→        # This is the longest operation — can take 30-120+ seconds
+   126→        await progress.update_stage(1)
+   127→        summary = await yt_agent.summarize_video(url, lang, user_id=user_id)
+   128→        summary = clean_ai_response(summary)
+   129→        
+   130→        # Stage 2: تلخيص المحتوى بالذكاء الاصطناعي (50% → 75%)
+   131→        await progress.update_stage(2)
+   132→        
+   133→        # Stage 3: تنسيق الملخص (75% → 100%)
+   134→        await progress.update_stage(3)
+   135→
+   136→        # Store context for callback buttons
+   137→        _user_yt_context[user_id] = {
+   138→            "url": url,
+   139→            "video_id": video_id or "",
+   140→            "title": "",
+   141→            "summary": summary,  # 🍪 خزّن الملخص عشان أزرار النقاط والكويز
+   142→        }
+   143→
+   144→        inline_keyboard = get_youtube_inline_buttons(lang)
+   145→        await progress.complete(final_message=summary, reply_markup=inline_keyboard, delete_progress=False)
+   146→
+   147→    except Exception as e:
+   148→        logger.error(f"Error processing YouTube URL: {e}", exc_info=True)
+   149→        try:
+   150→            track_event("total_errors")
+   151→        except Exception:
+   152→            pass
+   153→        await progress.error("حدث خطأ في تلخيص الفيديو" if lang == "ar" else "Error summarizing video")
+   154→
+   155→
+   156→async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
+   157→    """معالجة الملفات المرفقة (PDF, Word, TXT, وغيرها)"""
+   158→    from premium import increment_usage
+   159→    from agents.pdf_agent import PDFAgent
+   160→    pdf_agent = PDFAgent()
+   161→
+   162→    if await _is_duplicate_update(update.update_id):
+   163→        return
+   164→
+   165→    user_id = update.effective_user.id
+   166→    lang = get_language(user_id)
+   167→    increment_chat_count(user_id)
+   168→
+   169→    # Check if document exists
+   170→    if not update.message.document:
+   171→        return
+   172→
+   173→    doc = update.message.document
+   174→
+   175→    # Check file size
+   176→    if doc.file_size and doc.file_size > PDF_MAX_FILE_SIZE:
+   177→        if lang == "ar":
+   178→            msg = f"❌ حجم الملف كبير جداً! الحد الأقصى {PDF_MAX_FILE_SIZE // (1024*1024)}MB"
+   179→        else:
+   180→            msg = f"❌ File too large! Maximum size is {PDF_MAX_FILE_SIZE // (1024*1024)}MB"
+   181→        await update.message.reply_text(msg, parse_mode="HTML")
+   182→        return
+   183→
+   184→    # Premium check
+   185→    if not await _check_premium_limit(update, user_id, "pdf_analyses_per_day", lang):
+   186→        return
+   187→
+   188→    filename = doc.file_name or "document.pdf"
+   189→
+   190→    # Per-user dedup
+   191→    if await _is_duplicate_user_message(user_id, f"doc_{doc.file_id}"):
+   192→        return
+   193→
+   194→    increment_usage(user_id, "pdf_analyses")
+   195→    try:
+   196→        track_event("pdf_analyses")
+   197→    except Exception:
+   198→        pass
+   199→
+   200→    # تحديد نوع الملف
+   201→    ext = filename.lower().split('.')[-1] if '.' in filename else "pdf"
+   202→    supported_exts = ["pdf", "docx", "doc", "txt", "md", "csv", "json", "py", "js", "html", "css", "xml", "log"]
+   203→    
+   204→    if ext not in supported_exts:
+   205→        if lang == "ar":
+   206→            msg = f"❌ نوع الملف '.{ext}' مش مدعوم حالياً.\n\nالأنواع المدعومة: PDF, Word (docx), TXT, MD, CSV, JSON\n\n💡 ابعت ملف من الأنواع دي وهحللهولك!"
+   207→        else:
+   208→            msg = f"❌ File type '.{ext}' is not supported yet.\n\nSupported: PDF, Word (docx), TXT, MD, CSV, JSON\n\n💡 Send a supported file and I'll analyze it!"
+   209→        await update.message.reply_text(msg, parse_mode="HTML")
+   210→        return
+   211→
+   212→    file_type_label = {
+   213→        "pdf": "PDF", "docx": "Word", "doc": "Word", "txt": t("media.file_type_txt", lang),
+   214→        "md": "Markdown", "csv": "CSV", "json": "JSON",
+   215→    }.get(ext, ext.upper())
+   216→
+   217→    feedback = TelegramThinkingFeedback(update, context)
+   218→    await feedback.start()
+   219→
+   220→    try:
+   221→
+   222→        # Download file with explicit timeout
+   223→        try:
+   224→            logger.info(f"📥 Downloading file: {filename} ({doc.file_size} bytes)")
+   225→            file = await asyncio.wait_for(
+   226→                context.bot.get_file(doc.file_id),
+   227→                timeout=30.0
+   228→            )
+   229→            file_bytes = await asyncio.wait_for(
+   230→                file.download_as_bytearray(),
+   231→                timeout=60.0
+   232→            )
+   233→            logger.info(f"✅ File downloaded: {len(file_bytes)} bytes")
+   234→        except asyncio.TimeoutError:
+   235→            logger.error(f"❌ File download timed out: {filename}")
+   236→            await feedback.error()
+   237→            await update.message.reply_text("❌ انتهى وقت تحميل الملف. جرب تاني." if lang == "ar" else "❌ File download timed out. Please try again.")
+   238→            return
+   239→        except Exception as e:
+   240→            logger.error(f"❌ Failed to download file: {e}")
+   241→            await feedback.error()
+   242→            await update.message.reply_text("❌ فشل تحميل الملف. جرب تاني." if lang == "ar" else "❌ Failed to download file. Please try again.")
+   243→            return
+   244→
+   245→
+   246→        # Extract text
+   247→        logger.info(f"🔍 Extracting text from {filename}...")
+   248→        try:
+   249→            text = await asyncio.wait_for(
+   250→                pdf_agent.extract_text(bytes(file_bytes), filename=filename),
+   251→                timeout=120.0
+   252→            )
+   253→        except asyncio.TimeoutError:
+   254→            logger.error(f"❌ Text extraction timed out for {filename}")
+   255→            await feedback.error()
+   256→            await update.message.reply_text("❌ استخراج النص اخد وقت طويل. الملف ممكن يكون كبير أو معقد. جرب ملف أصغر." if lang == "ar" else "❌ Text extraction took too long. The file might be too large or complex. Try a smaller file.")
+   257→            return
+   258→
+   259→        if not text.strip():
+   260→            logger.error(f"❌ No text extracted from {filename} — file may be image-only or protected")
+   261→            await feedback.error()
+   262→            await update.message.reply_text("❌ لم أتمكن من استخراج النص من الملف.\n\n💡 ممكن الملف محمي أو فيه صور بس.\nجرب تبعتلي محتوى الملف كنص وهلخصهولك!" if lang == "ar" else "❌ Couldn't extract text from the file.\n\n💡 The file might be protected or contain only images.\nTry sending the content as text and I'll summarize it!")
+   263→            return
+   264→
+   265→        logger.info(f"✅ Extracted {len(text)} chars from {filename}")
+   266→
+   267→        # Store context for callback buttons
+   268→        # 🔴 FIX: تخزين السياق في الذاكرة + الداتابيز عشان يفضل موجود حتى بعد الـ restart
+   269→        _user_pdf_context[user_id] = {
+   270→            "text": text,
+   271→            "filename": filename,
+   272→        }
+   273→        # حفظ السياق في الداتابيز (persistent) عشان يفضل موجود بعد الـ restart
+   274→        try:
+   275→            from memory import save_memory
+   276→            import json
+   277→            # النص ممكن يكون طويل، فنخزنه منفصل
+   278→            save_memory(user_id, "pdf_context_filename", filename, "system")
+   279→            # لو النص أقل من 50000 حرف نخزنه كله، غير كده نخزن أول جزء
+   280→            if len(text) <= 50000:
+   281→                save_memory(user_id, "pdf_context_text", text, "system")
+   282→            else:
+   283→                save_memory(user_id, "pdf_context_text", text[:50000], "system")
+   284→            logger.info(f"✅ PDF context saved to database for user {user_id}")
+   285→        except Exception as save_err:
+   286→            logger.warning(f"⚠️ Failed to save PDF context to DB: {save_err}")
+   287→
+   288→        # Show summary + inline buttons
+   289→        logger.info(f"🤖 Generating summary for {filename}...")
+   290→        summary = None
+   291→        try:
+   292→            summary = await asyncio.wait_for(
+   293→                pdf_agent.summarize(text, lang, user_id=user_id),
+   294→                timeout=180.0  # 🔴 FIX: timeout أعلى لتلخيص الملفات الكبيرة (3 دقائق)
+   295→            )
+   296→            summary = clean_ai_response(summary)
+   297→            logger.info(f"✅ Summary generated: {len(summary)} chars")
+   298→        except asyncio.TimeoutError:
+   299→            logger.error(f"❌ AI summarization timed out for {filename}")
+   300→            summary = None
+   301→        except Exception as e:
+   302→            logger.error(f"❌ AI summarization failed for {filename}: {e}")
+   303→            summary = None
+   304→
+   305→        # 🔴 FIX: لو الـ AI فشل، نجرب تاني بنص أقصر، ولو برضه فشل نعرض النص بشكل منظم
+   306→        if not summary:
+   307→            # محاولة تانية بنص أقصر (أول 8000 حرف بس)
+   308→            logger.info(f"🔄 Retrying AI summarization with shorter text for {filename}...")
+   309→            try:
+   310→                short_text = text[:8000] if len(text) > 8000 else text
+   311→                summary = await asyncio.wait_for(
+   312→                    pdf_agent.summarize(short_text, lang, user_id=user_id),
+   313→                    timeout=180.0  # 🔴 3 دقائق كمان للretry
+   314→                )
+   315→                summary = clean_ai_response(summary)
+   316→                if summary:
+   317→                    logger.info(f"✅ Retry summary succeeded: {len(summary)} chars")
+   318→            except Exception as retry_err:
+   319→                logger.error(f"❌ Retry summarization also failed: {retry_err}")
+   320→                summary = None
+   321→
+   322→        # لو برضه فشل، نعرض النص المستخرج بشكل منظم ومنسق
+   323→        if not summary:
+   324→            # تنظيف النص المستخرج من الكسر واللزق
+   325→            import re as _re
+   326→            #先用 fix_broken_lines لإصلاح النص المكسور
+   327→            text_fixed = PDFAgent._fix_broken_lines(text[:4000])
+   328→            clean_text = _re.sub(r'\n{3,}', '\n\n', text_fixed)
+   329→            clean_text = _re.sub(r' +', ' ', clean_text)
+   330→            # شيل الأسطر الفاضية المتكررة
+   331→            clean_text = _re.sub(r'\n\s*\n', '\n\n', clean_text)
+   332→            # حد أقصى عدد الأسطر
+   333→            lines = clean_text.split('\n')
+   334→            clean_text = '\n'.join(lines[:100])
+   335→            
+   336→            if lang == "ar":
+   337→                long_hint = "\n\n💡 النص طويل — اضغط الأزرار بالأسفل عشان تلخصه أو تستخرج النقاط الرئيسية!"
+   338→                short_hint = "\n\n💡 اضغط الأزرار بالأسفل عشان تلخصه أو تعمل كويز!"
+   339→                hint = long_hint if len(text) > 4000 else short_hint
+   340→                summary = f"📝 <b>المحتوى المستخرج:</b>\n\n{clean_text}{hint}"
+   341→            else:
+   342→                long_hint = "\n\n💡 Text is long — use buttons below to summarize or extract key points!"
+   343→                short_hint = "\n\n💡 Use buttons below to summarize or create a quiz!"
+   344→                hint = long_hint if len(text) > 4000 else short_hint
+   345→                summary = f"📝 <b>Extracted Content:</b>\n\n{clean_text}{hint}"
+   346→            logger.info(f"📄 Showing cleaned text instead of summary for {filename}")
+   347→
+   348→        # Add filename header
+   349→        if lang == "ar":
+   350→            header = f"📄 <b>تحليل {file_type_label}: {filename}</b>\n━━━━━━━━━━━━━━━━━\n\n"
+   351→        else:
+   352→            header = f"📄 <b>{file_type_label} Analysis: {filename}</b>\n━━━━━━━━━━━━━━━━━\n\n"
+   353→
+   354→        full_message = header + summary
+   355→
+   356→        inline_keyboard = get_pdf_inline_buttons(lang)
+   357→
+   358→        await feedback.success()
+   359→        if len(full_message) > 4000:
+   360→            chunks = smart_split_message(full_message)
+   361→            for i, chunk in enumerate(chunks):
+   362→                if i == len(chunks) - 1:
+   363→                    await update.message.reply_text(chunk, parse_mode="HTML", disable_web_page_preview=True, reply_markup=inline_keyboard)
+   364→                else:
+   365→                    await update.message.reply_text(chunk, parse_mode="HTML", disable_web_page_preview=True)
+   366→        else:
+   367→            await update.message.reply_text(full_message, parse_mode="HTML", disable_web_page_preview=True, reply_markup=inline_keyboard)
+   368→
+   369→        # Save to memory
+   370→        try:
+   371→            save_conversation(user_id, "user", f"[{file_type_label}: {filename}]")
+   372→            save_conversation(user_id, "bot", summary[:200])
+   373→        except Exception:
+   374→            pass
+   375→
+   376→    except Exception as e:
+   377→        logger.error(f"Error in handle_document: {e}", exc_info=True)
+   378→        try:
+   379→            track_event("total_errors")
+   380→        except Exception:
+   381→            pass
+   382→        try:
+   383→            await feedback.error()
+   384→        except Exception:
+   385→            pass
+   386→        await update.message.reply_text("❌ حصل خطأ في تحليل الملف. جرب تاني." if lang == "ar" else "❌ Error analyzing file. Please try again.")
+   387→
+   388→
+   389→async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+   390→    """معالجة الصور - Image Analysis"""
+   391→    from premium import increment_usage, get_user_plan
+   392→    from admin import is_admin
+   393→
+   394→    if await _is_duplicate_update(update.update_id):
+   395→        return
+   396→
+   397→    user_id = update.effective_user.id
+   398→    lang = get_language(user_id)
+   399→    increment_chat_count(user_id)
+   400→
+   401→    if not update.message.photo:
+   402→        return
+   403→
+   404→    # Premium check for image analyses (free: limited, premium: unlimited + Vision Pro)
+   405→    if not await _check_premium_limit(update, user_id, "image_analyses_per_day", lang):
+   406→        return
+   407→
+   408→    # Vision Pro: Premium users get better vision models
+   409→    user_plan = get_user_plan(user_id)
+   410→    is_vision_pro = user_plan in ("premium", "premium_plus")
+   411→    username = update.effective_user.username if update.effective_user else None
+   412→    if is_admin(user_id, username):
+   413→        is_vision_pro = True
+   414→
+   415→    photo = update.message.photo[-1]
+   416→    user_text = update.message.caption or ""
+   417→
+   418→    if await _is_duplicate_user_message(user_id, f"photo_{photo.file_id}"):
+   419→        return
+   420→
+   421→    increment_usage(user_id, "image_analyses")
+   422→    try:
+   423→        track_event("image_analyses")
+   424→    except Exception:
+   425→        pass
+   426→
+   427→    try:
+   428→        feedback = TelegramThinkingFeedback(update, context)
+   429→        await feedback.start()
+   430→
+   431→        photo_file = await context.bot.get_file(photo.file_id)
+   432→        image_bytes = await photo_file.download_as_bytearray()
+   433→        image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+   434→
+   435→        # 🔴 تخزين سياق الصورة عشان زرار "البحث التفصيلي" يقدر يستخدمه
+   436→        from handlers.callbacks import _user_image_context
+   437→        _user_image_context[user_id] = {
+   438→            "image_base64": image_base64,
+   439→            "user_text": user_text,
+   440→        }
+   441→
+   442→        # 🖌️ حفظ الصورة تلقائياً عشان المستخدم يقدر يعدلها بـ /edit بعد كده
+   443→        try:
+   444→            from handlers.image_handlers import _user_edit_images
+   445→            import time as _time
+   446→            _user_edit_images[user_id] = {
+   447→                "image_base64": image_base64,
+   448→                "created_at": _time.time(),
+   449→            }
+   450→        except Exception:
+   451→            pass  # non-critical
+   452→
+   453→        # التحليل العام (مش تفصيلي - التفصيلي من الزرار)
+   454→        response = await analyze_image(
+   455→            image_base64=image_base64,
+   456→            language=lang,
+   457→            user_message=user_text,
+   458→            vision_pro=False,  # 🔴 عام مش تفصيلي - التفصيلي من زرار "البحث التفصيلي"
+   459→        )
+   460→
+   461→        # Save to memory
+   462→        try:
+   463→            save_conversation(user_id, "user", f"[صورة] {user_text[:100]}")
+   464→            save_conversation(user_id, "bot", response[:200])
+   465→            detect_interests(user_id, user_text)
+   466→        except Exception:
+   467→            pass
+   468→
+   469→
+   470→        # 🔴 إضافة header للتحليل العام
+   471→        if lang == "ar":
+   472→            header = "👁️ <b>تحليل الصورة</b>\n━━━━━━━━━━━━━━━━━\n\n"
+   473→        else:
+   474→            header = "👁️ <b>Image Analysis</b>\n━━━━━━━━━━━━━━━━━\n\n"
+   475→
+   476→        full_response = header + response
+   477→        inline_keyboard = get_image_inline_buttons(lang)
+   478→
+   479→        await feedback.success()
+   480→        if len(full_response) > 4000:
+   481→            chunks = smart_split_message(full_response)
+   482→            for i, chunk in enumerate(chunks):
+   483→                if i == len(chunks) - 1:
+   484→                    await update.message.reply_text(chunk, parse_mode="HTML", disable_web_page_preview=True, reply_markup=inline_keyboard)
+   485→                else:
+   486→                    await update.message.reply_text(chunk, parse_mode="HTML", disable_web_page_preview=True)
+   487→        else:
+   488→            await update.message.reply_text(full_response, parse_mode="HTML", disable_web_page_preview=True, reply_markup=inline_keyboard)
+   489→
+   490→    except Exception as e:
+   491→        logger.error(f"Error in handle_photo: {e}")
+   492→        try:
+   493→            track_event("total_errors")
+   494→        except Exception:
+   495→            pass
+   496→        await feedback.error()
+   497→        if lang == "ar":
+   498→            await update.message.reply_text("❌ حصل خطأ في تحليل الصورة. جرب تاني.")
+   499→        else:
+   500→            await update.message.reply_text("❌ Error analyzing image. Please try again.")
+   501→
+   502→
+   503→async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+   504→    """معالجة الرسائل الصوتية - Voice Message Processing"""
+   505→    from premium import increment_usage
+   506→    from agents.voice_agent import VoiceAgent
+   507→    voice_agent = VoiceAgent()
+   508→
+   509→    if await _is_duplicate_update(update.update_id):
+   510→        return
+   511→
+   512→    user_id = update.effective_user.id
+   513→    lang = get_language(user_id)
+   514→    increment_chat_count(user_id)
+   515→
+   516→    if not update.message.voice:
+   517→        return
+   518→
+   519→    # Per-user dedup
+   520→    voice = update.message.voice
+   521→    if await _is_duplicate_user_message(user_id, f"voice_{voice.file_id}"):
+   522→        return
+   523→
+   524→    try:
+   525→        track_event("voice_messages")
+   526→    except Exception:
+   527→        pass
+   528→
+   529→    try:
+   530→        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
+   531→
+   532→        # Download voice file with timeout
+   533→        try:
+   534→            file = await asyncio.wait_for(context.bot.get_file(voice.file_id), timeout=15.0)
+   535→            file_bytes = await asyncio.wait_for(file.download_as_bytearray(), timeout=30.0)
+   536→        except asyncio.TimeoutError:
+   537→            logger.error("❌ Voice file download timed out")
+   538→            if lang == "ar":
+   539→                await update.message.reply_text("❌ انتهى وقت تحميل الصوت. جرب تاني.")
+   540→            else:
+   541→                await update.message.reply_text("❌ Voice download timed out. Please try again.")
+   542→            return
+   543→
+   544→        # Transcribe
+   545→        if lang == "ar":
+   546→            status_msg = await update.message.reply_text("🎤 جاري تحويل الصوت لنص...")
+   547→        else:
+   548→            status_msg = await update.message.reply_text("🎤 Transcribing voice message...")
+   549→
+   550→        # تحديد اللغة: العربي افتراضي، غير كده اللغة الأصلية
+   551→        lang_hint = "ar" if lang == "ar" else lang
+   552→        result = await voice_agent.process_voice_message(bytes(file_bytes), language_hint=lang_hint)
+   553→
+   554→        if result["success"] and result["text"].strip():
+   555→            transcribed_text = result["text"].strip()
+   556→            await status_msg.delete()
+   557→
+   558→            # Show transcription
+   559→            if lang == "ar":
+   560→                trans_msg = f'🎤 <b>تم تحويل الصوت:</b>\n\n<i>"{transcribed_text}"</i>\n\n🤖 جاري المعالجة...'
+   561→            else:
+   562→                trans_msg = f'🎤 <b>Transcribed:</b>\n\n<i>"{transcribed_text}"</i>\n\n🤖 Processing...'
+   563→            await update.message.reply_text(trans_msg, parse_mode="HTML")
+   564→
+   565→            # Process the transcribed text as a normal message
+   566→            # Premium check for AI messages
+   567→            if not await _check_premium_limit(update, user_id, "ai_messages_per_day", lang):
+   568→                return
+   569→
+   570→            increment_usage(user_id, "ai_messages")
+   571→
+   572→            feedback = TelegramThinkingFeedback(update, context)
+   573→            await feedback.start()
+   574→
+   575→            try:
+   576→                from ai_engine import smart_chat
+   577→                detect_interests(user_id, transcribed_text)
+   578→                response = await smart_chat(transcribed_text, lang, user_id=user_id, username=update.effective_user.username)
+   579→                response = clean_ai_response(response)
+   580→
+   581→                await feedback.success()
+   582→                if len(response) > 4000:
+   583→                    chunks = smart_split_message(response)
+   584→                    for chunk in chunks:
+   585→                        await update.message.reply_text(chunk, parse_mode="HTML", disable_web_page_preview=True)
+   586→                else:
+   587→                    await update.message.reply_text(response, parse_mode="HTML", disable_web_page_preview=True)
+   588→
+   589→            except Exception as e:
+   590→                logger.error(f"Error processing transcribed voice: {e}")
+   591→                await feedback.error()
+   592→                await update.message.reply_text("حدث خطأ أثناء المعالجة" if lang == "ar" else "Error processing your message")
+   593→
+   594→        else:
+   595→            # رسالة خطأ أوضح حسب سبب الفشل
+   596→            if result.get("error") == "no_api_key":
+   597→                if lang == "ar":
+   598→                    error_text = "⚠️ خدمة تحويل الصوت لنص مش متاحة حالياً.\n\n💡 ممكن تكتب رسالتك كنص بدل الصوت وهرد عليك عادي!"
+   599→                else:
+   600→                    error_text = "⚠️ Voice transcription is currently unavailable.\n\n💡 You can type your message instead and I'll respond normally!"
+   601→            else:
+   602→                if lang == "ar":
+   603→                    error_text = "❌ لم أتمكن من فهم الصوت. ممكن تجرب تاني أو تكتب الرسالة."
+   604→                else:
+   605→                    error_text = "❌ Couldn't transcribe the voice. Please try again or type your message."
+   606→            await status_msg.edit_text(error_text)
+   607→
+   608→    except Exception as e:
+   609→        logger.error(f"Error in handle_voice: {e}")
+   610→        try:
+   611→            track_event("total_errors")
+   612→        except Exception:
+   613→            pass
+   614→        if lang == "ar":
+   615→            await update.message.reply_text("❌ حصل خطأ في معالجة الرسالة الصوتية.")
+   616→        else:
+   617→            await update.message.reply_text("❌ Error processing voice message.")
+   618→
+   619→
+   620→async def exit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+   621→    """أمر /exit — الخروج من وضع الدراسة أو أي workflow نشط"""
+   622→    user_id = update.effective_user.id
+   623→    lang = get_language(user_id)
+   624→
+   625→    # محاولة مسح الـ workflow عبر workflow_manager
+   626→    workflow_cleared = False
+   627→    try:
+   628→        from workflow_manager import get_workflow, clear_workflow
+   629→        workflow = get_workflow(user_id)
+   630→        if workflow:
+   631→            clear_workflow(user_id)
+   632→            workflow_cleared = True
+   633→    except ImportError:
+   634→        pass
+   635→    except Exception:
+   636→        pass
+   637→
+   638→    # محاولة مسح user_states القديم
+   639→    from handlers.callbacks import user_states
+   640→    if user_id in user_states:
+   641→        user_states.pop(user_id, None)
+   642→        workflow_cleared = True
+   643→
+   644→    if workflow_cleared:
+   645→        if lang == "ar":
+   646→            await update.message.reply_text("✅ خرجت من الوضع النشط. اكتب أي حاجة وهرد عليك عادي! 🤖")
+   647→        else:
+   648→            await update.message.reply_text("✅ Exited active mode. Type anything and I'll respond normally! 🤖")
+   649→    else:
+   650→        if lang == "ar":
+   651→            await update.message.reply_text("ℹ️ مش في أي وضع نشط دلوقتي. اكتب أي حاجة وهرد عليك! 🤖")
+   652→        else:
+   653→            await update.message.reply_text("ℹ️ You're not in any active mode right now. Type anything and I'll respond! 🤖")
+   654→
+   655→
+   656→async def study_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+   657→    """أمر /study <topic> - وضع الدراسة (Premium)"""
+   658→    from premium import check_limit, premium_required_message, get_premium_keyboard
+   659→    from agents.study_agent import StudyAgent
+   660→    study_agent = StudyAgent()
+   661→
+   662→    user_id = update.effective_user.id
+   663→    lang = get_language(user_id)
+   664→    increment_command_count(user_id)
+   665→
+   666→    # Premium check
+   667→    if not check_limit(user_id, "study_mode")["allowed"]:
+   668→        await update.message.reply_text(
+   669→            premium_required_message("📚 وضع الدراسة / Study Mode", lang),
+   670→            parse_mode="HTML",
+   671→            reply_markup=get_premium_keyboard(lang, user_id=user_id)
+   672→        )
+   673→        return
+   674→
+   675→    topic = " ".join(context.args) if context.args else ""
+   676→
+   677→    if not topic:
+   678→        if lang == "ar":
+   679→            msg = "📚 <b>وضع الدراسة</b>\n\nاكتب الموضوع بعد الأمر\nمثال: <code>/study الفقه الإسلامي</code>\n\n💡 هيشرحلك الموضوع بطريقة تعليمية ممتعة!"
+   680→        else:
+   681→            msg = "📚 <b>Study Mode</b>\n\nType the topic after the command\nExample: <code>/study Islamic jurisprudence</code>\n\n💡 I'll explain the topic in an engaging educational way!"
+   682→        await update.message.reply_text(msg, parse_mode="HTML")
+   683→        return
+   684→
+   685→    try:
+   686→        track_event("ai_requests")
+   687→    except Exception:
+   688→        pass
+   689→
+   690→    feedback = TelegramThinkingFeedback(update, context)
+   691→    await feedback.start()
+   692→
+   693→    try:
+   694→        explanation = await study_agent.explain_lesson(topic, language=lang, user_id=user_id)
+   695→        explanation = clean_ai_response(explanation)
+   696→
+   697→        try:
+   698→            save_learning(user_id, topic, "studied")
+   699→            detect_interests(user_id, topic)
+   700→        except Exception:
+   701→            pass
+   702→
+   703→        # 🔴 FIX: لو الرسالة طويلة أكتر من 4000 حرف، نبعتهأ جزئين
+   704→        await feedback.success()
+   705→        if len(explanation) > 4000:
+   706→            chunks = smart_split_message(explanation)
+   707→            for chunk in chunks:
+   708→                await update.message.reply_text(chunk, parse_mode="HTML", disable_web_page_preview=True)
+   709→        else:
+   710→            await update.message.reply_text(explanation, parse_mode="HTML", disable_web_page_preview=True)
+   711→    except Exception as e:
+   712→        logger.error(f"Error in /study: {e}")
+   713→        try:
+   714→            track_event("total_errors")
+   715→        except Exception:
+   716→            pass
+   717→        await feedback.error()
+   718→        await update.message.reply_text("حدث خطأ" if lang == "ar" else "Error occurred")
+   719→
+   720→
+   721→async def quiz_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+   722→    """أمر /quiz <topic> - كويز (Premium)"""
+   723→    from premium import check_limit, premium_required_message, get_premium_keyboard
+   724→    from agents.study_agent import StudyAgent
+   725→    study_agent = StudyAgent()
+   726→
+   727→    user_id = update.effective_user.id
+   728→    lang = get_language(user_id)
+   729→    increment_command_count(user_id)
+   730→
+   731→    # Premium check
+   732→    if not check_limit(user_id, "study_mode")["allowed"]:
+   733→        await update.message.reply_text(
+   734→            premium_required_message("📝 كويز / Quiz", lang),
+   735→            parse_mode="HTML",
+   736→            reply_markup=get_premium_keyboard(lang, user_id=user_id)
+   737→        )
+   738→        return
+   739→
+   740→    topic = " ".join(context.args) if context.args else ""
+   741→
+   742→    if not topic:
+   743→        if lang == "ar":
+   744→            msg = "📝 <b>كويز</b>\n\nاكتب الموضوع بعد الأمر\nمثال: <code>/quiz السيرة النبوية</code>"
+   745→        else:
+   746→            msg = "📝 <b>Quiz</b>\n\nType the topic after the command\nExample: <code>/quiz Prophetic biography</code>"
+   747→        await update.message.reply_text(msg, parse_mode="HTML")
+   748→        return
+   749→
+   750→    try:
+   751→        track_event("ai_requests")
+   752→    except Exception:
+   753→        pass
+   754→
+   755→    feedback = TelegramThinkingFeedback(update, context)
+   756→    await feedback.start()
+   757→
+   758→    try:
+   759→        quiz = await study_agent.generate_quiz(topic, language=lang, user_id=user_id)
+   760→        quiz = clean_ai_response(quiz)
+   761→        # 🔴 FIX: لو الرسالة طويلة أكتر من 4000 حرف، نبعتهأ جزئين
+   762→        await feedback.success()
+   763→        if len(quiz) > 4000:
+   764→            chunks = smart_split_message(quiz)
+   765→            for chunk in chunks:
+   766→                await update.message.reply_text(chunk, parse_mode="HTML", disable_web_page_preview=True)
+   767→        else:
+   768→            await update.message.reply_text(quiz, parse_mode="HTML", disable_web_page_preview=True)
+   769→    except Exception as e:
+   770→        logger.error(f"Error in /quiz: {e}")
+   771→        try:
+   772→            track_event("total_errors")
+   773→        except Exception:
+   774→            pass
+   775→        await feedback.error()
+   776→        await update.message.reply_text("حدث خطأ" if lang == "ar" else "Error occurred")
+   777→
+   778→
+   779→async def exam_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+   780→    """أمر /exam <topic> - امتحان شامل (Premium)"""
+   781→    from premium import check_limit, premium_required_message, get_premium_keyboard
+   782→    from agents.study_agent import StudyAgent
+   783→    study_agent = StudyAgent()
+   784→
+   785→    user_id = update.effective_user.id
+   786→    lang = get_language(user_id)
+   787→    increment_command_count(user_id)
+   788→
+   789→    # Premium check
+   790→    if not check_limit(user_id, "study_mode")["allowed"]:
+   791→        await update.message.reply_text(
+   792→            premium_required_message("📋 امتحان / Exam", lang),
+   793→            parse_mode="HTML",
+   794→            reply_markup=get_premium_keyboard(lang, user_id=user_id)
+   795→        )
+   796→        return
+   797→
+   798→    topic = " ".join(context.args) if context.args else ""
+   799→
+   800→    if not topic:
+   801→        if lang == "ar":
+   802→            msg = "📋 <b>امتحان شامل</b>\n\nاكتب الموضوع بعد الأمر\nمثال: <code>/exam علوم القرآن</code>"
+   803→        else:
+   804→            msg = "📋 <b>Comprehensive Exam</b>\n\nType the topic after the command\nExample: <code>/exam Quran sciences</code>"
+   805→        await update.message.reply_text(msg, parse_mode="HTML")
+   806→        return
+   807→
+   808→    try:
+   809→        track_event("ai_requests")
+   810→    except Exception:
+   811→        pass
+   812→
+   813→    feedback = TelegramThinkingFeedback(update, context)
+   814→    await feedback.start()
+   815→
+   816→    try:
+   817→        exam = await study_agent.generate_exam(topic, language=lang, user_id=user_id)
+   818→        exam = clean_ai_response(exam)
+   819→        # 🔴 FIX: لو الرسالة طويلة أكتر من 4000 حرف، نبعتهأ جزئين
+   820→        await feedback.success()
+   821→        if len(exam) > 4000:
+   822→            chunks = smart_split_message(exam)
+   823→            for chunk in chunks:
+   824→                await update.message.reply_text(chunk, parse_mode="HTML", disable_web_page_preview=True)
+   825→        else:
+   826→            await update.message.reply_text(exam, parse_mode="HTML", disable_web_page_preview=True)
+   827→    except Exception as e:
+   828→        logger.error(f"Error in /exam: {e}")
+   829→        try:
+   830→            track_event("total_errors")
+   831→        except Exception:
+   832→            pass
+   833→        await feedback.error()
+   834→        await update.message.reply_text("حدث خطأ" if lang == "ar" else "Error occurred")
+   835→
+   836→
+   837→async def studyplan_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+   838→    """أمر /plan <topic> - خطة دراسية (Premium)"""
+   839→    from premium import check_limit, premium_required_message, get_premium_keyboard
+   840→    from agents.study_agent import StudyAgent
+   841→    study_agent = StudyAgent()
+   842→
+   843→    user_id = update.effective_user.id
+   844→    lang = get_language(user_id)
+   845→    increment_command_count(user_id)
+   846→
+   847→    # Premium check
+   848→    if not check_limit(user_id, "study_mode")["allowed"]:
+   849→        await update.message.reply_text(
+   850→            premium_required_message("📚 خطة دراسية / Study Plan", lang),
+   851→            parse_mode="HTML",
+   852→            reply_markup=get_premium_keyboard(lang, user_id=user_id)
+   853→        )
+   854→        return
+   855→
+   856→    topic = " ".join(context.args) if context.args else ""
+   857→
+   858→    if not topic:
+   859→        if lang == "ar":
+   860→            msg = "📚 <b>خطة دراسية</b>\n\nاكتب الموضوع بعد الأمر\nمثال: <code>/plan تعلم التجويد</code>"
+   861→        else:
+   862→            msg = "📚 <b>Study Plan</b>\n\nType the topic after the command\nExample: <code>/plan learn Tajweed</code>"
+   863→        await update.message.reply_text(msg, parse_mode="HTML")
+   864→        return
+   865→
+   866→    try:
+   867→        track_event("ai_requests")
+   868→    except Exception:
+   869→        pass
+   870→
+   871→    feedback = TelegramThinkingFeedback(update, context)
+   872→    await feedback.start()
+   873→
+   874→    try:
+   875→        plan = await study_agent.create_study_plan(topic, language=lang, user_id=user_id)
+   876→        plan = clean_ai_response(plan)
+   877→        # 🔴 FIX: لو الرسالة طويلة أكتر من 4000 حرف، نبعتهأ جزئين
+   878→        await feedback.success()
+   879→        if len(plan) > 4000:
+   880→            chunks = smart_split_message(plan)
+   881→            for chunk in chunks:
+   882→                await update.message.reply_text(chunk, parse_mode="HTML", disable_web_page_preview=True)
+   883→        else:
+   884→            await update.message.reply_text(plan, parse_mode="HTML", disable_web_page_preview=True)
+   885→    except Exception as e:
+   886→        logger.error(f"Error in /plan (study): {e}")
+   887→        try:
+   888→            track_event("total_errors")
+   889→        except Exception:
+   890→            pass
+   891→        await feedback.error()
+   892→        await update.message.reply_text("حدث خطأ" if lang == "ar" else "Error occurred")
+   893→

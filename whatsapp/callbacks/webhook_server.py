@@ -207,7 +207,8 @@ def process_webhook_body(body: dict):
                             try:
                                 loop = asyncio.get_event_loop()
                                 if loop.is_running():
-                                    asyncio.ensure_future(_handle_incoming_message(message, value), loop=loop)
+                                    # Use create_task instead of deprecated ensure_future with loop= param
+                                    asyncio.ensure_future(_handle_incoming_message(message, value))
                                 else:
                                     loop.run_until_complete(_handle_incoming_message(message, value))
                             except RuntimeError:
