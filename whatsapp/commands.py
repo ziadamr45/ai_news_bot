@@ -1695,28 +1695,95 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
         }
         query = search_queries.get(command, "أحدث التطورات التقنية")
         
-        # 🔴 FIX: نبحث على الإنترنت مباشرة بـ Tavily بدل ما نروح لـ smart_chat
-        # smart_chat بيجاوب من training data قديم — لازم نبحث على الويب!
+        # 🔴 FIX v2: بحث واتساب زي تليجرام بالظبط
+        # نجيب أخبار RSS + نتائج بحث الويب ونعمل format لواتساب
+        # الروابط بنحطها فعليه (مش HTML <a>) عشان واتساب مش بيدعمها
         try:
             from whatsapp.api import ThinkingFeedback
             feedback = ThinkingFeedback(wa_id, message_id, context_type="search")
             await feedback.start()
             
-            from web_search import search_and_summarize_async
-            search_result = await search_and_summarize_async(query, language="ar", user_id=wa_user_id)
+            message = ""
             
-            if search_result:
-                from formatters import clean_ai_response
-                from whatsapp.state import _strip_html_for_whatsapp, _split_whatsapp_message
-                cleaned = clean_ai_response(search_result)
-                wa_msg = _strip_html_for_whatsapp(cleaned)
-                chunks = _split_whatsapp_message(wa_msg)
+            # ── 1) أخبار RSS ──
+            try:
+                from news_fetcher import fetch_news_sync
+                articles = fetch_news_sync()
+                if articles:
+                    query_lower = query.lower()
+                    rss_results = []
+                    for article in articles:
+                        title_text = article.get("title", "").lower()
+                        desc = article.get("description", "").lower()
+                        if query_lower in title_text or query_lower in desc:
+                            rss_results.append(article)
+                    
+                    if rss_results:
+                        message += f"📰 *أخبار RSS عن: {query}*\n━━━━━━━━━━━━━━━━━\n\n"
+                        for i, article in enumerate(rss_results[:5], 1):
+                            title = article.get("arabic_title", "") or article.get("title", "")
+                            summary = article.get("arabic_summary", "") or article.get("description", "") or ""
+                            link = article.get("link", "")
+                            badge = "🔥" if i == 1 else "⚪️"
+                            # تنظيف النص
+                            from formatters import _quick_clean_text
+                            title = _quick_clean_text(title)
+                            summary = _quick_clean_text(summary)[:200]
+                            message += f"{badge} *{title}*\n"
+                            if summary:
+                                message += f"{summary}\n"
+                            if link:
+                                message += f"🔗 {link}\n"
+                            message += "\n"
+            except Exception as e:
+                logger.warning(f"⚠️ WA search RSS failed: {e}")
+            
+            # ── 2) نتائج بحث الويب ──
+            try:
+                from web_search import search_web
+                from formatters import _quick_clean_text
+                web_results = await search_web(query, max_results=5, language="ar")
+                
+                if web_results:
+                    message += f"🌐 *نتائج بحث الويب: {query}*\n━━━━━━━━━━━━━━━━━\n\n"
+                    for i, r in enumerate(web_results[:5], 1):
+                        title = _quick_clean_text(r.get("title", ""))
+                        snippet = _quick_clean_text(r.get("snippet", ""))[:200]
+                        link = r.get("link", "")
+                        message += f"{i}. 📄 *{title}*\n"
+                        if snippet:
+                            message += f"   {snippet}\n"
+                        if link:
+                            message += f"   🔗 {link}\n"
+                        message += "\n"
+            except Exception as e:
+                logger.warning(f"⚠️ WA search web failed: {e}")
+            
+            # ── 3) لو مفيش نتائج خالص، نجرب search_and_summarize ──
+            if not message.strip():
+                try:
+                    from web_search import search_and_summarize_async
+                    search_result = await search_and_summarize_async(query, language="ar", user_id=wa_user_id)
+                    if search_result:
+                        from formatters import clean_ai_response
+                        from whatsapp.state import _strip_html_for_whatsapp, _split_whatsapp_message
+                        cleaned = clean_ai_response(search_result)
+                        message = _strip_html_for_whatsapp(cleaned)
+                    else:
+                        message = "⚠️ لم أجد نتائج. جرب تاني بكلمات بحث مختلفة."
+                except Exception as e:
+                    logger.error(f"❌ WA search_and_summarize fallback failed: {e}")
+                    message = "⚠️ حدث خطأ في البحث. جرب تاني بعد شوية."
+            
+            # ── إرسال النتائج ──
+            if message.strip():
+                message += "\n━━━━━━━━━━━━━━━━━\n🤖 _My Bro — بحث متقدم_"
+                from whatsapp.state import _split_whatsapp_message
+                chunks = _split_whatsapp_message(message)
                 for chunk in chunks:
                     await _send_whatsapp_message(wa_id, chunk)
                     if len(chunks) > 1:
                         await asyncio.sleep(0.05)
-            else:
-                await _send_whatsapp_message(wa_id, "⚠️ لم أجد نتائج. جرب تاني بكلمات بحث مختلفة.")
             
             await feedback.complete()
             
