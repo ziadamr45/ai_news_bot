@@ -211,7 +211,8 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     file_type_label = {
         "pdf": "PDF", "docx": "Word", "doc": "Word", "txt": t("media.file_type_txt", lang),
-        "md": "Markdown", "csv": "CSV", "json": "JSON",
+        "md": "Markdown", "csv": "CSV", "json": "JSON", "py": "Python", "js": "JavaScript",
+        "html": "HTML", "css": "CSS", "xml": "XML", "log": "Log",
     }.get(ext, ext.upper())
 
     feedback = TelegramThinkingFeedback(update, context)

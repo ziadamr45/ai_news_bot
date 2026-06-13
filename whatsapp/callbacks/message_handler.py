@@ -163,6 +163,8 @@ async def _handle_incoming_message(message: dict, value: dict):
         image_media_id = ""
         audio_media_id = ""
         document_media_id = ""
+        document_filename = ""   # 🔴 FIX: WhatsApp document filename
+        document_mime_type = ""  # 🔴 FIX: WhatsApp document MIME type
         interactive_id = ""
 
         if message_type == "text":
@@ -182,6 +184,11 @@ async def _handle_incoming_message(message: dict, value: dict):
             document_media_id = message.get("document", {}).get("id", "")
             is_document = True
             content = message.get("document", {}).get("caption", "[Document]")
+            # 🔴 FIX: Extract filename and mime_type from WhatsApp document message
+            # Without filename, PDFAgent defaults to "document.pdf" which breaks
+            # Word/TXT/CSV/JSON files — they'd be processed as PDF and fail
+            document_filename = message.get("document", {}).get("filename", "")
+            document_mime_type = message.get("document", {}).get("mime_type", "")
         elif message_type == "location":
             loc = message.get("location", {})
             content = f"[Location: {loc.get('latitude')}, {loc.get('longitude')}]"
@@ -882,7 +889,7 @@ async def _handle_incoming_message(message: dict, value: dict):
                     except Exception:
                         pass
 
-                pdf_result = await _analyze_document(document_media_id, content, wa_user_id=wa_user_id)
+                pdf_result = await _analyze_document(document_media_id, content, wa_user_id=wa_user_id, filename=document_filename, mime_type=document_mime_type)
                 if pdf_result:
                     response_text = _strip_html_for_whatsapp(pdf_result)
                     chunks = _split_whatsapp_message(response_text)
@@ -900,8 +907,10 @@ async def _handle_incoming_message(message: dict, value: dict):
                     # Detect interests from document (same as Telegram)
                     try:
                         from memory import detect_interests, save_conversation
-                        detect_interests(wa_user_id, f"[PDF: {content[:100]}]", "ar")
-                        save_conversation(wa_user_id, "user", f"[PDF: {content[:50]}]", platform="whatsapp")
+                        # 🔴 FIX: Use actual file type instead of always "PDF"
+                        file_label = f"[{document_filename or 'ملف'}: {content[:80]}]" if document_filename else f"[PDF: {content[:80]}]"
+                        detect_interests(wa_user_id, file_label, "ar")
+                        save_conversation(wa_user_id, "user", file_label[:100], platform="whatsapp")
                     except Exception:
                         pass
 

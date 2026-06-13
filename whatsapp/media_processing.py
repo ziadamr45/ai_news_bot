@@ -229,7 +229,7 @@ async def _analyze_image(media_id: str, caption: str = "", wa_user_id: int = Non
 
 
 
-async def _analyze_document(media_id: str, caption: str = "", wa_user_id: int = None) -> str:
+async def _analyze_document(media_id: str, caption: str = "", wa_user_id: int = None, filename: str = "", mime_type: str = "") -> str:
     """Download document from WhatsApp and analyze using PDFAgent (same as Telegram)"""
     import aiohttp
 
@@ -261,12 +261,40 @@ async def _analyze_document(media_id: str, caption: str = "", wa_user_id: int = 
 
             doc_bytes = await doc_resp.read()
 
-        # Determine filename from caption or default
-        filename = "document.pdf"
-        if caption and caption != "[Document]":
-            # If caption looks like a filename, use it
-            if "." in caption.split()[0]:
-                filename = caption.split()[0]
+        # 🔴 FIX: Determine filename properly from WhatsApp message data
+        # WhatsApp provides filename and mime_type in the document message
+        # Without this, all files default to "document.pdf" which breaks
+        # Word/TXT/CSV/JSON processing in PDFAgent
+        if not filename:
+            # Try from caption
+            if caption and caption != "[Document]":
+                if "." in caption.split()[0]:
+                    filename = caption.split()[0]
+            else:
+                # Try to guess from mime_type
+                mime_to_ext = {
+                    "application/pdf": "pdf",
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+                    "application/msword": "doc",
+                    "text/plain": "txt",
+                    "text/markdown": "md",
+                    "text/csv": "csv",
+                    "application/json": "json",
+                    "text/html": "html",
+                    "application/xml": "xml",
+                }
+                ext = mime_to_ext.get(mime_type, "")
+                if ext:
+                    filename = f"document.{ext}"
+        
+        if not filename:
+            filename = "document.pdf"
+        
+        # 🔴 FIX: Check supported file types (same as Telegram)
+        ext = filename.lower().split('.')[-1] if '.' in filename else "pdf"
+        supported_exts = ["pdf", "docx", "doc", "txt", "md", "csv", "json", "py", "js", "html", "css", "xml", "log"]
+        if ext not in supported_exts:
+            return f"❌ نوع الملف '.{ext}' مش مدعوم حالياً.\n\nالأنواع المدعومة: PDF, Word (docx), TXT, MD, CSV, JSON\n\n💡 ابعت ملف من الأنواع دي وهحللهولك!"
 
         # Use PDFAgent for extraction (same as Telegram)
         from agents.pdf_agent import PDFAgent
