@@ -24,7 +24,7 @@ from handlers.keyboards import (
     get_pdf_inline_buttons, get_youtube_inline_buttons, get_image_inline_buttons,
 )
 from handlers.dedup import _is_duplicate_update, _is_duplicate_user_message
-from handlers.callbacks import _check_premium_limit, _user_pdf_context, _user_yt_context
+from handlers.callbacks import _check_premium_limit, _user_pdf_context, _user_yt_context, user_states
 
 logger = logging.getLogger(__name__)
 
@@ -641,7 +641,6 @@ async def exit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pass
 
     # محاولة مسح user_states القديم
-    from handlers.callbacks import user_states
     if user_id in user_states:
         user_states.pop(user_id, None)
         workflow_cleared = True

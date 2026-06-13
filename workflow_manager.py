@@ -194,8 +194,8 @@ def clear_workflow(user_id: int):
     
     # مسح user_states القديم كمان (backward compatibility)
     try:
-        from handlers.callbacks import user_states
-        user_states.pop(user_id, None)
+        import handlers.callbacks as _cb
+        _cb.user_states.pop(user_id, None)
     except Exception:
         pass
     
