@@ -696,17 +696,26 @@ class TestSourcesPreferences(unittest.TestCase):
 class TestSubscription(unittest.TestCase):
     """Tests for subscribe_user / unsubscribe_user / is_subscribed / get_all_subscribers"""
 
-    @patch.object(memory, 'update_user')
+    @patch.object(memory, '_execute')
+    @patch.object(memory, '_ensure_user_in_db')
     @patch.object(memory, '_cache_invalidate')
-    def test_subscribe_user(self, mock_invalidate, mock_update):
+    def test_subscribe_user(self, mock_invalidate, mock_ensure, mock_execute):
+        # subscribe_user now does direct SQL UPDATE + verification SELECT
+        # First call: UPDATE, Second call: SELECT verification
+        mock_execute.side_effect = [None, (1,)]  # UPDATE returns None, SELECT returns (1,)
         subscribe_user(123)
-        mock_update.assert_called_once_with(123, {'subscribed': True})
+        # Should have called _execute at least once (the UPDATE)
+        self.assertTrue(mock_execute.call_count >= 1)
+        # Should have invalidated cache
+        mock_invalidate.assert_called_with("user_123")
 
-    @patch.object(memory, 'update_user')
+    @patch.object(memory, '_execute')
+    @patch.object(memory, '_ensure_user_in_db')
     @patch.object(memory, '_cache_invalidate')
-    def test_unsubscribe_user(self, mock_invalidate, mock_update):
+    def test_unsubscribe_user(self, mock_invalidate, mock_ensure, mock_execute):
         unsubscribe_user(123)
-        mock_update.assert_called_once_with(123, {'subscribed': False})
+        mock_execute.assert_called_once()
+        mock_invalidate.assert_called_with("user_123")
 
     @patch.object(memory, 'get_user', return_value={'subscribed': True})
     def test_is_subscribed_true(self, mock_get_user):

@@ -599,15 +599,57 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
     # ══════════════════════════════════════
 
     elif command == "subscribe":
-        await _send_interactive_buttons(
-            wa_id,
-            body_text="📬 *اشتراك الأخبار*\n\nهتبقي مشترك في الأخبار اليومية!\nهنبعتلك أخبار AI على مدار اليوم\n\nاختار:",
-            buttons=[
-                {"id": "cmd_subscribe_confirm", "title": "✅ اشترك"},
-                {"id": "cmd_commands", "title": "📋 الأوامر"},
-            ],
-            header_text="📬 اشتراك",
-        )
+        # 🔴 BUG FIX: كان الكود بيكتب "اشترك" دايمًا حتى لو المستخدم مشترك بالفعل
+        # ده بيخلي المستخدم يفتكر إن الاشتراك محفوظش
+        # الحل: نتأكد من حالة الاشتراك ونعرض الرسالة المناسبة
+        from memory import is_subscribed, get_language
+        sub_lang = get_language(wa_user_id)
+        already_sub = is_subscribed(wa_user_id)
+
+        if already_sub:
+            # المستخدم مشترك بالفعل — نعرض خيار إلغاء الاشتراك
+            if sub_lang == "en":
+                await _send_interactive_buttons(
+                    wa_id,
+                    body_text="📬 *Daily News*\n\n✅ You are already subscribed!\nYou'll receive AI news every day at 12:00 PM Cairo time.\n\nWant to unsubscribe?",
+                    buttons=[
+                        {"id": "cmd_unsubscribe_confirm", "title": "❌ Unsubscribe"},
+                        {"id": "cmd_commands", "title": "📋 Commands"},
+                    ],
+                    header_text="📬 Daily News",
+                )
+            else:
+                await _send_interactive_buttons(
+                    wa_id,
+                    body_text="📬 *اشتراك الأخبار*\n\n✅ أنت مشترك بالفعل!\nهنبعتلك أخبار AI كل يوم الساعة 12 الظهر (توقيت القاهرة).\n\nعايز تلغي الاشتراك؟",
+                    buttons=[
+                        {"id": "cmd_unsubscribe_confirm", "title": "❌ إلغاء الاشتراك"},
+                        {"id": "cmd_commands", "title": "📋 الأوامر"},
+                    ],
+                    header_text="📬 اشتراك",
+                )
+        else:
+            # المستخدم مش مشترك — نعرض خيار الاشتراك
+            if sub_lang == "en":
+                await _send_interactive_buttons(
+                    wa_id,
+                    body_text="📬 *Daily News*\n\nSubscribe to receive the most important AI news every day at 12:00 PM Cairo time!\n\nChoose:",
+                    buttons=[
+                        {"id": "cmd_subscribe_confirm", "title": "✅ Subscribe"},
+                        {"id": "cmd_commands", "title": "📋 Commands"},
+                    ],
+                    header_text="📬 Daily News",
+                )
+            else:
+                await _send_interactive_buttons(
+                    wa_id,
+                    body_text="📬 *اشتراك الأخبار*\n\nهتبقي مشترك في الأخبار اليومية!\nهنبعتلك أخبار AI على مدار اليوم\n\nاختار:",
+                    buttons=[
+                        {"id": "cmd_subscribe_confirm", "title": "✅ اشترك"},
+                        {"id": "cmd_commands", "title": "📋 الأوامر"},
+                    ],
+                    header_text="📬 اشتراك",
+                )
 
     elif command == "unsubscribe":
         await _send_interactive_buttons(
@@ -621,17 +663,40 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
         )
 
     elif command == "subscribe_confirm":
+        # 🔴 BUG FIX: إضافة logging مفصل + verification مزدوج
+        logger.info(f"📬 subscribe_confirm: wa_id={wa_id}, wa_user_id={wa_user_id}")
         try:
-            from memory import subscribe_user, get_news_time, set_news_time
+            from memory import subscribe_user, get_news_time, set_news_time, is_subscribed, _execute, _is_postgres
             subscribe_user(wa_user_id)
             # 🔴 FIX: نتأكد إن news_time = "12:00" (الافتراضي الجديد)
             # لو المستخدم كان عنده "09:00" من الوقت القديم، نحدثه
             current_time = get_news_time(wa_user_id)
             if current_time == "09:00":
                 set_news_time(wa_user_id, "12:00")
-            await _send_whatsapp_message(wa_id, "✅ تم الاشتراك بنجاح! 🎉\n\n📬 هنبعتلك أخبار AI كل يوم الساعة 12 الظهر (توقيت القاهرة).\n\n⏰ لو عايز تغير الوقت ابعت بصيغة HH:MM\nمثال: 14:30\n\nلو عايز تلغي الاشتراك ابعت: إلغاء")
-        except Exception:
-            await _send_whatsapp_message(wa_id, "✅ تم الاشتراك بنجاح! 🎉")
+            # 🔴 BUG FIX: نتأكد إن الاشتراك اتحفظ فعلاً قبل ما نبعت رسالة نجاح
+            if is_subscribed(wa_user_id):
+                logger.info(f"✅ subscribe_confirm: user {wa_user_id} subscribed successfully")
+                await _send_whatsapp_message(wa_id, "✅ تم الاشتراك بنجاح! 🎉\n\n📬 هنبعتلك أخبار AI كل يوم الساعة 12 الظهر (توقيت القاهرة).\n\n⏰ لو عايز تغير الوقت ابعت بصيغة HH:MM\nمثال: 14:30\n\nلو عايز تلغي الاشتراك ابعت: إلغاء")
+            else:
+                # 🔴 DIAGNOSTIC: لو الاشتراك محفوظش، نعمل check مباشر من الـ DB
+                ph = "%s" if _is_postgres() else "?"
+                db_check = _execute(f"SELECT subscribed, platform, wa_phone FROM user_profiles WHERE user_id = {ph}", (wa_user_id,), fetchone=True)
+                logger.error(f"❌ subscribe_user() succeeded but is_subscribed() still False for user {wa_user_id}, DB row: {db_check}")
+                # محاولة تالتة: UPDATE مباشر
+                try:
+                    _execute(f"UPDATE user_profiles SET subscribed = 1 WHERE user_id = {ph}", (wa_user_id,))
+                    if is_subscribed(wa_user_id):
+                        logger.info(f"✅ subscribe_confirm: retry UPDATE worked for user {wa_user_id}")
+                        await _send_whatsapp_message(wa_id, "✅ تم الاشتراك بنجاح! 🎉\n\n📬 هنبعتلك أخبار AI كل يوم الساعة 12 الظهر (توقيت القاهرة).\n\n⏰ لو عايز تغير الوقت ابعت بصيغة HH:MM\nمثال: 14:30\n\nلو عايز تلغي الاشتراك ابعت: إلغاء")
+                    else:
+                        await _send_whatsapp_message(wa_id, "⚠️ حصل خطأ في الاشتراك. جرب تاني أو تواصل مع المطور.")
+                except Exception as e3:
+                    logger.error(f"❌ subscribe_confirm triple-fail for user {wa_user_id}: {e3}")
+                    await _send_whatsapp_message(wa_id, "⚠️ حصل خطأ في الاشتراك. جرب تاني أو تواصل مع المطور.")
+        except Exception as e:
+            # 🔴 BUG FIX: قبل كده كان بيبعت رسالة نجاح حتى لو الاشتراك فشل
+            logger.error(f"❌ subscribe_confirm failed for user {wa_user_id} (wa_id={wa_id}): {e}")
+            await _send_whatsapp_message(wa_id, "⚠️ حصل خطأ في الاشتراك. جرب تاني أو تواصل مع المطور.")
 
     elif command == "skip_subscribe":
         # 🔴 FIX v3: المستخدم ضغط "لا شكراً" على سؤال الاشتراك — نحترم اختياره بس نقوله ممكن يشترك بعدين

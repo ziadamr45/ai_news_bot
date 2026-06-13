@@ -682,9 +682,23 @@ def _ensure_user_in_db(user_id: int, platform: str = "telegram"):
             VALUES (?, ?, 'ar', '12:00', '[]', 0, '[]', '[]', ?, ?, 0, 0, ?)""",
             (user_id, '', now, now, platform)
         )
-    elif _is_postgres():
-        # تحديث platform لو مش مضبوط
-        _execute("UPDATE user_profiles SET platform = %s WHERE user_id = %s AND (platform IS NULL OR platform = '')", (platform, user_id))
+    else:
+        # تحديث platform لو مش مضبوط (للـ PostgreSQL والـ SQLite)
+        # 🔴 BUG FIX: كان الشرط platform IS NULL OR platform = '' بس
+        # ده معناه إن لو platform = 'telegram' (الـ DEFAULT)، مش هيتم تصحيحه لـ 'whatsapp'
+        # ده بيخلي find_user_by_wa_phone() مش تلاقي المستخدم (لأنها بفلتر بـ platform='whatsapp')
+        # وكمان get_subscribers_for_time() مش تبعت الأخبار اليومية للمستخدم
+        #
+        # الحل: لو الـ platform الجديد مش 'telegram' (يعني أكتر تحديد)، نصحح القديم
+        # مثلاً: 'telegram' → 'whatsapp' ✅
+        # بس: 'whatsapp' → 'telegram' ❌ (ممنوع نرجع لـ default)
+        ph = "%s" if _is_postgres() else "?"
+        if platform and platform != 'telegram':
+            # Non-default platform (e.g., 'whatsapp'): correct any placeholder
+            _execute(f"UPDATE user_profiles SET platform = {ph} WHERE user_id = {ph} AND (platform IS NULL OR platform = '' OR platform = 'telegram')", (platform, user_id))
+        else:
+            # Default platform ('telegram'): only fill in NULL/empty
+            _execute(f"UPDATE user_profiles SET platform = {ph} WHERE user_id = {ph} AND (platform IS NULL OR platform = '')", (platform, user_id))
     
     # ✅ التأكد من وجود فهرس wa_phone لـ lookup سريع
     try:
@@ -912,11 +926,47 @@ def set_sources(user_id: int, sources: list):
 # ═══════════════════════════════════════
 
 def subscribe_user(user_id: int):
-    update_user(user_id, {"subscribed": True})
+    """اشتراك المستخدم في الأخبار اليومية
+    
+    🔴 BUG FIX: كان بيستخدم update_user() اللي بتستدعي _ensure_user_in_db() 
+    بدون platform، وده ممكن يسبب مشاكل. دلوقتي بنعمل UPDATE مباشر.
+    كمان بنعمل verification إن الـ UPDATE فعلاً اتعمل.
+    """
+    _ensure_user_in_db(user_id)
+    ph = "%s" if _is_postgres() else "?"
+    now = datetime.now().isoformat()
+    _execute(
+        f"UPDATE user_profiles SET subscribed = 1, last_interaction = {ph} WHERE user_id = {ph}",
+        (now, user_id)
+    )
     _cache_invalidate(f"user_{user_id}")
+    # ✅ Verification: نتأكد إن الاشتراك اتحفظ فعلاً
+    row = _execute(
+        f"SELECT subscribed FROM user_profiles WHERE user_id = {ph}",
+        (user_id,), fetchone=True
+    )
+    if not row or not row[0]:
+        logger.error(f"❌ CRITICAL: subscribe_user({user_id}) UPDATE failed — subscribed still 0!")
+        # محاولة تانية: UPDATE مباشر بدون last_interaction
+        try:
+            _execute(
+                f"UPDATE user_profiles SET subscribed = 1 WHERE user_id = {ph}",
+                (user_id,)
+            )
+            _cache_invalidate(f"user_{user_id}")
+        except Exception as e:
+            logger.error(f"❌ subscribe_user retry also failed: {e}")
+
 
 def unsubscribe_user(user_id: int):
-    update_user(user_id, {"subscribed": False})
+    """إلغاء اشتراك المستخدم"""
+    _ensure_user_in_db(user_id)
+    ph = "%s" if _is_postgres() else "?"
+    now = datetime.now().isoformat()
+    _execute(
+        f"UPDATE user_profiles SET subscribed = 0, last_interaction = {ph} WHERE user_id = {ph}",
+        (now, user_id)
+    )
     _cache_invalidate(f"user_{user_id}")
 
 def is_subscribed(user_id: int) -> bool:
@@ -1859,3 +1909,22 @@ try:
         logger.info(f"⏰ Migration: Updated {count} users' news_time from 09:00 to 12:00 (new default)")
 except Exception as _mg_err:
     logger.debug(f"News time migration skipped: {_mg_err}")
+
+# 🔴 Migration: تصحيح platform للمستخدمين اللي عندهم wa_phone بس platform = 'telegram'
+# ده بيحصل لما المستخدم اتسجل من واتساب بس platform متحفظتش صح
+# لازم نصلح ده عشان find_user_by_wa_phone() و get_subscribers_for_time() يشتغلوا
+try:
+    ph = "%s" if _is_postgres() else "?"
+    _execute(
+        f"UPDATE user_profiles SET platform = 'whatsapp' WHERE platform = 'telegram' AND wa_phone IS NOT NULL AND wa_phone != ''",
+        ()
+    )
+    # نسجل عدد المستخدمين المصححين
+    fixed_count = _execute(
+        "SELECT COUNT(*) FROM user_profiles WHERE platform = 'whatsapp'",
+        (), fetchone=True
+    )
+    if fixed_count:
+        logger.info(f"🔧 Migration: WhatsApp platform fix applied — {fixed_count[0]} WhatsApp users total")
+except Exception as _mg_err2:
+    logger.debug(f"WhatsApp platform migration skipped: {_mg_err2}")
