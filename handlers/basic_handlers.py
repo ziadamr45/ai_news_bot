@@ -365,12 +365,25 @@ async def premium_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def plan_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """أمر /plan - عرض خطط الاشتراك"""
+    """أمر /plan - عرض خطط الاشتراك مع تفاصيل الانتهاء"""
     user_id = update.effective_user.id
     lang = get_language(user_id)
     increment_command_count(user_id)
 
     message = premium_features_message(lang, user_id=user_id)
+
+    # 🔴 إضافة معلومات تاريخ الانتهاء/مدى الحياة للمشتركين
+    from premium import get_premium_info, is_premium as _is_prem
+    from admin import is_admin as _is_adm
+    if _is_prem(user_id) and not _is_adm(user_id):
+        info = get_premium_info(user_id, lang)
+        expiry_line = info.get("expires_display", "")
+        if expiry_line and expiry_line != "—":
+            if lang == "ar":
+                message += f"\n\n⏳ <b>الاشتراك:</b> {expiry_line}"
+            else:
+                message += f"\n\n⏳ <b>Subscription:</b> {expiry_line}"
+
     keyboard = get_premium_keyboard(lang, user_id=user_id)
     await update.message.reply_text(message, parse_mode="HTML", reply_markup=keyboard)
 

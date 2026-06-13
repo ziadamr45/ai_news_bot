@@ -1011,6 +1011,11 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
                     "🧠 ذاكرة طويلة المدى: مفتوح"
                 )
             elif plan in ("premium", "premium_plus"):
+                # 🔴 جلب معلومات تاريخ الانتهاء/مدى الحياة
+                from premium import get_premium_info
+                prem_info = get_premium_info(wa_user_id, "ar")
+                expiry_display = prem_info.get("expires_display", "")
+
                 plan_text = (
                     "⭐ *خطة Premium*\n"
                     "━━━━━━━━━━━━━━━━━\n\n"
@@ -1030,6 +1035,9 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
                     "🧠 ذاكرة طويلة المدى: مفتوح\n"
                     "🤖 نماذج AI أقوى: مفتوح"
                 )
+                # 🔴 إضافة معلومات تاريخ الانتهاء أو مدى الحياة
+                if expiry_display and expiry_display != "—":
+                    plan_text += f"\n\n⏳ الاشتراك: {expiry_display}"
             else:
                 # Free plan — show usage with limits
                 ai_rem = max(0, limits["ai_messages_per_day"] - usage.get("ai_messages", 0))
