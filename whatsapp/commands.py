@@ -1506,6 +1506,8 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
             result = clean_ai_response(result)
             if result:
                 response_text = _strip_html_for_whatsapp(result)
+                # 🔴 إزالة الـ bold (*كلمة*) من النقاط الرئيسية — المستخدم مش عايز عريض
+                response_text = re.sub(r'\*([^*]+)\*', r'\1', response_text)
                 chunks = _split_whatsapp_message(response_text)
                 for chunk in chunks:
                     await _send_whatsapp_message(wa_id, chunk)

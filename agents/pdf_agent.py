@@ -296,9 +296,9 @@ You are a smart assistant specialized in document summarization. Summarize in a 
 • كل نقطة في سطر منفصل
 • رتبها حسب الأهمية
 
-⚠️ ماتستخدمش Markdown (لا *, **, #, |). استخدم HTML فقط: <b>عريض</b> • نقاط
+⚠️ ماتستخدمش Markdown (لا *, **, #, |). ماتستخدمش عريض (<b>) خالص في النقاط. اكتب كل نقطة بشكل عادي بدون أي تنسيق عريض. استخدم • نقاط فقط.
 
-أنت مساعد ذكي تستخرج النقاط الرئيسية من النصوص. ماتستخدمش Markdown أبداً."""
+أنت مساعد ذكي تستخرج النقاط الرئيسية من النصوص. ماتستخدمش Markdown أبداً. ماتستخدمش <b> أو عريض أبداً."""
         else:
             prompt = f"""Extract key points from the following content:
 
@@ -309,9 +309,9 @@ Extract:
 • Each point on a separate line
 • Order by importance
 
-⚠️ NEVER use Markdown (no *, **, #, |). Use HTML only: <b>bold</b> • bullets
+⚠️ NEVER use Markdown (no *, **, #, |). NEVER use bold (<b>) in key points. Write each point in plain text without any bold formatting. Use • bullets only.
 
-You are a smart assistant that extracts key points from texts. NEVER use Markdown."""
+You are a smart assistant that extracts key points from texts. NEVER use Markdown. NEVER use <b> or bold formatting."""
 
         try:
             result = await call_ai(prompt, max_tokens=1500, user_id=user_id, task_type="chat")
