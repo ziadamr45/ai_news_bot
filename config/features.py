@@ -25,49 +25,119 @@ SCORE_WEIGHTS = {
 }
 
 # Source Credibility Scores (0-10)
+# Tier 1: مصادر شركة AI مباشرة (أعلى مصداقية)
 SOURCE_CREDIBILITY = {
     "openai.com": 10,
     "deepmind.google": 10,
     "anthropic.com": 10,
     "blog.google": 9,
+    "ai.google": 9,
+    "microsoft.com": 9,
+    "meta.ai": 9,
+    "about.fb.com": 9,
+    "nvidia.com": 8,
+    "huggingface.co": 8,
+    "mistral.ai": 8,
+    "x.ai": 8,
+    "arxiv.org": 8,
+    "deepseek.com": 8,
+    "minimaxi.com": 7,
+
+    # Tier 2: وسائل إعلام تقنية رائدة
     "reuters.com": 9,
+    "technologyreview.com": 9,  # MIT Tech Review
+    "bbc.co.uk": 8,
+    "theguardian.com": 8,
+    "nytimes.com": 8,
+    "cnbc.com": 8,
     "techcrunch.com": 8,
     "theverge.com": 8,
+    "spectrum.ieee.org": 8,  # IEEE Spectrum
     "arstechnica.com": 7,
     "venturebeat.com": 7,
     "wired.com": 7,
-    "arxiv.org": 8,
-    "huggingface.co": 8,
-    "ai.google": 9,
-    "mistral.ai": 8,
-    "x.ai": 8,
-    "meta.ai": 9,
-    "nvidia.com": 8,
-    "microsoft.com": 9,
+    "zdnet.com": 7,
+    "404media.co": 7,
+    "theregister.com": 7,  # The Register
+    "syncedreview.com": 7,  # Synced AI Review
+    "aitrends.com": 7,  # AI Trends
+
+    # Tier 3: Apple Intelligence
+    "9to5mac.com": 7,
+    "appleinsider.com": 7,
+    "macrumors.com": 7,
+    "apple.com": 9,
+
+    # Tier 4: مصادر عامة/مجمّعة
+    "news.google.com": 6,  # aggregator — trust depends on original source
+    "sciencedaily.com": 7,
+    
+    # شركات AI صينية
+    "zhipuai.com": 7,
+    "baidu.com": 8,
+    "alibaba.com": 8,
+    "tencent.com": 8,
+    
+    # هاردوير إضافي
+    "amd.com": 8,
 }
 
 # AI Keywords for filtering (English)
 AI_KEYWORDS = [
+    # ── شركات ومنتجات AI ──
     "openai", "chatgpt", "gpt-4", "gpt-5", "o1", "o3", "o4",
     "gemini", "deepmind", "google ai",
     "claude", "anthropic",
     "grok", "x.ai", "xAI",
+    "mistral", "llama", "phi",
+    "copilot", "ai assistant",
+    "sora", "dall-e", "midjourney", "stable diffusion",
+    "deepseek", "qwen", "codestral",
+    "minimax", "minimaxi",
+    "perplexity", "cohere",
+
+    # ── Apple Intelligence + Siri ──
+    "apple intelligence", "siri ai", "apple ai",
+    "on-device ai", "private cloud compute",
+
+    # ── أنواع نماذج ──
     "ai agents", "ai agent", "autonomous ai",
     "foundation model", "foundation models", "large language model", "llm",
-    "artificial intelligence", "machine learning", "deep learning",
     "generative ai", "genai",
     "diffusion model", "text-to-image", "text-to-video",
-    "sora", "dall-e", "midjourney", "stable diffusion",
-    "copilot", "ai assistant",
-    "mistral", "llama", "phi",
     "neural network", "transformer",
-    "agi", "artificial general intelligence",
-    "reinforcement learning", "rlhf",
     "multimodal ai", "vision language model",
+    "reinforcement learning", "rlhf",
+    "reasoning model", "chain of thought",
+    "mixture of experts", "moe",
+    "rag", "retrieval augmented",
+
+    # ── مصطلحات عامة ──
+    "artificial intelligence", "machine learning", "deep learning",
+    "agi", "artificial general intelligence",
+
+    # ─ـ تنظيم وسياسات ──
     "ai regulation", "ai safety", "ai alignment",
+    "ai governance", "ai ethics", "ai risk",
+
+    # ── روبوتات وأتمتة ──
     "robot", "humanoid", "autonomous",
+    "ai robotics", "embodied ai",
+
+    # ── هاردوير وشركات ──
     "nvidia ai", "gpu ai", "ai chip",
     "ai startup", "ai funding", "ai acquisition",
+
+    # ── تطبيقات ومجالات ──
+    "ai model", "ai research", "ai tool",
+    "ai-powered", "ai-driven", "ai-based",
+    "computer vision", "natural language processing",
+    "ai automation", "intelligent automation",
+
+    # ── شركات AI صينية ──
+    "chatglm", "glm-4", "glm-5", "zhipu",
+    "ernie", "ernie bot", "wenxin",
+    "tongyi qianwen", "hunyuan",
 ]
 
 # Exclusion Keywords
@@ -81,16 +151,73 @@ EXCLUSION_KEYWORDS = [
 ]
 
 # RSS Feed URLs
+# ═══════════════════════════════════════════════════════════════
+# المصادر مقسمة لـ 4 طبقات:
+#   Tier 1 = مصادر شركة AI مباشرة (أعلى مصداقية)
+#   Tier 2 = وسائل إعلام تقنية رائدة (مصداقية عالية + تغطية واسعة)
+#   Tier 3 = Apple Intelligence + مصادر Apple المخصصة
+#   Tier 4 = مصادر عامة/مجمّعة + بدائل Reuters/Anthropic
+# ═══════════════════════════════════════════════════════════════
 RSS_FEEDS = [
+    # ── Tier 1: مصادر شركة AI مباشرة (أعلى مصداقية) ──
     "https://openai.com/blog/rss.xml",
     "https://blog.google/technology/ai/rss/",
-    "https://www.anthropic.com/feed.xml",
+    "https://deepmind.google/blog/feed/",  # DeepMind Blog (Google)
+    "https://blogs.nvidia.com/feed/",
+    "https://huggingface.co/blog/feed.xml",
+    "https://www.microsoft.com/en-us/ai/blog/rss/",
+    "https://about.fb.com/news/feed/",  # Meta/Facebook AI news
+
+    # ── Tier 2: وسائل إعلام تقنية رائدة ──
     "https://techcrunch.com/category/artificial-intelligence/feed/",
-    "https://www.reuters.com/technology/artificial-intelligence/rss.xml",
     "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml",
     "https://arstechnica.com/tag/ai/feed/",
     "https://venturebeat.com/category/ai/feed/",
     "https://www.wired.com/feed/tag/ai/latest/rss",
+    "https://www.technologyreview.com/feed/",  # MIT Tech Review
+    "https://www.cnbc.com/id/100003114/device/rss/rss.html",  # CNBC Tech
+    "https://spectrum.ieee.org/rss/fulltext",  # IEEE Spectrum
+    "https://www.zdnet.com/topic/artificial-intelligence/rss.xml",  # ZDNet AI
+    "https://www.404media.co/rss/",  # 404 Media (tech investigations)
+    "https://www.theguardian.com/technology/artificialintelligenceai/rss",  # The Guardian AI
+    "https://feeds.bbci.co.uk/news/technology/rss.xml",  # BBC Tech
+    "https://www.theregister.com/headlines.atom",  # The Register (UK tech)
+    "https://syncedreview.com/feed/",  # Synced AI Research Review
+    "https://www.aitrends.com/feed/",  # AI Trends
+
+    # ── Tier 3: Apple Intelligence + مصادر Apple ──
+    "https://9to5mac.com/feed/",  # 9to5Mac — Apple Intelligence + Siri news
+    "https://appleinsider.com/rss/news/",  # AppleInsider
+    "https://news.google.com/rss/search?q=apple+intelligence+siri+AI&hl=en-US&gl=US&ceid=US:en",  # Google News: Apple Intelligence
+
+    # ── Tier 4: مصادر عامة/مجمّعة + بدائل للشركات اللي معندهاش RSS ──
+    # بدائل Reuters (401) و Anthropic (404)
+    "https://news.google.com/rss/search?q=reuters+artificial+intelligence&hl=en-US&gl=US&ceid=US:en",  # Google News: Reuters AI
+    "https://news.google.com/rss/search?q=anthropic+claude+AI&hl=en-US&gl=US&ceid=US:en",  # Google News: Anthropic/Claude
+    # بدائل xAI/Grok و DeepSeek و MiniMax و Mistral (شركات معندهاش RSS خاص)
+    "https://news.google.com/rss/search?q=xAI+grok+elon+musk+AI&hl=en-US&gl=US&ceid=US:en",  # Google News: xAI/Grok
+    "https://news.google.com/rss/search?q=deepseek+AI+model&hl=en-US&gl=US&ceid=US:en",  # Google News: DeepSeek
+    "https://news.google.com/rss/search?q=minimax+AI+model&hl=en-US&gl=US&ceid=US:en",  # Google News: MiniMax
+    "https://news.google.com/rss/search?q=mistral+AI+model&hl=en-US&gl=US&ceid=US:en",  # Google News: Mistral
+    # شركات AI صينية وأسيوية (GLM/Zhipu, Baidu/ERNIE, Alibaba/Qwen, Tencent/Hunyuan)
+    "https://news.google.com/rss/search?q=zhipu+AI+GLM+model&hl=en-US&gl=US&ceid=US:en",  # Google News: Zhipu/GLM
+    "https://news.google.com/rss/search?q=baidu+ernie+AI+model&hl=en-US&gl=US&ceid=US:en",  # Google News: Baidu/ERNIE
+    "https://news.google.com/rss/search?q=alibaba+qwen+AI+model&hl=en-US&gl=US&ceid=US:en",  # Google News: Alibaba/Qwen
+    "https://news.google.com/rss/search?q=tencent+hunyuan+AI+model&hl=en-US&gl=US&ceid=US:en",  # Google News: Tencent/Hunyuan
+    # AI هاردوير (AMD, Intel)
+    "https://news.google.com/rss/search?q=AMD+MI300+AI+chip&hl=en-US&gl=US&ceid=US:en",  # Google News: AMD AI
+    "https://news.google.com/rss/search?q=intel+AI+chip+Gaudi&hl=en-US&gl=US&ceid=US:en",  # Google News: Intel AI
+    # روبوتات AI (Figure AI, Tesla Optimus, Boston Dynamics)
+    "https://news.google.com/rss/search?q=figure+AI+humanoid+robot&hl=en-US&gl=US&ceid=US:en",  # Google News: Figure AI
+    "https://news.google.com/rss/search?q=tesla+optimus+robot+AI&hl=en-US&gl=US&ceid=US:en",  # Google News: Tesla Optimus
+    # AI Agents و Automation
+    "https://news.google.com/rss/search?q=AI+agents+autonomous+2024&hl=en-US&gl=US&ceid=US:en",  # Google News: AI Agents
+    # AI Safety و Regulation
+    "https://news.google.com/rss/search?q=AI+safety+regulation+policy+2024&hl=en-US&gl=US&ceid=US:en",  # Google News: AI Safety
+    # تغطية عامة شاملة
+    "https://news.google.com/rss/search?q=artificial+intelligence+when:1d&hl=en-US&gl=US&ceid=US:en",  # Google News: AI general
+    "https://www.sciencedaily.com/rss/computers_math/artificial_intelligence.xml",  # ScienceDaily AI
+    "https://www.nytimes.com/svc/collections/v1/publish/https://www.nytimes.com/section/technology/rss.xml",  # NYTimes Tech
 ]
 
 # Company Data for Reports
@@ -166,6 +293,105 @@ COMPANY_DATA = {
         "description": "World-leading AI research lab (Google)",
         "description_ar": "مختبر أبحاث ذكاء اصطناعي عالمي (جوجل)",
         "rss_keywords": ["deepmind", "alphafold"],
+    },
+    "apple": {
+        "name": "Apple AI",
+        "name_ar": "آبل إيه آي",
+        "keywords": ["apple intelligence", "apple ai", "siri ai", "siri", "private cloud compute", "on-device ai", "apple ml"],
+        "products": ["Apple Intelligence", "Siri AI", "Private Cloud Compute", "On-Device AI"],
+        "description": "Tech giant bringing AI to consumer devices",
+        "description_ar": "شركة تقنية عملاقة تجلب الذكاء الاصطناعي لأجهزة المستهلكين",
+        "rss_keywords": ["apple intelligence", "siri", "apple ai"],
+    },
+    "deepseek": {
+        "name": "DeepSeek",
+        "name_ar": "ديب سيك",
+        "keywords": ["deepseek", "deepseek-v", "deepseek-r1", "deepseek coder"],
+        "products": ["DeepSeek-V", "DeepSeek-R1", "DeepSeek Coder"],
+        "description": "Chinese AI lab producing competitive open-source models",
+        "description_ar": "مختبر ذكاء اصطناعي صيني ينتج نماذج مفتوحة المصدر تنافسية",
+        "rss_keywords": ["deepseek"],
+    },
+    "minimax": {
+        "name": "MiniMax",
+        "name_ar": "ميني ماكس",
+        "keywords": ["minimax", "minimaxi", "minimax ai"],
+        "products": ["MiniMax-01", "MiniMax-Text", "MiniMax-Voice"],
+        "description": "Chinese AI company specializing in multimodal models",
+        "description_ar": "شركة ذكاء اصطناعي صينية متخصصة في النماذج متعددة الوسائط",
+        "rss_keywords": ["minimax", "minimaxi"],
+    },
+    "mistral": {
+        "name": "Mistral AI",
+        "name_ar": "ميسترال إيه آي",
+        "keywords": ["mistral", "mistral ai", "codestral", "mistral large", "mistral medium", "pixtral"],
+        "products": ["Mistral Large", "Mistral Medium", "Codestral", "Pixtral", "Le Chat"],
+        "description": "French AI company building efficient open and commercial models",
+        "description_ar": "شركة ذكاء اصطناعي فرنسية تبني نماذج مفتوحة وتجارية فعالة",
+        "rss_keywords": ["mistral", "codestral"],
+    },
+    "perplexity": {
+        "name": "Perplexity AI",
+        "name_ar": "بيربلكسيتي إيه آي",
+        "keywords": ["perplexity", "perplexity ai", "perplexity pro"],
+        "products": ["Perplexity Pro", "Perplexity Search", "Perplexity API"],
+        "description": "AI-powered search engine and answer engine",
+        "description_ar": "محرك بحث وإجابات يعمل بالذكاء الاصطناعي",
+        "rss_keywords": ["perplexity"],
+    },
+    "zhipu": {
+        "name": "Zhipu AI / GLM",
+        "name_ar": "زيپو إيه آي / GLM",
+        "keywords": ["zhipu", "chatglm", "glm-4", "glm-5", "chatglm-4", "zhipu ai"],
+        "products": ["ChatGLM", "GLM-4", "GLM-5", "CogVideoX"],
+        "description": "Leading Chinese AI lab behind the GLM model family",
+        "description_ar": "مختبر ذكاء اصطناعي صيني رائد وراء عائلة نماذج GLM",
+        "rss_keywords": ["zhipu", "chatglm", "glm"],
+    },
+    "baidu": {
+        "name": "Baidu AI / ERNIE",
+        "name_ar": "بايدو إيه آي / إرني",
+        "keywords": ["baidu ai", "ernie", "ernie bot", "wenxin", "baidu"],
+        "products": ["ERNIE Bot", "ERNIE 4.0", "ERNIE 5.0", "Wenxin"],
+        "description": "Chinese tech giant with ERNIE AI chatbot and search",
+        "description_ar": "شركة تقنية صينية عملاقة صانعة روبوت ERNIE ومحرك البحث",
+        "rss_keywords": ["baidu", "ernie", "wenxin"],
+    },
+    "alibaba": {
+        "name": "Alibaba AI / Qwen",
+        "name_ar": "علي بابا إيه آي / كوين",
+        "keywords": ["alibaba ai", "qwen", "tongyi qianwen", "alibaba qwen"],
+        "products": ["Qwen", "Qwen 2.5", "Tongyi Qianwen", "Qwen-VL"],
+        "description": "Chinese e-commerce giant with open-source Qwen AI models",
+        "description_ar": "شركة تجارة إلكترونية صينية عملاقة صانعة نماذج Qwen مفتوحة المصدر",
+        "rss_keywords": ["alibaba", "qwen", "tongyi"],
+    },
+    "tencent": {
+        "name": "Tencent AI / Hunyuan",
+        "name_ar": "تنسنت إيه آي / هونيوان",
+        "keywords": ["tencent ai", "hunyuan", "tencent hunyuan", "tencent"],
+        "products": ["Hunyuan", "Hunyuan-Large", "Hunyuan 3D"],
+        "description": "Chinese tech giant with Hunyuan foundation model",
+        "description_ar": "شركة تقنية صينية عملاقة صانعة نموذج هونيوان الأساسي",
+        "rss_keywords": ["tencent", "hunyuan"],
+    },
+    "amd": {
+        "name": "AMD AI",
+        "name_ar": "إيه إم دي إيه آي",
+        "keywords": ["amd", "mi300", "mi350", "amd ai", "amd gpu", "instinct"],
+        "products": ["MI300X", "MI350", "Instinct", "ROCm"],
+        "description": "Semiconductor company competing with NVIDIA in AI chips",
+        "description_ar": "شركة أشباه موصلات تنافس إنفيديا في رقائق الذكاء الاصطناعي",
+        "rss_keywords": ["amd", "mi300", "instinct"],
+    },
+    "figure_ai": {
+        "name": "Figure AI",
+        "name_ar": "فيجر إيه آي",
+        "keywords": ["figure ai", "figure humanoid", "figure robot", "figure 02"],
+        "products": ["Figure 01", "Figure 02", "Figure Humanoid"],
+        "description": "AI humanoid robotics company backed by OpenAI and NVIDIA",
+        "description_ar": "شركة روبوتات هيكلية بشرية مدعومة من OpenAI و NVIDIA",
+        "rss_keywords": ["figure ai", "figure humanoid"],
     },
 }
 

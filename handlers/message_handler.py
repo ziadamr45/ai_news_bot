@@ -728,23 +728,36 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # ═══════════════════════════════════════════════════════════════
-    # 🥈 الأولوية 1.7: تغيير وقت الأخبار — كشف نمط HH:MM
+    # 🥈 الأولوية 1.7: تغيير وقت الأخبار — كشف نمط الوقت (12 أو 24 ساعة)
     # ═══════════════════════════════════════════════════════════════
-    # لو المستخدم كتب وقت بصيغة HH:MM (زي 14:30 أو 09:00)
+    # لو المستخدم كتب وقت بصيغة HH:MM أو 12 ساعة (5 مساءً، 12 الظهر، إلخ)
     # ده معناه إنه عايز يغير وقت الأخبار اليومية
-    import re as _time_re
-    _time_match = _time_re.match(r'^([0-1]?[0-9]|2[0-3]):([0-5][0-9])$', user_text.strip())
-    if _time_match:
-        hour_str = _time_match.group(1).zfill(2)
-        minute_str = _time_match.group(2).zfill(2)
-        new_time = f"{hour_str}:{minute_str}"
+    from formatters import parse_time_input
+    _parsed_time = parse_time_input(user_text.strip())
+    if _parsed_time:
+        new_time = _parsed_time
+        
+        # عرض الوقت بنظام 12 ساعة للمستخدم
+        try:
+            parts = new_time.split(":")
+            h, m = int(parts[0]), int(parts[1])
+            if h == 0:
+                time_12h = f"12:{m:02d} صباحًا"
+            elif h < 12:
+                time_12h = f"{h}:{m:02d} صباحًا"
+            elif h == 12:
+                time_12h = f"12:{m:02d} مساءً"
+            else:
+                time_12h = f"{h - 12}:{m:02d} مساءً"
+        except Exception:
+            time_12h = new_time
         
         set_news_time(user_id, new_time)
         
         if lang == "ar":
             await update.message.reply_text(
                 f"✅ <b>تم تغيير وقت الأخبار!</b>\n\n"
-                f"⏰ الوقت الجديد: <code>{new_time}</code> (توقيت القاهرة)\n"
+                f"⏰ الوقت الجديد: <code>{time_12h}</code> ({new_time}) — توقيت القاهرة\n"
                 f"📬 هابعتلك الأخبار كل يوم في الوقت ده.\n\n"
                 f"💡 ممكن تغيره تاني من ⚙️ الإعدادات",
                 parse_mode="HTML"
@@ -752,7 +765,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await update.message.reply_text(
                 f"✅ <b>News time updated!</b>\n\n"
-                f"⏰ New time: <code>{new_time}</code> (Cairo time)\n"
+                f"⏰ New time: <code>{time_12h}</code> ({new_time}) — Cairo time\n"
                 f"📬 I'll send you news every day at this time.\n\n"
                 f"💡 You can change it again from ⚙️ Settings",
                 parse_mode="HTML"

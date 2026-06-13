@@ -536,14 +536,38 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
             body_text="🏢 *أخبار الشركات*\n\nاختار الشركة اللي عايز تعرف آخر أخبارها:",
             button_text="اختار شركة",
             sections=[{
-                "title": "🏢 شركات AI",
+                "title": "🏢 شركات AI كبرى",
                 "rows": [
-                    {"id": "cmd_company_openai", "title": "🏢 OpenAI", "description": "آخر أخبار OpenAI"},
-                    {"id": "cmd_company_google", "title": "🏢 Google", "description": "آخر أخبار Google AI"},
-                    {"id": "cmd_company_anthropic", "title": "🏢 Anthropic", "description": "آخر أخبار Anthropic"},
-                    {"id": "cmd_company_meta", "title": "🏢 Meta", "description": "آخر أخبار Meta AI"},
-                    {"id": "cmd_company_xai", "title": "🏢 xAI", "description": "آخر أخبار xAI"},
-                    {"id": "cmd_company_nvidia", "title": "🏢 NVIDIA", "description": "آخر أخبار NVIDIA"},
+                    {"id": "cmd_company_openai", "title": "🏢 OpenAI", "description": "آخر أخبار OpenAI و ChatGPT"},
+                    {"id": "cmd_company_google", "title": "🏢 Google / DeepMind", "description": "آخر أخبار Google AI و Gemini"},
+                    {"id": "cmd_company_anthropic", "title": "🏢 Anthropic", "description": "آخر أخبار Anthropic و Claude"},
+                    {"id": "cmd_company_apple", "title": "🍎 Apple AI", "description": "آخر أخبار Apple Intelligence و Siri"},
+                    {"id": "cmd_company_meta", "title": "🏢 Meta", "description": "آخر أخبار Meta AI و Llama"},
+                    {"id": "cmd_company_microsoft", "title": "🏢 Microsoft", "description": "آخر أخبار Copilot و Azure AI"},
+                    {"id": "cmd_company_xai", "title": "🏢 xAI", "description": "آخر أخبار xAI و Grok"},
+                    {"id": "cmd_company_nvidia", "title": "🏢 NVIDIA", "description": "آخر أخبار NVIDIA و AI chips"},
+                ],
+            }, {
+                "title": "🚀 شركات AI ناشئة ومنافسة",
+                "rows": [
+                    {"id": "cmd_company_deepseek", "title": "🔬 DeepSeek", "description": "آخر أخبار DeepSeek"},
+                    {"id": "cmd_company_mistral", "title": "🇫🇷 Mistral AI", "description": "آخر أخبار Mistral و Codestral"},
+                    {"id": "cmd_company_minimax", "title": "🔬 MiniMax", "description": "آخر أخبار MiniMax"},
+                    {"id": "cmd_company_perplexity", "title": "🔍 Perplexity AI", "description": "آخر أخبار Perplexity"},
+                ],
+            }, {
+                "title": "🇨🇳 شركات AI صينية",
+                "rows": [
+                    {"id": "cmd_company_zhipu", "title": "🇨🇳 GLM/Zhipu", "description": "آخر أخبار Zhipu و ChatGLM"},
+                    {"id": "cmd_company_alibaba", "title": "🇨🇳 Alibaba/Qwen", "description": "آخر أخبار Alibaba Qwen"},
+                    {"id": "cmd_company_baidu", "title": "🇨🇳 Baidu/ERNIE", "description": "آخر أخبار Baidu ERNIE"},
+                    {"id": "cmd_company_tencent", "title": "🇨🇳 Tencent/Hunyuan", "description": "آخر أخبار Tencent Hunyuan"},
+                ],
+            }, {
+                "title": "💻 هاردوير وروبوتات AI",
+                "rows": [
+                    {"id": "cmd_company_amd", "title": "💻 AMD AI", "description": "آخر أخبار AMD AI chips"},
+                    {"id": "cmd_company_figure_ai", "title": "🤖 Figure AI", "description": "آخر أخبار Figure AI robots"},
                 ],
             }],
             header_text="🏢 شركات",
@@ -687,7 +711,7 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
             # 🔴 BUG FIX: نتأكد إن الاشتراك اتحفظ فعلًا قبل ما نبعت رسالة نجاح
             if is_subscribed(wa_user_id):
                 logger.info(f"✅ subscribe_confirm: user {wa_user_id} subscribed successfully")
-                await _send_whatsapp_message(wa_id, "✅ تم الاشتراك بنجاح! 🎉\n\n📬 هنبعتلك أخبار AI كل يوم الساعة 12 الظهر (توقيت القاهرة).\n\n⏰ لو عايز تغير الوقت ابعت بصيغة HH:MM\nمثال: 14:30\n\nلو عايز تلغي الاشتراك ابعت: إلغاء")
+                await _send_whatsapp_message(wa_id, "✅ تم الاشتراك بنجاح! 🎉\n\n📬 هنبعتلك أخبار AI كل يوم الساعة 12 الظهر (توقيت القاهرة).\n\n⏰ لو عايز تغير الوقت ابعت الوقت اللي يعجبك:\nمثال: 5 مساءً أو 5:00 pm أو 17:00\n\nلو عايز تلغي الاشتراك ابعت: إلغاء")
             else:
                 # 🔴 DIAGNOSTIC: لو الاشتراك محفوظش، نعمل check مباشر من الـ DB
                 ph = "%s" if _is_postgres() else "?"
@@ -698,7 +722,7 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
                     _execute(f"UPDATE user_profiles SET subscribed = 1 WHERE user_id = {ph}", (wa_user_id,))
                     if is_subscribed(wa_user_id):
                         logger.info(f"✅ subscribe_confirm: retry UPDATE worked for user {wa_user_id}")
-                        await _send_whatsapp_message(wa_id, "✅ تم الاشتراك بنجاح! 🎉\n\n📬 هنبعتلك أخبار AI كل يوم الساعة 12 الظهر (توقيت القاهرة).\n\n⏰ لو عايز تغير الوقت ابعت بصيغة HH:MM\nمثال: 14:30\n\nلو عايز تلغي الاشتراك ابعت: إلغاء")
+                        await _send_whatsapp_message(wa_id, "✅ تم الاشتراك بنجاح! 🎉\n\n📬 هنبعتلك أخبار AI كل يوم الساعة 12 الظهر (توقيت القاهرة).\n\n⏰ لو عايز تغير الوقت ابعت الوقت اللي يعجبك:\nمثال: 5 مساءً أو 5:00 pm أو 17:00\n\nلو عايز تلغي الاشتراك ابعت: إلغاء")
                     else:
                         await _send_whatsapp_message(wa_id, "⚠️ حصل خطأ في الاشتراك. جرب تاني أو تواصل مع المطور.")
                 except Exception as e3:
@@ -1720,9 +1744,21 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
             "cmd_company_openai": "OpenAI",
             "cmd_company_google": "Google AI",
             "cmd_company_anthropic": "Anthropic",
+            "cmd_company_apple": "Apple AI و Apple Intelligence و Siri",
             "cmd_company_meta": "Meta AI",
+            "cmd_company_microsoft": "Microsoft AI و Copilot",
             "cmd_company_xai": "xAI",
             "cmd_company_nvidia": "NVIDIA",
+            "cmd_company_deepseek": "DeepSeek",
+            "cmd_company_mistral": "Mistral AI",
+            "cmd_company_minimax": "MiniMax",
+            "cmd_company_perplexity": "Perplexity AI",
+            "cmd_company_zhipu": "Zhipu AI و GLM و ChatGLM",
+            "cmd_company_alibaba": "Alibaba AI و Qwen",
+            "cmd_company_baidu": "Baidu AI و ERNIE",
+            "cmd_company_tencent": "Tencent AI و Hunyuan",
+            "cmd_company_amd": "AMD AI و MI300",
+            "cmd_company_figure_ai": "Figure AI و Humanoid Robots",
         }
         company = company_map.get(command, "AI")
         await _send_ai_response(wa_id,

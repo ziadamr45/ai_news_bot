@@ -685,15 +685,17 @@ def subscription_confirmed(language: str = "ar") -> str:
     if language == "ar":
         return """✅ <b>تم الاشتراك بنجاح!</b>
 
-📬 هابعتلك أخبار AI كل يوم الساعة 12 الظهر
+📬 هابعتلك أخبار AI كل يوم الساعة 12 الظهر (توقيت القاهرة)
 💡 ممكن تلغي الاشتراك أي وقت من ⚙️ الإعدادات
-⏰ ممكن تغير وقت الأخبار من ⚙️ الإعدادات > وقت الأخبار"""
+⏰ ممكن تغير وقت الأخبار من ⚙️ الإعدادات > وقت الأخبار
+    اكتب الوقت اللي يعجبك: 5 مساءً أو 5:00 pm أو 17:00"""
     else:
         return """✅ <b>Subscribed successfully!</b>
 
-📬 I'll send you AI news every day at 12:00 PM
+📬 I'll send you AI news every day at 12:00 PM (Cairo time)
 💡 You can unsubscribe anytime from ⚙️ Settings
-⏰ You can change news time from ⚙️ Settings > News Time"""
+⏰ You can change news time from ⚙️ Settings > News Time
+    Send your preferred time: 5 pm or 5:00 pm or 17:00"""
 
 
 def unsubscription_confirmed(language: str = "ar") -> str:
@@ -817,21 +819,147 @@ def language_selection() -> str:
 
 
 def time_selection(current_time: str, language: str = "ar") -> str:
-    """رسالة اختيار الوقت"""
+    """رسالة اختيار الوقت — بدعم نظام 12 ساعة و24 ساعة"""
+    # تحويل الوقت الحالي لعرضه بنظام 12 ساعة
+    try:
+        parts = current_time.split(":")
+        h, m = int(parts[0]), int(parts[1])
+        if h == 0:
+            time_12h = f"12:{m:02d} صباحًا"
+        elif h < 12:
+            time_12h = f"{h}:{m:02d} صباحًا"
+        elif h == 12:
+            time_12h = f"12:{m:02d} مساءً"
+        else:
+            time_12h = f"{h - 12}:{m:02d} مساءً"
+    except Exception:
+        time_12h = current_time
+
     if language == "ar":
         return f"""⏰ <b>تغيير وقت الأخبار</b>
 
-الوقت الحالي: {current_time} (توقيت القاهرة)
+الوقت الحالي: {time_12h} ({current_time} — توقيت القاهرة)
 
-أرسل الوقت بالصيغة التالية:
-مثال: <code>12:00</code> أو <code>14:30</code>"""
+اكتب الوقت اللي عايزه بأي صيغة من دول:
+• <code>5:00 مساءً</code> أو <code>5 مساء</code> أو <code>5pm</code>
+• <code>12:00 الظهر</code> أو <code>12 مساءً</code>
+• <code>12:00 الصبح</code> أو <code>12 صباحًا</code>
+• <code>9:00</code> (لو مكتوب رقم بس هيبقى 9 الصبح)
+• أو بنظام 24 ساعة: <code>14:30</code> أو <code>17:00</code>"""
     else:
         return f"""⏰ <b>Change News Time</b>
 
-Current time: {current_time} (Cairo time)
+Current time: {time_12h} ({current_time} — Cairo time)
 
-Send the time in this format:
-Example: <code>12:00</code> or <code>14:30</code>"""
+Send the time in any of these formats:
+• <code>5:00 pm</code> or <code>5pm</code> or <code>5 pm</code>
+• <code>12:00 noon</code> or <code>12 pm</code>
+• <code>12:00 am</code> or <code>12 midnight</code>
+• <code>9:00</code> (without am/pm = morning)
+• Or 24-hour format: <code>14:30</code> or <code>17:00</code>"""
+
+
+def parse_time_input(user_input: str) -> str:
+    """
+    تحويل إدخال المستخدم للوقت (12 أو 24 ساعة) لصيغة HH:MM بنظام 24 ساعة
+    
+    يدعم:
+    - "5:00 مساءً" / "5 مساء" / "5pm" / "5:00 pm" → 17:00
+    - "12:00 الظهر" / "12 مساءً" / "12pm" → 12:00
+    - "12:00 الصبح" / "12 صباحًا" / "12am" → 00:00
+    - "9:00" (بدون am/pm = صباح) → 09:00
+    - "14:30" (نظام 24 ساعة) → 14:30
+    - "11:30 مساء" → 23:30
+    - "1:00 الفجر" → 01:00
+    
+    Returns: "HH:MM" بنظام 24 ساعة أو None لو الإدخال مش وقت
+    """
+    import re
+    text = user_input.strip()
+    
+    # ── 1. محاولة نظام 24 ساعة مباشرة (HH:MM) ──
+    match_24 = re.match(r'^([0-1]?[0-9]|2[0-3]):([0-5][0-9])$', text)
+    if match_24:
+        return f"{int(match_24.group(1)):02d}:{match_24.group(2)}"
+    
+    # ── 2. محاولة نظام 12 ساعة ──
+    # أنماط: "5:00 مساءً", "5 مساء", "5pm", "5:00 pm", "12 الظهر", "12 الصبح"
+    # كلمات مسائية (PM)
+    pm_keywords = [
+        r'مساءً?', r'مساء', r'م', r'pm', r'p\.m\.?', r'الظهر', r'ظهر',
+        r'بعد\s*الظهر', r'العصر', r'المغرب', r'العشاء',
+    ]
+    # كلمات صباحية (AM)
+    am_keywords = [
+        r'صباحًا?', r'صباح', r'ص', r'am', r'a\.m\.?', r'الصبح', r'صبح',
+        r'الفجر', r'فجر', r'الليل', r'ليل',
+    ]
+    
+    is_pm = False
+    is_am = False
+    
+    for kw in pm_keywords:
+        if re.search(kw, text, re.IGNORECASE):
+            is_pm = True
+            break
+    
+    for kw in am_keywords:
+        if re.search(kw, text, re.IGNORECASE):
+            is_am = True
+            break
+    
+    # استخراج الساعة والدقائق
+    # نمط: رقم أو رقم:رقم في بداية النص
+    time_match = re.match(r'^(\d{1,2})(?::(\d{2}))?\s*', text)
+    if time_match:
+        hour = int(time_match.group(1))
+        minute = int(time_match.group(2)) if time_match.group(2) else 0
+        
+        # التحقق من صحة الساعة
+        if hour > 23 or minute > 59:
+            return None
+        
+        # لو فيه am/pm صريح
+        if is_pm:
+            if hour == 12:
+                hour = 12  # 12 مساءً = 12:00
+            elif hour < 12:
+                hour += 12
+        elif is_am:
+            if hour == 12:
+                hour = 0   # 12 صباحًا = 00:00
+            # غير كده الساعة زي ما هي
+        else:
+            # لو مفيش am/pm — لو الساعة من 1-6 يبقى صباح (AM)
+            # لو من 7-11 يبقى صباح كمان (الوضع الافتراضي AM)
+            # لو 12 يبقى الظهر (PM)
+            # لو أكتر من 12 يبقى 24 ساعة
+            if hour == 12:
+                hour = 12  # 12 بدون تحديد = الظهر (PM)
+            elif hour > 12:
+                pass  # نظام 24 ساعة
+            # else: AM (صباح) — الساعة زي ما هي
+        
+        return f"{hour:02d}:{minute:02d}"
+    
+    # ── 3. محاولة "5 pm" أو "5pm" بدون نقطتين ──
+    time_match2 = re.match(r'^(\d{1,2})\s*(am|pm|ص|م)\s*$', text, re.IGNORECASE)
+    if time_match2:
+        hour = int(time_match2.group(1))
+        period = time_match2.group(2).lower()
+        
+        if period in ('pm', 'م'):
+            if hour == 12:
+                hour = 12
+            elif hour < 12:
+                hour += 12
+        elif period in ('am', 'ص'):
+            if hour == 12:
+                hour = 0
+        
+        return f"{hour:02d}:00"
+    
+    return None
 
 
 def sources_selection(language: str = "ar") -> str:

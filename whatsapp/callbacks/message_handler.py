@@ -567,27 +567,40 @@ async def _handle_incoming_message(message: dict, value: dict):
                 if handled:
                     return
 
-            # ═══ Time Change Detection (HH:MM pattern) ═══
-            # لو المستخدم كتب وقت بصيغة HH:MM (زي 14:30 أو 09:00)
+            # ═══ Time Change Detection (12-hour or 24-hour format) ═══
+            # لو المستخدم كتب وقت بصيغة HH:MM أو 12 ساعة (5 مساءً، 12 الظهر، إلخ)
             # ده معناه إنه عايز يغير وقت الأخبار اليومية
-            import re as _time_re
-            _time_match = _time_re.match(r'^([0-1]?[0-9]|2[0-3]):([0-5][0-9])$', content.strip())
-            if _time_match:
-                hour_str = _time_match.group(1).zfill(2)
-                minute_str = _time_match.group(2).zfill(2)
-                new_time = f"{hour_str}:{minute_str}"
+            from formatters import parse_time_input
+            _parsed_time = parse_time_input(content.strip())
+            if _parsed_time:
+                new_time = _parsed_time
+                
+                # عرض الوقت بنظام 12 ساعة للمستخدم
+                try:
+                    parts = new_time.split(":")
+                    h, m = int(parts[0]), int(parts[1])
+                    if h == 0:
+                        time_12h = f"12:{m:02d} صباحًا"
+                    elif h < 12:
+                        time_12h = f"{h}:{m:02d} صباحًا"
+                    elif h == 12:
+                        time_12h = f"12:{m:02d} مساءً"
+                    else:
+                        time_12h = f"{h - 12}:{m:02d} مساءً"
+                except Exception:
+                    time_12h = new_time
                 
                 try:
                     from memory import set_news_time
                     set_news_time(wa_user_id, new_time)
                     await _send_whatsapp_message(wa_id,
                         f"✅ تم تغيير وقت الأخبار!\n\n"
-                        f"⏰ الوقت الجديد: {new_time} (توقيت القاهرة)\n"
+                        f"⏰ الوقت الجديد: {time_12h} ({new_time}) — توقيت القاهرة\n"
                         f"📬 هابعتلك الأخبار كل يوم في الوقت ده.\n\n"
                         f"💡 ممكن تغيره تاني من الإعدادات"
                     )
                 except Exception:
-                    await _send_whatsapp_message(wa_id, f"✅ تم تغيير وقت الأخبار إلى {new_time}")
+                    await _send_whatsapp_message(wa_id, f"✅ تم تغيير وقت الأخبار إلى {time_12h} ({new_time})")
                 return
 
             # ═══ PDF Follow-up Q&A ═══

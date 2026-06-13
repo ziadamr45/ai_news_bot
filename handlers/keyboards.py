@@ -260,9 +260,15 @@ def get_companies_keyboard(language: str = "ar") -> InlineKeyboardMarkup:
     """أزرار شركات AI (لسه شغالة مع /company بس مش في الكيبورد الرئيسي)"""
     keyboard = [
         [InlineKeyboardButton("🏢 OpenAI", callback_data="company_openai"), InlineKeyboardButton("🏢 Google", callback_data="company_google")],
-        [InlineKeyboardButton("🏢 Anthropic", callback_data="company_anthropic"), InlineKeyboardButton("🏢 Microsoft", callback_data="company_microsoft")],
-        [InlineKeyboardButton("🏢 Meta", callback_data="company_meta"), InlineKeyboardButton("🏢 xAI", callback_data="company_xai")],
-        [InlineKeyboardButton("🏢 NVIDIA", callback_data="company_nvidia"), InlineKeyboardButton("🏢 DeepMind", callback_data="company_deepmind")],
+        [InlineKeyboardButton("🏢 Anthropic", callback_data="company_anthropic"), InlineKeyboardButton("🍎 Apple AI", callback_data="company_apple")],
+        [InlineKeyboardButton("🏢 Microsoft", callback_data="company_microsoft"), InlineKeyboardButton("🏢 Meta", callback_data="company_meta")],
+        [InlineKeyboardButton("🏢 xAI", callback_data="company_xai"), InlineKeyboardButton("🏢 NVIDIA", callback_data="company_nvidia")],
+        [InlineKeyboardButton("🏢 DeepMind", callback_data="company_deepmind"), InlineKeyboardButton("🔬 DeepSeek", callback_data="company_deepseek")],
+        [InlineKeyboardButton("🇫🇷 Mistral", callback_data="company_mistral"), InlineKeyboardButton("🔬 MiniMax", callback_data="company_minimax")],
+        [InlineKeyboardButton("🔍 Perplexity", callback_data="company_perplexity"), InlineKeyboardButton("🇨🇳 GLM/Zhipu", callback_data="company_zhipu")],
+        [InlineKeyboardButton("🇨🇳 Alibaba/Qwen", callback_data="company_alibaba"), InlineKeyboardButton("🇨🇳 Baidu/ERNIE", callback_data="company_baidu")],
+        [InlineKeyboardButton("🇨🇳 Tencent", callback_data="company_tencent"), InlineKeyboardButton("💻 AMD AI", callback_data="company_amd")],
+        [InlineKeyboardButton("🤖 Figure AI", callback_data="company_figure_ai")],
     ]
     return InlineKeyboardMarkup(keyboard)
 
