@@ -1977,17 +1977,17 @@ async def _handle_command_with_arg(wa_id: str, cmd_name: str, arg: str, wa_user_
 
     elif cmd_name == "video_search_query":
         # /video <query> — بحث Dailymotion + عرض نتائج + تحميل فيديو
-        from whatsapp_webhook import _handle_wa_video_search
+        from whatsapp.callbacks.search_handlers import _handle_wa_video_search
         await _handle_wa_video_search(wa_id, arg, wa_user_id, contact_name, message_id, is_admin)
 
     elif cmd_name == "audio_search_query":
         # /audio <query> — بحث SoundCloud + عرض نتائج + تحميل صوت
-        from whatsapp_webhook import _handle_wa_audio_search
+        from whatsapp.callbacks.search_handlers import _handle_wa_audio_search
         await _handle_wa_audio_search(wa_id, arg, wa_user_id, contact_name, message_id, is_admin)
 
     elif cmd_name == "photo_search_query":
         # /photo <query> — بحث صور
-        from whatsapp_webhook import _handle_wa_photo_search
+        from whatsapp.callbacks.search_handlers import _handle_wa_photo_search
         await _handle_wa_photo_search(wa_id, arg, wa_user_id, contact_name, message_id, is_admin)
 
 

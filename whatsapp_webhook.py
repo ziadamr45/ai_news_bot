@@ -72,6 +72,10 @@ from whatsapp import (  # noqa: F811
     debug_whatsapp_activity,
     create_webhook_app,
     start_webhook_server,
+    # Search Handlers
+    _handle_wa_video_search,
+    _handle_wa_audio_search,
+    _handle_wa_photo_search,
     # State & Utilities
     _strip_html_for_whatsapp,
     _split_whatsapp_message,
