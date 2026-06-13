@@ -48,8 +48,11 @@ def _is_news_query(text: str) -> bool:
     news_triggers = [
         "ايه اخبار", "أيه أخبار", "اخبار الذكاء", "أخبار الذكاء",
         "اخبار ai", "أخبار ai", "اخبار الذكاء الاصطناعي",
-        "آخر أخبار", "اخبار اليوم", "ai news",
-        "latest ai news", "ai updates", "what's new in ai",
+        "احدث اخبار", "أحدث أخبار", "آخر أخبار", "اخبار اليوم",
+        "اخبار ai اليوم", "أخبار ai اليوم",
+        "ايه الجديد في ai", "ايه جديد ai",
+        "ai news", "latest ai news", "ai updates", "what's new in ai",
+        "recent ai", "ai today", "ai this week",
     ]
     return any(t in text_lower for t in news_triggers)
 
@@ -657,7 +660,9 @@ async def smart_chat(user_message: str, language: str = "ar", user_id: int = Non
         from web_search import deep_search_and_summarize_async
         return await deep_search_and_summarize_async(user_message, language, memory_context=memory_context, user_id=user_id, username=username)
 
-    # ⚡ أخبار AI مسبقة — لو المستخدم بيسأل عن أخبار AI نرد فوري من الكاش
+    # ⚡ أخبار AI — لو المستخدم بيسأل عن أخبار AI
+    # 🔴 FIX: لو الكاش فاضي أو منتهي، لازم نبحث على الإنترنت فورًا
+    # بدل ما نروح للـ AI model اللي بيجاوب من training data قديم
     if _is_news_query(user_message):
         try:
             from bot import get_precomputed_news
@@ -676,6 +681,33 @@ async def smart_chat(user_message: str, language: str = "ar", user_id: int = Non
             pass  # مش متاح في بيئة معينة
         except Exception as e:
             logger.debug(f"📰 Pre-computed news check failed: {e}")
+
+        # 🔴 FIX: الكاش فاضي أو منتهي — نبحث على الإنترنت دلوقتي!
+        # مينفعش نروح للـ AI model العادي لأنه هيجاوب من training data قديم
+        logger.info(f"📰 News cache empty/expired — searching web for: {user_message[:50]}")
+        try:
+            from web_search import search_and_summarize_async
+            if language == "ar":
+                search_query = "أحدث أخبار الذكاء الاصطناعي اليوم"
+            else:
+                search_query = "latest AI artificial intelligence news today"
+            summary = await search_and_summarize_async(
+                search_query, language=language,
+                memory_context=memory_context, user_id=user_id, username=username,
+            )
+            if summary:
+                if user_id:
+                    try:
+                        from memory import save_conversation
+                        save_conversation(user_id, "user", user_message[:1000])
+                        save_conversation(user_id, "bot", summary[:1000])
+                    except Exception:
+                        pass
+                return summary
+        except Exception as e:
+            logger.error(f"📰 Web search for news failed: {e}")
+
+        # Fallback: لو حتى البحث فشل، نخلي الرسالة تروح للـ needs_web_search العادي
 
     # 3. كشف هل محتاج بحث في الويب عادي (بس مش لو سؤال هوية)
     if not is_identity and needs_web_search(user_message):
