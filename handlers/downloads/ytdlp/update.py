@@ -12,8 +12,8 @@ logger = logging.getLogger(__name__)
 
 # ═══════════════════════════════════════
 # 🔴 yt-dlp Auto-Update System v2
-# - يتحدث تلقائياً كل ساعة
-# - يتحدث فوراً لو YouTube رفض التحميل (bot detection)
+# - يتحدث تلقائيًا كل ساعة
+# - يتحدث فورًا لو YouTube رفض التحميل (bot detection)
 # - يتحدث عند تشغيل البوت
 # - بيستخدم --break-system-packages عشان Railway
 # ═══════════════════════════════════════
@@ -44,7 +44,7 @@ def _log_ytdlp_version():
 
 
 def _do_ytdlp_update(reason: str = "scheduled") -> bool:
-    """تحديث yt-dlp — يرجع True لو اتحديث فعلاً"""
+    """تحديث yt-dlp — يرجع True لو اتحديث فعلًا"""
     global _ytdlp_last_update_time, _ytdlp_updating
     
     if _ytdlp_updating:
@@ -67,7 +67,7 @@ def _do_ytdlp_update(reason: str = "scheduled") -> bool:
         _ytdlp_last_update_time = time.time()
         
         if result.returncode == 0:
-            # نتحقق لو فعلاً اتحديث
+            # نتحقق لو فعلًا اتحديث
             try:
                 # لازم نعمل reload عشان النسخة الجديدة تشتغل
                 import importlib
@@ -111,7 +111,7 @@ def _ytdlp_periodic_updater():
 
 
 def trigger_ytdlp_update():
-    """تحديث yt-dlp فوراً — يتنادي لو YouTube رفض التحميل
+    """تحديث yt-dlp فورًا — يتنادي لو YouTube رفض التحميل
     
     يستخدمها الكود لو شاف خطأ bot detection أو sign in
     """

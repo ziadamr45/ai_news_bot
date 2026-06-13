@@ -1,6 +1,6 @@
 """
 البوت الرئيسي - AI News Telegram Bot
-يتم تشغيله يومياً عبر GitHub Actions الساعة 12 الظهر بتوقيت القاهرة
+يتم تشغيله يوميًا عبر GitHub Actions الساعة 12 الظهر بتوقيت القاهرة
 يدعم البث لكل المشتركين (مش بس CHAT_ID واحد)
 + نظام تحرير صحفي محترف
 """
@@ -71,7 +71,7 @@ def main():
     logger.info(f"Time: {datetime.now().isoformat()}")
     logger.info("=" * 50)
 
-    # تهيئة قاعدة البيانات (مهم جداً عشان نقدر نوصل للمشتركين)
+    # تهيئة قاعدة البيانات (مهم جدًا عشان نقدر نوصل للمشتركين)
     try:
         from memory import init_database
         init_database()
@@ -203,7 +203,7 @@ def main():
                 fail_count += 1
                 logger.error(f"❌ Failed to send to {chat_id}: {e}")
 
-                # لو المستخدم حظر البوت، ألغي اشتراكه تلقائياً
+                # لو المستخدم حظر البوت، ألغي اشتراكه تلقائيًا
                 if "blocked" in str(e).lower() or "deactivated" in str(e).lower():
                     unsubscribe_user(chat_id)
                     logger.info(f"🗑️ Auto-unsubscribed blocked user {chat_id}")

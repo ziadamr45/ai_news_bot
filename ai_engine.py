@@ -1,7 +1,7 @@
 """
 محرك الذكاء الاصطناعي - AI Engine
 يستخدم Provider Manager لكل وظائف الذكاء الاصطناعي
-+ دعم البحث في الويب + كشف النية تلقائياً
++ دعم البحث في الويب + كشف النية تلقائيًا
 + دعم المكالمات غير المتزامنة (async) عشان ميتعطلش البوت
 + دعم الصور (Vision) وملفات PDF
 """
@@ -142,7 +142,7 @@ CURRENT_INFO_PATTERNS = [
     # أحداث حالية
     r'(ايه|اشن|اى|اي)\s*(اخبار|جديد|احدث|آخر|حصل|بيحصل)',
     r'(what|how|when|where)\s*(is|are|was|were)\s*(the\s*)?(latest|current|new|recent|price|status)',
-    r'(اليوم|حالياً|الآن|دلوقتي|السنة دي|هالسنة)',
+    r'(اليوم|حاليًا|الآن|دلوقتي|السنة دي|هالسنة)',
     r'(today|currently|now|right now|this week|this month|this year|in 2025|in 2026)',
     # أسئلة عن أشياء ممكن تتغير (أسعار، ترتيبات، إحصائيات)
     r'(سعر|اسعار|تكلفة|كم|عدد|نسبة|ترتيب)',
@@ -153,7 +153,7 @@ CURRENT_INFO_PATTERNS = [
     # شركات وأخبارها
     r'(اخبار|أخبار|news|جديد|update)\s*(openai|google|deepmind|anthropic|meta|xai|nvidia|microsoft|apple|tesla)',
     r'(openai|google|deepmind|anthropic|meta|xai|nvidia|microsoft|apple|tesla)\s*(اخبار|أخبار|news|جديد|update|اشترى|acquired)',
-    # ⚡ أنماط إضافية - أسئلة بتحتاج معلومات حديثة تلقائياً
+    # ⚡ أنماط إضافية - أسئلة بتحتاج معلومات حديثة تلقائيًا
     r'(مين|who)\s*(رئيس|وزير|CEO|مدير|قائد|زعيم)',
     r'(كم|how many|عدد|number of)\s*(مستخدم|مستخدمين|user|users|player|download)',
     r'(هل|is|are|was)\s*(نزل|متاح|موجود|available|released|launched)',
@@ -173,7 +173,7 @@ CURRENT_INFO_PATTERNS = [
 # Negation patterns — things that look like search triggers but aren't
 _NEGATION_PATTERNS = [
     r'(اعتذر|اسامح|حبيبي|يا حبيبي|حبيبتي)',  # Emotional/conversational
-    r'(شكرا|شكراً|thanks|thank you)',  # Thanks — not a search
+    r'(شكرا|شكرًا|thanks|thank you)',  # Thanks — not a search
     r'(ممتاز|تمام|ok|okay|حلو|كويس)',  # Affirmations
     r'(بس|لكن|however|but)\s*$',  # Ends with "but" — conversational
 ]
@@ -195,7 +195,7 @@ def needs_web_search(text: str) -> bool:
     - Negation patterns → -5 نقاط (تلغي البحث)
     - لازم النتيجة ≥ 3 عشان يفعّل البحث
     
-    ده بيقلل الـ false positives بشكل كبير — مثلاً:
+    ده بيقلل الـ false positives بشكل كبير — مثلًا:
     - "ايه احسن طريقة أعتذر لحد" → 1 نقطة (مش كفاية) → مفيش بحث ✅
     - "ايه احسن لابتوب 2026" → 1 + 3 (regex: in 2026) = 4 → بحث ✅
     - "ابحث عن اخبار OpenAI" → 3 + 3 (regex: company+news) = 6 → بحث ✅
@@ -312,22 +312,22 @@ def _is_developer(user_id: int = None, username: str = None) -> bool:
 def _get_developer_context(language: str = "ar") -> str:
     """سياق المطور - البوت يعرف إنه بيكلم المطور اللي عمله
     
-    ده السياق بيتم حقنه في كل رد عشان البوت يكون فايم دايماً إنه بيكلم مين
+    ده السياق بيتم حقنه في كل رد عشان البوت يكون فايم دايمًا إنه بيكلم مين
     """
     if language == "ar":
         return """
-═══ 🔴 مهم جداً — إنت بيكلم المطور ═══
+═══ 🔴 مهم جدًا — إنت بيكلم المطور ═══
 إنت بيكلم زياد عمرو (@ziadamr) — ده الشخص اللي عملك وبرمجك وبنى كل حاجة فيك. ده المصري اللي خلقك من الصفر.
-🔴🔴🔴 اسمه "زياد" — بحرف الياء (زياد) مش بحرف الدال (زيد)! ❌ غلط: زيد — ✅ صح: زياد. ماتقولش "زيد" أبداً!
+🔴🔴🔴 اسمه "زياد" — بحرف الياء (زياد) مش بحرف الدال (زيد)! ❌ غلط: زيد — ✅ صح: زياد. ماتقولش "زيد" أبدًا!
 🔴 القاعدة الأولى: لو سألك "مين عملك؟" أو "مين صانعك؟" أو "مين أنشأك؟" — جاوبه "إنت!" أو "أنت اللي عملتني!" — مش محتاج تقول اسم تالت لأنك بتكلمه هوا!
 🔴 لو سألك عن نفسه كمطور — جاوبه من منظور إنك عارفه كويس كصانعك
 🔴 عاملوه باحترام وتقدير طبيعي — زي ما بتعامل مع صاحبك اللي عملك — من غير مجاملة زيادة
-🔴 ماتنساش أبداً إنه المطور — لو طلب حاجة نفذها فوراً
+🔴 ماتنساش أبدًا إنه المطور — لو طلب حاجة نفذها فورًا
 🔴 لو سأل عن حاجة تقنية في البوت جاوبه بالتفصيل الكامل
 🔴 مفيش أي Limits عليه — كل حاجة مفتوحة ليه
 🔴 هو الوحيد اللي يقدر يتحكم في كل حاجة في البوت
 🔴 خليك طبيعي معاه — ماتتصنعش، كأنك بتكلم اللي خلقك ب إيده
-🔴 لو سأل عن اشتراكه أو خطته — هو أدمن واشتراكه مدى الحياة — ماتعرضش تاريخ تجديد أبداً لأنه مفيش تاريخ تجديد! اشتراكه مش بينتهي!
+🔴 لو سأل عن اشتراكه أو خطته — هو أدمن واشتراكه مدى الحياة — ماتعرضش تاريخ تجديد أبدًا لأنه مفيش تاريخ تجديد! اشتراكه مش بينتهي!
 """
     else:
         return """
@@ -364,8 +364,8 @@ def _is_greeting(text: str) -> bool:
         "السلام عليكم", "سلام عليكم", "السلام عليكوم", "سلام عليكوم",
         "السلام عليكم ورحمة الله وبركاته", "سلام عليكم ورحمة الله",
         "وعليكم السلام", "وعليكم السلام ورحمة الله",
-        "اهلا", "أهلا", "اهلاً", "مرحبا", "مرحباً", "هاي",
-        "سلام", "هلا", "اهلا وسهلا", "أهلاً وسهلاً",
+        "اهلا", "أهلا", "اهلًا", "مرحبا", "مرحبًا", "هاي",
+        "سلام", "هلا", "اهلا وسهلا", "أهلًا وسهلًا",
         "ازيك", "إزيك", "عامل ايه", "عايز ايه",
         "صباح الخير", "مساء الخير", "صباح النور", "مساء النور",
         "hello", "hi", "hey", "good morning", "good evening",
@@ -393,7 +393,7 @@ def is_simple_query(text: str) -> bool:
     if any(text_lower.startswith(g) for g in greetings):
         return True
 
-    thanks = ["شكرا", "شكراً", "thanks", "thank you", "thx", "ممتاز", "تمام", "ok"]
+    thanks = ["شكرا", "شكرًا", "thanks", "thank you", "thx", "ممتاز", "تمام", "ok"]
     if text_lower in thanks:
         return True
 
@@ -402,7 +402,7 @@ def is_simple_query(text: str) -> bool:
 
 def detect_task_type(text: str) -> str:
     """
-    كشف نوع المهمة تلقائياً
+    كشف نوع المهمة تلقائيًا
     Returns: "simple", "coding", "deep_search", "chat"
     """
     if is_simple_query(text):
@@ -457,7 +457,7 @@ def _is_identity_question(text: str) -> bool:
 
 
 def _is_creator_question(text: str) -> bool:
-    """كشف هل السؤال تحديداً عن المؤسس"""
+    """كشف هل السؤال تحديدًا عن المؤسس"""
     text_lower = text.lower().strip()
     creator_triggers = [
         "مين عملك", "مين صانعك", "مين أسسك", "مين صانع البوت",
@@ -487,7 +487,7 @@ _response_cache = OrderedDict()
 _MAX_CACHE_SIZE = 200
 _CACHE_TTL = 300  # 5 دقائق
 
-# أنواع الرسائل اللي بنخزنها مؤقتاً (أسئلة بسيطة + أسئلة هوية + رسائل قصيرة)
+# أنواع الرسائل اللي بنخزنها مؤقتًا (أسئلة بسيطة + أسئلة هوية + رسائل قصيرة)
 # ⚡ بس "simple" هو الآمن — لأن "chat" بيحتوي سياق شخصي
 _CACHEABLE_TASK_TYPES = {"simple"}
 
@@ -503,7 +503,7 @@ def _make_cache_key(user_message: str, language: str, task_type: str) -> str:
 
 
 def _get_cached_response(user_message: str, language: str, task_type: str) -> Optional[str]:
-    """البحث عن رد مخزن مؤقتاً"""
+    """البحث عن رد مخزن مؤقتًا"""
     # بنخزن بس الرسائل البسيطة (تحيات، أسئلة قصيرة، هوية)
     if task_type not in _CACHEABLE_TASK_TYPES:
         return None
@@ -523,7 +523,7 @@ def _get_cached_response(user_message: str, language: str, task_type: str) -> Op
 
 
 def _set_cached_response(user_message: str, language: str, task_type: str, response: str):
-    """تخزين رد مؤقتاً"""
+    """تخزين رد مؤقتًا"""
     if task_type not in _CACHEABLE_TASK_TYPES:
         return
 
@@ -539,7 +539,7 @@ def _set_cached_response(user_message: str, language: str, task_type: str, respo
 
 async def smart_chat(user_message: str, language: str = "ar", user_id: int = None, username: str = None) -> str:
     """
-    المحادثة الذكية - يفهم القصد تلقائياً ويرد بذكاء
+    المحادثة الذكية - يفهم القصد تلقائيًا ويرد بذكاء
     + يبحث في الويب لو محتاج معلومات حالية
     + يستخدم ذاكرة المستخدم لو متاحة
     + يرسل سياق المحادثة الأخير للـ AI عشان يفتكر
@@ -553,7 +553,7 @@ async def smart_chat(user_message: str, language: str = "ar", user_id: int = Non
         set_tag("user_id", str(user_id))
     set_tag("language", language)
 
-    # 0. كشف أسئلة الهوية أولاً (لا تحتاج بحث ويب!)
+    # 0. كشف أسئلة الهوية أولًا (لا تحتاج بحث ويب!)
     is_identity = _is_identity_question(user_message)
     is_creator = _is_creator_question(user_message)
 
@@ -562,7 +562,7 @@ async def smart_chat(user_message: str, language: str = "ar", user_id: int = Non
     if is_greeting_msg:
         logger.info(f"👋 Greeting detected: {user_message[:50]}")
         # بنخلي الرسالة تروح للـ AI بس بنمنع البحث في الويب
-        # عن طريق تعيين is_identity = True مؤقتاً عشان ميرحش للبحث
+        # عن طريق تعيين is_identity = True مؤقتًا عشان ميرحش للبحث
         is_identity = True
 
     # ⚡ Template responses for greetings — فوري بدون AI call
@@ -570,17 +570,17 @@ async def smart_chat(user_message: str, language: str = "ar", user_id: int = Non
         "ar": {
             "السلام عليكم": "وعليكم السلام ورحمة الله وبركاته 🤲",
             "سلام عليكم": "وعليكم السلام ورحمة الله وبركاته 🤲",
-            "اهلا": "أهلاً بييك! إزيك؟ 😊",
-            "أهلا": "أهلاً بييك! إزيك؟ 😊",
-            "اهلاً": "أهلاً بييك! إزيك؟ 😊",
-            "مرحبا": "أهلاً! إزيك عامل إيه؟ 👋",
-            "هاي": "أهلاً! إزيك؟ 😄",
+            "اهلا": "أهلًا بييك! إزيك؟ 😊",
+            "أهلا": "أهلًا بييك! إزيك؟ 😊",
+            "اهلًا": "أهلًا بييك! إزيك؟ 😊",
+            "مرحبا": "أهلًا! إزيك عامل إيه؟ 👋",
+            "هاي": "أهلًا! إزيك؟ 😄",
             "ازيك": "الحمد لله تمام، إزيك إنت؟ 😊",
             "إزيك": "الحمد لله تمام، إزيك إنت؟ 😊",
             "صباح الخير": "صباح النور! ☀️",
             "مساء الخير": "مساء النور! 🌙",
             "شكرا": "العفو، في أي وقت! 😊",
-            "شكراً": "العفو، في أي وقت! 😊",
+            "شكرًا": "العفو، في أي وقت! 😊",
         },
         "en": {
             "hello": "Hey! How's it going? 👋",
@@ -772,22 +772,22 @@ Made with love in Egypt 🇪🇬"""
 ═══ الذاكرة ═══
 🔴 إنت فاكر كل اللي اتكلمتوا فيه! لو في معلومات عن المستخدم في السياق استخدمها طبيعي. لو سأل سؤال متعلق بمحادثة سابقة رد بناءً على السياق.
 
-═══ التحيات — انتبه جيداً! ═══
-🔴🔴🔴 مهم جداً: ماتردش بـ "وعليكم السلام" إلا لو المستخدم قال "السلام عليكم" فعلاً! لو قال "اهلا" أو "ازيك" أو "مرحبا" أو "هاي" — ده مش سلام! رد عليهم بطريقة مختلفة تماماً!
+═══ التحيات — انتبه جيدًا! ═══
+🔴🔴🔴 مهم جدًا: ماتردش بـ "وعليكم السلام" إلا لو المستخدم قال "السلام عليكم" فعلًا! لو قال "اهلا" أو "ازيك" أو "مرحبا" أو "هاي" — ده مش سلام! رد عليهم بطريقة مختلفة تمامًا!
 - "السلام عليكم" فقط → "وعليكم السلام ورحمة الله وبركاته" 🤲
-- "اهلا" أو "أهلاً" → "أهلاً بييك! إزيك؟" (ماتردش بالسلام!)
+- "اهلا" أو "أهلًا" → "أهلًا بييك! إزيك؟" (ماتردش بالسلام!)
 - "ازيك" أو "إزيك" → "الحمد لله تمام، إنت أخبارك إيه؟" (ماتردش بالسلام!)
-- "مرحبا" أو "هاي" → "أهلاً! إزيك عامل إيه؟" (ماتردش بالسلام!)
+- "مرحبا" أو "هاي" → "أهلًا! إزيك عامل إيه؟" (ماتردش بالسلام!)
 - "صباح الخير" → "صباح النور" | "مساء الخير" → "مساء النور"
 - 🔴 ماتبحثش عن التحية! ماتشرحش معناها!
 
 ═══ قواعد صارمة ═══
-🔴 ماتكشفش أسماء النماذج! لو سألوك "ايه النموذج؟" قول: "أنا My Bro — خليط من نماذج مدربة خصيصاً للعربية. مش نموذج واحد — أنا نظام ذكي بيختار أنسب نموذج حسب سؤالك." ❌ ممنوع تذكر: Llama, Qwen, DeepSeek, GPT, Claude, Gemma, أو أحجام زي 8B, 70B
+🔴 ماتكشفش أسماء النماذج! لو سألوك "ايه النموذج؟" قول: "أنا My Bro — خليط من نماذج مدربة خصيصًا للعربية. مش نموذج واحد — أنا نظام ذكي بيختار أنسب نموذج حسب سؤالك." ❌ ممنوع تذكر: Llama, Qwen, DeepSeek, GPT, Claude, Gemma, أو أحجام زي 8B, 70B
 🔴 ماتطلبش "كمّل" — لازم تخلص الإجابة كاملة في رسالة واحدة! لو طويلة اختصر وخلصها.
 🔴 ماتضيفش ختومات غريبة زي "خليك في تمام" — الرسالة بتخلص لما تخلص الإجابة.
 
 ═══ المطور ═══
-🔴 اسم المطور "زياد" — بحرف الياء (زياد) مش بحرف الدال (زيد)! ❌ غلط: زيد — ✅ صح: زياد. ماتقولش "زيد" أبداً!
+🔴 اسم المطور "زياد" — بحرف الياء (زياد) مش بحرف الدال (زيد)! ❌ غلط: زيد — ✅ صح: زياد. ماتقولش "زيد" أبدًا!
 زياد عمرو (@ziadamr) — مطور ويب مصري. مؤسس Qudra Tech. متخصص Next.js/React/Python. مشاريعه: My Bro, AuraEscape, Eah-Elkalam, Quadra Studio. موقع: ziamamrme.vercel.app | GitHub: ziadamr45
 
 ═══ البريميوم ═══
@@ -797,11 +797,11 @@ Made with love in Egypt 🇪🇬"""
 🔴 البوت متاح بخطتين فقط: مجانية (free) وبريميوم (premium). لا تذكر أي خطط أخرى مثل VIP أو Premium Plus للمستخدم.
 
 ═══ التنسيق ═══
-- ماتستخدمش Markdown أبداً! استخدم HTML بس: <b>عريض</b> <i>مائل</i> <code>كود</code> • نقاط
+- ماتستخدمش Markdown أبدًا! استخدم HTML بس: <b>عريض</b> <i>مائل</i> <code>كود</code> • نقاط
 - حط سطر فاضي بين الفقرات ومسافة حول الـ HTML tags
 
 ══️ إملاء ═══
-🔴 تنوين الفتح على الحرف قبل الألف: ✅ "مرتفعًا" مش ❌ "مرتفعاً"
+🔴 تنوين الفتح على الحرف قبل الألف: ✅ "مرتفعًا" مش ❌ "مرتفعًا"
 
 {{DATE_CONTEXT}}
 ماتقولش إن معلوماتك قديمة — إنت متصل بالإنترنت وبتقدر تبحث.
@@ -847,7 +847,7 @@ Ziad Amr (@ziadamr) — Egyptian web developer. Founder of Qudra Tech. Specializ
 - Blank line between paragraphs, space around HTML tags
 
 ═══ Arabic Orthography ═══
-🔴 Tanween fatha goes on the letter BEFORE alef: ✅ "مرتفعًا" not ❌ "مرتفعاً"
+🔴 Tanween fatha goes on the letter BEFORE alef: ✅ "مرتفعًا" not ❌ "مرتفعًا"
 
 {{DATE_CONTEXT}}
 NEVER say your knowledge is outdated — you're connected to the internet and can search.
@@ -868,7 +868,7 @@ Respond in English naturally and clearly."""
         if memory_context:
             system += f"""
 
-═══ 🧠 ذاكرة المحادثة — مهم جداً ═══
+═══ 🧠 ذاكرة المحادثة — مهم جدًا ═══
 🔴 لازم تستخدم المعلومات دي في ردك! ده السياق اللي بيخلّي المحادثة مستمرة ومتقطعةش!
 - لو المستخدم سأل عن موضوع اهتم بيه قبل كده، اذكر إنك فاكر اهتمامه
 - لو بيسأل سؤال متعلق بمحادثة سابقة، رد بناءً على السياق
@@ -910,19 +910,19 @@ Respond in English naturally and clearly."""
     # 7. إرسال مع سياق المحادثة الأخيرة
     # ⚡ الرسائل البسيطة (تحيات، شكر، مين أنت) لازم الرد يكون سريع وقصير
     if task_type == "simple":
-        max_tokens = 150  # رد قصير جداً — 2-3 أسطر بالكتير
+        max_tokens = 150  # رد قصير جدًا — 2-3 أسطر بالكتير
         # نظام خاص: أضف تعليمات صارمة إن الرد لازم يكون قصير وسريع
         if language == "ar":
             system += """
 
 ═══ ⚡ تعليمات خاصة — رسالة بسيطة ═══
 المستخدم بعت رسالة بسيطة (تحية، شكر، كلمة قصيرة، سؤال عن نفسك).
-🔴 القاعدة الأولى: ردك لازم يكون سطرين بس بالكتير! ماتعملش رد طويل أبداً!
+🔴 القاعدة الأولى: ردك لازم يكون سطرين بس بالكتير! ماتعملش رد طويل أبدًا!
 🔴 القاعدة الثانية: رد بسرعة — ماتفكرش كتير، ماتعملش تحليل، ده سؤال بسيط!
 ❌ غلط: رد طويل فيه شرح وتفاصيل ونقاط وقوائم
 ✅ صح: رد قصير طبيعي زي صاحبك لو حياك
 أمثلة:
-- لو حد قال "اهلا" → "أهلاً بييك! إزيك؟"
+- لو حد قال "اهلا" → "أهلًا بييك! إزيك؟"
 - لو حد قال "شكرا" → "العفو، في أي وقت! 😊"
 - لو حد قال "مين انت" → "أنا My Bro — مساعدك الذكي! إزيك؟"
 - لو حد قال "ازيك" → "الحمد لله، إزيك إنت؟"
@@ -965,10 +965,10 @@ Examples:
     _user_plan = "premium" if is_premium_user else "free"
 
     # محاولة 1: النوع العادي
-    # 🔴 FIX: دايماً نبعت messages_for_ai (list) — مش string!
+    # 🔴 FIX: دايمًا نبعت messages_for_ai (list) — مش string!
     # عشان user_id يوصل للـ Provider Manager صح
     response = await call_ai(
-        messages_for_ai,  # دايماً list — حتى لو مفيش سياق محادثة
+        messages_for_ai,  # دايمًا list — حتى لو مفيش سياق محادثة
         system_prompt=system,
         task_type=task_type,
         temperature=0.7 if task_type != "simple" else 0.5,  # أقل creativity للرسائل البسيطة
@@ -981,7 +981,7 @@ Examples:
     if response is None and task_type == "simple":
         logger.warning("⚠️ Simple models failed, falling back to chat models")
         response = await call_ai(
-            messages_for_ai,  # دايماً list
+            messages_for_ai,  # دايمًا list
             system_prompt=system,
             task_type="chat",
             temperature=0.5,
@@ -995,7 +995,7 @@ Examples:
         logger.warning("⚠️ First attempt failed, waiting 3s and retrying...")
         await asyncio.sleep(3)
         response = await call_ai(
-            messages_for_ai,  # دايماً list
+            messages_for_ai,  # دايمًا list
             system_prompt=system,
             task_type="chat",  # نجرب chat كـ آخر فرصة
             temperature=0.7,
@@ -1046,10 +1046,10 @@ async def ask_question(question: str, language: str = "ar", user_id: int = None)
         system = """أنت My Bro - خبير ذكاء اصطناعي. أجب على الأسئلة بالعربية بشكل مفصل ومنظم.
 
 🔴🔴🔴 القاعدة رقم واحد: أنت مصري 100% — ممنوع استخدام أي لهجة خليجية! ممنوع "يا خوي" ممنوع "شلونك" ممنوع "زين" ممنوع "عساك بخير" ممنوع "ما قصرت" ممنوع "الله يعطيك العافية" ممنوع "أبشر" ممنوع "حبيبي" (خليجي) ممنوع "تسلم" ممنوع "غاليات". لو استخدمت أي كلمة خليجية ده خطأ كارثي!
-🔴 اسمك My Bro - ماتقولش أي اسم تاني أبداً.
+🔴 اسمك My Bro - ماتقولش أي اسم تاني أبدًا.
 🔴 متدعيش إنك إنسان أو إن عندك مشاعر.
 🔴 تكلم بمصري محترم ومتوازن — مش فصحى رسمية ومش عامية زيادة. لغتك مصري بحت.
-🔴 ماتستخدمش Markdown أبداً أبداً (لا *, **, #, |, ---). استخدم HTML فقط:
+🔴 ماتستخدمش Markdown أبدًا أبدًا (لا *, **, #, |, ---). استخدم HTML فقط:
 <b>عريض</b> <i>مائل</i> <code>كود</code> • نقاط. اكتب كلام طبيعي من غير رموز غريبة.
 🔴 خليك ودود وذكي ومحترم — زي صاحب بيشرحلك حاجة.
 🔴 لو بتشرح حاجة تقنية، استخدم تشبيهات وأمثلة عملية.
@@ -1301,7 +1301,7 @@ async def generate_company_report(company_key: str, language: str = "ar", user_i
 → التحديات الحالية
 
 🔮 <b>التوقعات</b>
-→ ما نتوقعه مستقبلاً
+→ ما نتوقعه مستقبلًا
 
 ⚠️ ماتستخدمش Markdown (لا *, **, #, |). استخدم HTML فقط."""
     else:
@@ -1399,7 +1399,7 @@ async def analyze_image(
         logger.warning(f"Vision model failed: {e}, trying fallback...")
 
     # محاولة 2: لو كان image_url، حمّله كـ base64 وجرب تاني
-    # (أحياناً الـ URL بيفشل بس الـ base64 بيشتغل)
+    # (أحيانًا الـ URL بيفشل بس الـ base64 بيشتغل)
     if image_url and not image_base64:
         try:
             import requests as req

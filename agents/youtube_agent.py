@@ -3,7 +3,7 @@
 تلخيص فيديوهات YouTube مع fallback متعدد الطبقات
 
 🔴 Pipeline:
-1. Invidious Captions API (أكثر استقراراً — لا يعتمد على YouTube مباشرة)
+1. Invidious Captions API (أكثر استقرارًا — لا يعتمد على YouTube مباشرة)
 2. youtube_transcript_api (مكتبة بايثون — يدعم v0.6+)
 3. Piped Captions API (بديل لـ Invidious)
 4. YouTube HTML Scraping (استخراج الترجمة من صفحة الفيديو)
@@ -128,7 +128,7 @@ class YouTubeAgent:
         """استخراج نص الفيديو - pipeline متعدد الطبقات
 
         🔴 الطرق بالترتيب:
-        0. 🆕 Supadata API (Tier 1 — الأكثر استقراراً)
+        0. 🆕 Supadata API (Tier 1 — الأكثر استقرارًا)
         1. Invidious Captions API
         2. youtube_transcript_api (مكتبة بايثون)
         3. Piped Captions API (بديل)
@@ -137,12 +137,12 @@ class YouTubeAgent:
         if not languages:
             languages = ["ar", "en"]
 
-        # فحص الـ cache أولاً
+        # فحص الـ cache أولًا
         cached = self._get_cached_transcript(video_id)
         if cached:
             return cached
 
-        # ═══ الطريقة 0: 🆕 Supadata API (Tier 1 — الأكثر استقراراً) ═══
+        # ═══ الطريقة 0: 🆕 Supadata API (Tier 1 — الأكثر استقرارًا) ═══
         transcript = self._get_transcript_supadata(video_id, languages)
         if transcript:
             self._cache_transcript(video_id, transcript)
@@ -186,7 +186,7 @@ class YouTubeAgent:
     def _get_transcript_supadata(self, video_id: str, languages: list = None) -> str:
         """استخراج الترجمة من Supadata API
 
-        🔴 Tier 1 — أول طريقة بنجربها لأنها الأكثر استقراراً
+        🔴 Tier 1 — أول طريقة بنجربها لأنها الأكثر استقرارًا
         Supadata API بيقدم ترجمة فيديوهات YouTube مع metadata
         """
         if not languages:
@@ -302,10 +302,10 @@ class YouTubeAgent:
                     logger.debug(f"🟣 Invidious [{instance}]: No caption tracks found")
                     continue
 
-                # بنبحث عن الترجمة باللغة المطلوبة أولاً
+                # بنبحث عن الترجمة باللغة المطلوبة أولًا
                 target_track = None
 
-                # أولاً: اللغة المطلوبة
+                # أولًا: اللغة المطلوبة
                 for lang in languages:
                     for track in tracks:
                         track_lang = track.get("language_code", "") or track.get("languageCode", "")
@@ -315,7 +315,7 @@ class YouTubeAgent:
                     if target_track:
                         break
 
-                # ثانياً: أي ترجمة متاحة (أفضل من لا شيء)
+                # ثانيًا: أي ترجمة متاحة (أفضل من لا شيء)
                 if not target_track and tracks:
                     # بنفضل الإنجليزي لو موجود
                     for track in tracks:
@@ -590,7 +590,7 @@ class YouTubeAgent:
                 # بنبحث عن الترجمة باللغة المطلوبة
                 target_sub = None
 
-                # أولاً: اللغة المطلوبة
+                # أولًا: اللغة المطلوبة
                 for lang in languages:
                     for sub in subtitles:
                         sub_lang = sub.get("language_code", "") or sub.get("code", "") or sub.get("lang", "")
@@ -600,7 +600,7 @@ class YouTubeAgent:
                     if target_sub:
                         break
 
-                # ثانياً: أي ترجمة
+                # ثانيًا: أي ترجمة
                 if not target_sub and subtitles:
                     for sub in subtitles:
                         sub_lang = sub.get("language_code", "") or sub.get("code", "") or sub.get("lang", "")
@@ -635,7 +635,7 @@ class YouTubeAgent:
                 # ممكن يكون JSON أو XML
                 content = sub_resp.text
 
-                # محاولة JSON أولاً
+                # محاولة JSON أولًا
                 try:
                     sub_data = sub_resp.json()
                     if isinstance(sub_data, list):
@@ -1258,12 +1258,12 @@ class YouTubeAgent:
 • لو فيه خطوات أو تعليمات — اذكرها بالترتيب
 
 🔴🔴🔴 قواعد صارمة:
-• ماتستخدمش Markdown أبداً (لا *, **, #, |, []). ماتستخدمش أي HTML أبداً — لا <b>, <i>, <code>, أو أي tag. نص عادي فقط مع • نقاط وسطور جديدة.
-• 🔴 ماتقولش أبداً إنك مش قادر تلخص!
+• ماتستخدمش Markdown أبدًا (لا *, **, #, |, []). ماتستخدمش أي HTML أبدًا — لا <b>, <i>, <code>, أو أي tag. نص عادي فقط مع • نقاط وسطور جديدة.
+• 🔴 ماتقولش أبدًا إنك مش قادر تلخص!
 • 🔴 لازم تلخص المحتوى ده — ده وظيفتك!
 • 🔴 ابدأ بالملخص مباشرة بدون مقدمات
 
-أنت مساعد ذكي متخصص في تلخيص الفيديوهات. تلخص بالعربية بشكل منظم وواضح. ماتستخدمش Markdown أبداً. ماتستخدمش أي HTML أبداً — لا <b>, <i>, <code>, أو أي tag. نص عادي فقط مع • نقاط وسطور جديدة."""
+أنت مساعد ذكي متخصص في تلخيص الفيديوهات. تلخص بالعربية بشكل منظم وواضح. ماتستخدمش Markdown أبدًا. ماتستخدمش أي HTML أبدًا — لا <b>, <i>, <code>, أو أي tag. نص عادي فقط مع • نقاط وسطور جديدة."""
             else:
                 prompt = f"""Summarize the following video comprehensively in English:
 
@@ -1299,7 +1299,7 @@ You are a smart assistant specialized in video summarization. NEVER use Markdown
 
 {web_info}
 
-لخص بشكل منظم بالعربية. ماتستخدمش Markdown أبداً. ماتستخدمش أي HTML أبداً — لا <b>, <i>, <code>, أو أي tag. نص عادي فقط مع • نقاط وسطور جديدة.
+لخص بشكل منظم بالعربية. ماتستخدمش Markdown أبدًا. ماتستخدمش أي HTML أبدًا — لا <b>, <i>, <code>, أو أي tag. نص عادي فقط مع • نقاط وسطور جديدة.
 
 🔴 ملاحظة: أنت بتلخص بناءً على معلومات من الويب لأن الترجمة مش متاحة للفيديو.
 🔴 ابدأ بالملخص مباشرة بدون مقدمات."""
@@ -1329,7 +1329,7 @@ Summarize in English in an organized way. NEVER use Markdown. NEVER use any HTML
 📝 <b>الوصف:</b>
 {description[:5000]}
 
-اكتب ملخص تقريبي بالعربية بناءً على العنوان والوصف. ماتستخدمش Markdown أبداً. ماتستخدمش أي HTML أبداً — لا <b>, <i>, <code>, أو أي tag. نص عادي فقط مع • نقاط وسطور جديدة.
+اكتب ملخص تقريبي بالعربية بناءً على العنوان والوصف. ماتستخدمش Markdown أبدًا. ماتستخدمش أي HTML أبدًا — لا <b>, <i>, <code>, أو أي tag. نص عادي فقط مع • نقاط وسطور جديدة.
 
 🔴 ابدأ بالملخص مباشرة. 🔴 وضّح إن ده ملخص تقريبي بناءً على الوصف فقط."""
             else:
@@ -1360,7 +1360,7 @@ Write an approximate summary in English based on the title and description. NEVE
 👤 <b>القناة:</b> {author or "غير معروف"}
 ⏱️ <b>المدة:</b> {duration_str or "غير معروف"}
 
-اكتب ملخص تقريبي بالعربية بناءً على العنوان. ماتستخدمش Markdown أبداً. ماتستخدمش أي HTML أبداً — لا <b>, <i>, <code>, أو أي tag. نص عادي فقط مع • نقاط وسطور جديدة.
+اكتب ملخص تقريبي بالعربية بناءً على العنوان. ماتستخدمش Markdown أبدًا. ماتستخدمش أي HTML أبدًا — لا <b>, <i>, <code>, أو أي tag. نص عادي فقط مع • نقاط وسطور جديدة.
 
 🔴 ابدأ بالملخص مباشرة.
 🔴 وضّح إن ده ملخص تقريبي بناءً على العنوان فقط ومش محتوى الفيديو الكامل.
@@ -1441,9 +1441,9 @@ Write an approximate summary in English based on the title. NEVER use Markdown. 
 ✅ <b>الإجابة الصحيحة:</b> [الحرف]
 💡 <b>الشرح:</b> [شرح مختصر]
 
-⚠️ ماتستخدمش Markdown (لا *, **, #, |). ماتستخدمش أي HTML أبداً — لا <b>, <i>, <code>, أو أي tag. نص عادي فقط مع • نقاط وسطور جديدة.
+⚠️ ماتستخدمش Markdown (لا *, **, #, |). ماتستخدمش أي HTML أبدًا — لا <b>, <i>, <code>, أو أي tag. نص عادي فقط مع • نقاط وسطور جديدة.
 
-أنت مساعد تعليمي تنشئ كويزات من محتوى الفيديوهات. ماتستخدمش Markdown أبداً. ماتستخدمش أي HTML أبداً — لا <b>, <i>, <code>, أو أي tag. نص عادي فقط مع • نقاط وسطور جديدة."""
+أنت مساعد تعليمي تنشئ كويزات من محتوى الفيديوهات. ماتستخدمش Markdown أبدًا. ماتستخدمش أي HTML أبدًا — لا <b>, <i>, <code>, أو أي tag. نص عادي فقط مع • نقاط وسطور جديدة."""
         else:
             prompt = f"""Create a quiz from the video content ({num_questions} questions):
 
@@ -1530,9 +1530,9 @@ You are an educational assistant that creates quizzes from video content. NEVER 
 📝 <b>خلاصة:</b>
 ...
 
-⚠️ ماتستخدمش Markdown (لا *, **, #, |). ماتستخدمش أي HTML أبداً — لا <b>, <i>, <code>, أو أي tag. نص عادي فقط مع • نقاط وسطور جديدة.
+⚠️ ماتستخدمش Markdown (لا *, **, #, |). ماتستخدمش أي HTML أبدًا — لا <b>, <i>, <code>, أو أي tag. نص عادي فقط مع • نقاط وسطور جديدة.
 
-أنت مساعد تعليمي تنشئ ملاحظات مراجعة شاملة. ماتستخدمش Markdown أبداً. ماتستخدمش أي HTML أبداً — لا <b>, <i>, <code>, أو أي tag. نص عادي فقط مع • نقاط وسطور جديدة."""
+أنت مساعد تعليمي تنشئ ملاحظات مراجعة شاملة. ماتستخدمش Markdown أبدًا. ماتستخدمش أي HTML أبدًا — لا <b>, <i>, <code>, أو أي tag. نص عادي فقط مع • نقاط وسطور جديدة."""
         else:
             prompt = f"""Create comprehensive review notes from the video content:
 

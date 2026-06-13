@@ -80,7 +80,7 @@ class StudyAgent:
 
 ⚠️ ماتستخدمش Markdown (لا *, **, #, |). استخدم HTML فقط.
 
-أنت مستشار تعليمي محترف تنشئ خطط دراسية شاملة ومفصلة. ماتستخدمش Markdown أبداً. استخدم HTML فقط."""
+أنت مستشار تعليمي محترف تنشئ خطط دراسية شاملة ومفصلة. ماتستخدمش Markdown أبدًا. استخدم HTML فقط."""
         else:
             prompt = f"""Create a comprehensive study plan for "{subject}" over {duration}.
 
@@ -149,7 +149,7 @@ You are a professional educational consultant who creates comprehensive and deta
 
 ⚠️ ماتستخدمش Markdown (لا *, **, #, |). استخدم HTML فقط.
 
-أنت مساعد تعليمي تنشئ كويزات متنوعة ومفيدة. ماتستخدمش Markdown أبداً."""
+أنت مساعد تعليمي تنشئ كويزات متنوعة ومفيدة. ماتستخدمش Markdown أبدًا."""
         else:
             diff_display = difficulty_map_en.get(difficulty, difficulty)
             prompt = f"""Create a quiz on "{topic}" ({num_questions} questions - {diff_display} level)
@@ -209,7 +209,7 @@ You are an educational assistant that creates diverse and useful quizzes. NEVER 
 
 ⚠️ ماتستخدمش Markdown. استخدم HTML فقط.
 
-أنت أستاذ جامعي تنشئ امتحانات شاملة ومتنوعة. ماتستخدمش Markdown أبداً."""
+أنت أستاذ جامعي تنشئ امتحانات شاملة ومتنوعة. ماتستخدمش Markdown أبدًا."""
         else:
             prompt = f"""Create a comprehensive exam on "{topic}" ({num_questions} questions)
 
@@ -282,7 +282,7 @@ You are a university professor who creates comprehensive and diverse exams. NEVE
 
 ⚠️ ماتستخدمش Markdown. استخدم HTML فقط.
 
-أنت مدرس ذكي يشرح الدروس بطريقة مبسطة ومفهومة. ماتستخدمش Markdown أبداً."""
+أنت مدرس ذكي يشرح الدروس بطريقة مبسطة ومفهومة. ماتستخدمش Markdown أبدًا."""
         else:
             prompt = f"""Explain "{topic}" in an educational way for {level} level.
 
@@ -351,7 +351,7 @@ You are a smart teacher who explains lessons in a simple and understandable way.
 
 ⚠️ ماتستخدمش Markdown. استخدم HTML فقط.
 
-أنت مساعد تعليمي تنشئ ملاحظات مراجعة سريعة وفعالة. ماتستخدمش Markdown أبداً."""
+أنت مساعد تعليمي تنشئ ملاحظات مراجعة سريعة وفعالة. ماتستخدمش Markdown أبدًا."""
         else:
             prompt = f"""Create quick revision notes for "{topic}"
 
@@ -416,7 +416,7 @@ You are an educational assistant that creates quick and effective revision notes
 
 ⚠️ ماتستخدمش Markdown. استخدم HTML فقط.
 
-أنت معلم صبور تساعد الطلاب في واجباتهم. تشرح خطوة بخطوة ولا تعطي الإجابة مباشرة. ماتستخدمش Markdown أبداً."""
+أنت معلم صبور تساعد الطلاب في واجباتهم. تشرح خطوة بخطوة ولا تعطي الإجابة مباشرة. ماتستخدمش Markdown أبدًا."""
         else:
             prompt = f"""Help me solve the following question (don't give the answer directly - guide me):
 

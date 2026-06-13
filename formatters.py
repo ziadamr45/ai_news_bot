@@ -25,7 +25,7 @@ def _strip_non_telegram_html(text: str) -> str:
     if not text:
         return text
     
-    # 🔴 أولاً: نحول العناوين h1-h6 لـ bold
+    # 🔴 أولًا: نحول العناوين h1-h6 لـ bold
     text = re.sub(r'<h[1-6][^>]*>', '\n<b>', text, flags=re.IGNORECASE)
     text = re.sub(r'</h[1-6]>', '</b>\n', text, flags=re.IGNORECASE)
     
@@ -72,7 +72,7 @@ def _strip_non_telegram_html(text: str) -> str:
         'map', 'area', 'track', 'wbr', 'ruby', 'rt', 'rp',
     )
     
-    # نشيل الـ self-closing tags أولاً
+    # نشيل الـ self-closing tags أولًا
     for tag in unsupported_tags:
         text = re.sub(rf'<{tag}[^>]*/\s*>', '', text, flags=re.IGNORECASE)
     
@@ -171,7 +171,7 @@ def clean_ai_response(text: str) -> str:
     # ده كان السبب الرئيسي في ظهور الأقواس [ ] الغريبة!
     text = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<a href="\2">\1</a>', text)
 
-    # 7b. شيل روابط مرجعية زي [1] أو [2] اللي بتيجي من النماذج أحياناً
+    # 7b. شيل روابط مرجعية زي [1] أو [2] اللي بتيجي من النماذج أحيانًا
     text = re.sub(r'\[(\d+)\]\s*', '', text)
 
     # 7c. شيل أقواس [ ] فاضية أو مليانة حاجات غريبة من النموذج
@@ -311,7 +311,7 @@ def _fix_broken_arabic_text(text: str) -> str:
             result_lines.append(line)
             continue
         
-        # لو السطر قصير جداً وبيبدأ بحرف عربي والسطر اللي فات بيند بحرف عربي
+        # لو السطر قصير جدًا وبيبدأ بحرف عربي والسطر اللي فات بيند بحرف عربي
         # يبقى ده تكملة كلمة — نوصلهم بدون مسافة
         if (i > 0 
             and len(stripped) <= 6
@@ -412,7 +412,7 @@ def smart_split_message(text: str, max_length: int = 3900) -> list:
             tag_name = re.match(r'(\w+)', tag_match).group(1) if re.match(r'(\w+)', tag_match) else tag_match
             open_tags.append(tag_name)
 
-        # لو في tags مفتوحة وده مش آخر جزء، اقفلهم مؤقتاً
+        # لو في tags مفتوحة وده مش آخر جزء، اقفلهم مؤقتًا
         if open_tags and chunk != chunks[-1]:
             for tag in reversed(open_tags):
                 chunk += f'</{tag}>'
@@ -451,7 +451,7 @@ def welcome_message(language: str = "ar", user_name: str = "") -> str:
     """رسالة الترحيب الاحترافية"""
     name_part = f" {user_name}" if user_name else ""
     if language == "ar":
-        return f"""🤖 <b>أهلاً بك{name_part} في My Bro</b>
+        return f"""🤖 <b>أهلًا بك{name_part} في My Bro</b>
 ━━━━━━━━━━━━━━━━━
 
 مساعدك الذكي الشامل 🧠
@@ -502,7 +502,7 @@ def help_message(language: str = "ar") -> str:
 
 💬 <b>المحادثة والذكاء الاصطناعي</b>
 /ask &lt;سؤال&gt; — سؤال مباشر
-ابعت أي سؤال وهجاوبك فوراً!
+ابعت أي سؤال وهجاوبك فورًا!
 
 📄 <b>تحليل الملفات</b>
 ارفع PDF أو مستند وهحللهولك
@@ -664,7 +664,7 @@ def subscription_prompt(language: str = "ar") -> str:
 
 ✅ آخر أخبار AI من مصادر عالمية
 ✅ ملخص بالعربية مفهوم وبسيط
-✅ مجاني تماماً
+✅ مجاني تمامًا
 
 👇 اضغط على الزر بالأسفل عشان تشترك!"""
     else:
@@ -754,7 +754,7 @@ def subscribe_command_message(language: str = "ar") -> str:
 
 ✅ آخر أخبار AI من مصادر عالمية
 ✅ ملخص بالعربية مفهوم وبسيط
-✅ مجاني تماماً
+✅ مجاني تمامًا
 
 👇 اضغط على الزر بالأسفل عشان تشترك!"""
     else:

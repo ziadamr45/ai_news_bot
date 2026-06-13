@@ -119,7 +119,7 @@ TRANSLATIONS = {
     
     # ─── AI Engine - System Prompts ───
     "ai.system_prompt_chat": {
-        "ar": "أنت مساعد ذكي اسمك My Bro. تجيب بالعربية الفصحى. كن دقيقاً واستخدم إيموجي مناسبة. كن ودوداً ومفيداً.",
+        "ar": "أنت مساعد ذكي اسمك My Bro. تجيب بالعربية الفصحى. كن دقيقًا واستخدم إيموجي مناسبة. كن ودودًا ومفيدًا.",
         "en": "You are a smart assistant named My Bro. Respond in English. Be accurate and use appropriate emojis. Be friendly and helpful.",
     },
     "ai.system_prompt_researcher": {
@@ -395,13 +395,13 @@ TRANSLATIONS = {
     
     # ─── Welcome Back Messages ───
     "welcome.back": {
-        "ar": "أهلاً تاني يا {name}! 👋\n\nأنا فاكرك طبعاً — اختار اللي عايزه من الأزرار أو اكتبلي أي حاجة! 🤖",
+        "ar": "أهلًا تاني يا {name}! 👋\n\nأنا فاكرك طبعًا — اختار اللي عايزه من الأزرار أو اكتبلي أي حاجة! 🤖",
         "en": "Welcome back {name}! 👋\n\nI remember you — choose from the buttons or just type anything! 🤖",
     },
     
     # ─── AI Handler Prompts ───
     "ai.ask_no_question": {
-        "ar": "🤖 <b>اسأل My Bro</b>\n\nاكتب سؤالك مباشرة أو بعد الأمر\nمثال: <code>/ask ما هي علوم القرآن؟</code>\n\n💡 يمكنك أيضاً الكتابة مباشرة بدون أوامر وسأفهمك!",
+        "ar": "🤖 <b>اسأل My Bro</b>\n\nاكتب سؤالك مباشرة أو بعد الأمر\nمثال: <code>/ask ما هي علوم القرآن؟</code>\n\n💡 يمكنك أيضًا الكتابة مباشرة بدون أوامر وسأفهمك!",
         "en": "🤖 <b>Ask My Bro</b>\n\nType your question directly or after the command\nExample: <code>/ask What are the sciences of the Quran?</code>\n\n💡 You can also just type naturally without commands!",
     },
     "ai.learn_no_topic": {
@@ -495,15 +495,15 @@ TRANSLATIONS = {
         "en": "📄 <b>PDF File Analysis</b>\n\nUpload a PDF file directly in chat and I'll analyze it!\n\n💡 <b>What I can do:</b>\n• Summarize the content\n• Extract key points\n• Create quizzes from content\n• Study notes\n• Answer your questions\n\n⭐ Free limit: 2 files per day",
     },
     "media.youtube_no_url": {
-        "ar": "🎬 <b>ملخص فيديو YouTube</b>\n\nاستخدم الأمر /youtube متبوعاً برابط الفيديو\nمثال: <code>/youtube https://youtube.com/watch?v=...</code>",
+        "ar": "🎬 <b>ملخص فيديو YouTube</b>\n\nاستخدم الأمر /youtube متبوعًا برابط الفيديو\nمثال: <code>/youtube https://youtube.com/watch?v=...</code>",
         "en": "🎬 <b>YouTube Video Summary</b>\n\nUse /youtube followed by the video link\nExample: <code>/youtube https://youtube.com/watch?v=...</code>",
     },
     "media.file_too_large": {
-        "ar": "❌ حجم الملف كبير جداً! الحد الأقصى {max_size}MB",
+        "ar": "❌ حجم الملف كبير جدًا! الحد الأقصى {max_size}MB",
         "en": "❌ File too large! Maximum size is {max_size}MB",
     },
     "media.file_unsupported": {
-        "ar": "❌ نوع الملف مش مدعوم حالياً. الأنواع المدعومة: PDF, DOCX, TXT",
+        "ar": "❌ نوع الملف مش مدعوم حاليًا. الأنواع المدعومة: PDF, DOCX, TXT",
         "en": "❌ File type is not supported yet. Supported: PDF, DOCX, TXT",
     },
     "media.download_timeout": {

@@ -122,7 +122,7 @@ async def cookies_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 msg = "✅ تم حذف ملف الكوكيز." if lang == "ar" else "✅ Cookies file deleted."
                 logger.info(f"🍪 Cookies file deleted by admin {user_id}")
             else:
-                msg = "❌ ملف الكوكيز مش موجود أصلاً." if lang == "ar" else "❌ Cookies file doesn't exist."
+                msg = "❌ ملف الكوكيز مش موجود أصلًا." if lang == "ar" else "❌ Cookies file doesn't exist."
         except Exception as e:
             msg = f"❌ فشل الحذف: {e}" if lang == "ar" else f"❌ Delete failed: {e}"
         await update.message.reply_text(msg, parse_mode="HTML")
@@ -195,7 +195,7 @@ Send a cookies.txt file from your device and we'll add it to the bot to help wit
 ⚡ بعد رفع الملف، التحميل من YouTube هيشتغل بشكل أفضل بكثير!
 🔴 مفيش كوكيز تلقائية — بس كوكيز مرفوعة من المستخدمين!
 
-📁 أو ارفع الملف يدوياً: <code>{_COOKIES_FILE}</code>"""
+📁 أو ارفع الملف يدويًا: <code>{_COOKIES_FILE}</code>"""
     
     await update.message.reply_text(msg, parse_mode="HTML")
 
@@ -282,7 +282,7 @@ async def handle_cookies_file(update: Update, context: ContextTypes.DEFAULT_TYPE
         # ✅ للمستخدم العادي — رسالة بسيطة
         if not is_user_admin:
             if lang == "ar":
-                msg = "✅ تم رفع ملف الكوكيز بنجاح! شكراً لمساعدتنا 🎬"
+                msg = "✅ تم رفع ملف الكوكيز بنجاح! شكرًا لمساعدتنا 🎬"
             else:
                 msg = "✅ Cookies uploaded successfully! Thanks for helping 🎬"
         else:
@@ -476,7 +476,7 @@ async def potoken_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if lang == "ar":
             msg = """🔑 <b>PO Token — مش متوفر</b>
 
-❌ مفيش PO Token حالياً
+❌ مفيش PO Token حاليًا
 
 💡 <b>إزاي تجيب PO Token:</b>
 1️⃣ افتح youtube.com في Chrome

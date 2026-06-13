@@ -51,7 +51,7 @@ def get_news_inline_buttons(language: str = "ar") -> InlineKeyboardMarkup:
 def get_trending_inline_buttons(language: str = "ar", trends: list = None) -> InlineKeyboardMarkup:
     """أزرار رسالة الترندات - أزرار مرقمة لكل ترند عشان المستخدم يدوس ويجيب تفاصيله
     
-    🔴 FIX: شيلنا زرار التريندات من رسالة التريندات نفسها لأن المستخدم أصلاً في التريندات!
+    🔴 FIX: شيلنا زرار التريندات من رسالة التريندات نفسها لأن المستخدم أصلًا في التريندات!
     بدل كده حطينا أزرار مرقمة لكل ترند عشان المستخدم يدوس على الرقم ويجيب أخبار/تفاصيل الترند ده
     
     trends: list of (keyword, count) tuples
@@ -233,7 +233,7 @@ def get_subscribe_keyboard(language: str = "ar") -> InlineKeyboardMarkup:
         keyboard = [
             [
                 InlineKeyboardButton("✅ اشترك الآن", callback_data="settings_subscribe"),
-                InlineKeyboardButton("لا شكراً", callback_data="skip_subscribe"),
+                InlineKeyboardButton("لا شكرًا", callback_data="skip_subscribe"),
             ],
         ]
     else:

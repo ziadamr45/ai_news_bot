@@ -93,15 +93,15 @@ async def _handle_admin_with_args(wa_id: str, content: str, wa_user_id: int, con
                 expires = expires_date.isoformat()
                 expires_display += f" (ينتهي {expires_date.strftime('%Y-%m-%d')})"
 
-            # 🔴 فحص هل المستخدم أصلاً Premium
+            # 🔴 فحص هل المستخدم أصلًا Premium
             current_info = get_premium_info(target_id)
             
             if current_info["is_premium"] and not force_renew:
-                # المستخدم أصلاً Premium — نقول للأدمن
+                # المستخدم أصلًا Premium — نقول للأدمن
                 current_expires = current_info["expires_display"]
                 current_since = current_info["premium_since"][:10] if current_info["premium_since"] else "مش محدد"
                 await _send_whatsapp_message(wa_id,
-                    f"⚠️ المستخدم ده أصلاً Premium!\n\n"
+                    f"⚠️ المستخدم ده أصلًا Premium!\n\n"
                     f"📱 المستخدم: {_wa_phone_to_display(phone)}\n"
                     f"⭐ الخطة: Premium\n"
                     f"📅 مفعل من: {current_since}\n"
@@ -155,10 +155,10 @@ async def _handle_admin_with_args(wa_id: str, content: str, wa_user_id: int, con
             target_id = _resolve_wa_target(phone)
             from premium import revoke_premium, get_premium_info
             
-            # 🔴 فحص هل المستخدم أصلاً مش Premium
+            # 🔴 فحص هل المستخدم أصلًا مش Premium
             current_info = get_premium_info(target_id)
             if not current_info["is_premium"]:
-                await _send_whatsapp_message(wa_id, f"⚠️ المستخدم {_wa_phone_to_display(phone)} أصلاً مش Premium — على الخطه المجانيه بالفعل!")
+                await _send_whatsapp_message(wa_id, f"⚠️ المستخدم {_wa_phone_to_display(phone)} أصلًا مش Premium — على الخطه المجانيه بالفعل!")
                 return
             
             # المستخدم Premium → شيله
@@ -187,7 +187,7 @@ async def _handle_admin_with_args(wa_id: str, content: str, wa_user_id: int, con
             # 🔴 فحص هل المستخدم Premium — لو آه، الريست مش هيعمل حاجة
             current_info = get_premium_info(target_id)
             if current_info["is_premium"]:
-                await _send_whatsapp_message(wa_id, f"⚠️ المستخدم {_wa_phone_to_display(phone)} Premium — استخدام غير محدود أصلاً!\n\nمفيش حدود تتأثر بالريست.\nلو عايز تشيل البريميوم: /revoke {phone}")
+                await _send_whatsapp_message(wa_id, f"⚠️ المستخدم {_wa_phone_to_display(phone)} Premium — استخدام غير محدود أصلًا!\n\nمفيش حدود تتأثر بالريست.\nلو عايز تشيل البريميوم: /revoke {phone}")
                 return
             
             success = reset_user_usage(target_id)
@@ -241,12 +241,12 @@ async def _handle_admin_with_args(wa_id: str, content: str, wa_user_id: int, con
             phone = args[0]
             target_id = _resolve_wa_target(phone)
             
-            # 🔴 فحص هل المستخدم محظور أصلاً
+            # 🔴 فحص هل المستخدم محظور أصلًا
             from memory import _execute as _mem_execute2, _is_postgres as _mem_is_postgres2, unban_user
             ph = "%s" if _mem_is_postgres2() else "?"
             is_banned = _mem_execute2(f"SELECT user_id FROM banned_users WHERE user_id = {ph}", (target_id,), fetchone=True)
             if not is_banned:
-                await _send_whatsapp_message(wa_id, f"⚠️ المستخدم {_wa_phone_to_display(phone)} مش محظور أصلاً!")
+                await _send_whatsapp_message(wa_id, f"⚠️ المستخدم {_wa_phone_to_display(phone)} مش محظور أصلًا!")
                 return
             
             unban_user(target_id)
@@ -584,7 +584,7 @@ async def _handle_admin_with_args(wa_id: str, content: str, wa_user_id: int, con
                     text += f"\n... وأكتر"
                 await _send_whatsapp_message(wa_id, text)
             else:
-                await _send_whatsapp_message(wa_id, "👥 مفيش مستخدمين واتساب حالياً")
+                await _send_whatsapp_message(wa_id, "👥 مفيش مستخدمين واتساب حاليًا")
 
         elif cmd in ("/warn",):
             if not args:
@@ -609,7 +609,7 @@ async def _handle_admin_with_args(wa_id: str, content: str, wa_user_id: int, con
                 if new_count >= 3:
                     # Auto-ban after 3 warnings
                     _execute(f"UPDATE banned_users SET reason = {ph1}, banned_by = 'auto_ban' WHERE user_id = {ph2}", (f"حظر تلقائي بعد {new_count} تحذيرات", target_id))
-                    await _send_whatsapp_message(wa_id, f"🚫 *حظر تلقائي!* المستخدم {_wa_phone_to_display(phone)} حصل على 3 تحذيرات واتحظر تلقائياً.")
+                    await _send_whatsapp_message(wa_id, f"🚫 *حظر تلقائي!* المستخدم {_wa_phone_to_display(phone)} حصل على 3 تحذيرات واتحظر تلقائيًا.")
                 else:
                     await _send_whatsapp_message(wa_id, f"⚠️ *تحذير ({new_count}/3)*\n📱 المستخدم: {_wa_phone_to_display(phone)}\n📝 السبب: {reason}")
             except ValueError:

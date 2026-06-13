@@ -17,7 +17,7 @@ Piped API Downloader Module
 - الـ API بيرجع روابط تحميل مباشرة بدون yt-dlp
 - الطلبات بتروح لسيرفرات Piped مش من الـ IP بتاعك
 - Piped مختلف عن Invidious — بيستخدم NewPipe Extractor
-- أحياناً بيشتغل لما Invidious يبقى منطفي
+- أحيانًا بيشتغل لما Invidious يبقى منطفي
 
 🔴 الفرق بين Piped و Invidious:
 - Invidious: مشغل فيديو + API — سيرفرات كتير بس بتقع كتير
@@ -45,18 +45,18 @@ logger = logging.getLogger(__name__)
 # القائمة دي بتتحدث بشكل دوري من: https://piped-instances.kavin.rocks/
 # بنختار السيرفرات اللي:
 # 1. بتدعم API
-# 2. مستقرة نسبياً
+# 2. مستقرة نسبيًا
 # 3. مش بطيئة
 
 PIPED_INSTANCES = [
     "https://api.piped.private.coffee",    # ✅ شغال (أكتر واحد مستقر)
-    "https://pipedapi.kavin.rocks",         # ⚠️ أحياناً يشتغل (الرسمي)
-    "https://pipedapi.adminforge.de",        # ⚠️ أحياناً يشتغل
-    "https://pipedapi.r4fo.com",             # ⚠️ أحياناً يشتغل
-    "https://api.piped.projectsegfau.lt",    # ⚠️ أحياناً يشتغل
-    "https://pipedapi.in.projectsegfau.lt",  # ⚠️ أحياناً يشتغل
-    "https://pipedapi.moomoo.me",            # ⚠️ أحياناً يشتغل
-    "https://pipedapi.leptons.xyz",          # ⚠️ أحياناً يشتغل
+    "https://pipedapi.kavin.rocks",         # ⚠️ أحيانًا يشتغل (الرسمي)
+    "https://pipedapi.adminforge.de",        # ⚠️ أحيانًا يشتغل
+    "https://pipedapi.r4fo.com",             # ⚠️ أحيانًا يشتغل
+    "https://api.piped.projectsegfau.lt",    # ⚠️ أحيانًا يشتغل
+    "https://pipedapi.in.projectsegfau.lt",  # ⚠️ أحيانًا يشتغل
+    "https://pipedapi.moomoo.me",            # ⚠️ أحيانًا يشتغل
+    "https://pipedapi.leptons.xyz",          # ⚠️ أحيانًا يشتغل
 ]
 
 # 🔴 يمكن تحديد سيرفر Piped خاص من البيئة
@@ -453,7 +453,7 @@ async def download_youtube_piped_async(url: str, quality: str = "best") -> Optio
 def _merge_video_audio(video_path: str, audio_path: str, output_path: str) -> bool:
     """دمج فيديو وصوت باستخدام ffmpeg
     
-    Piped أحياناً بيرجع فيديو لوحده وصوت لوحده
+    Piped أحيانًا بيرجع فيديو لوحده وصوت لوحده
     لازم ندمجهم بـ ffmpeg عشان نحصل على ملف شامل
     """
     try:

@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 # بنختار السيرفرات اللي:
 # 1. بتدعم API (api: true)
 # 2. مش محتاجة تسجيل (users: لا مش ضروري)
-# 3. مستقرة نسبياً
+# 3. مستقرة نسبيًا
 
 INVIVIOUS_INSTANCES = [
     "https://inv.nadeko.net",              # ✅ شغال
@@ -45,11 +45,11 @@ INVIVIOUS_INSTANCES = [
     "https://yewtu.be",                     # ✅ شغال
     "https://invidious.protokolla.fi",      # ✅ شغال
     "https://invidious.snopyta.org",        # ✅ شغال
-    "https://invidious.nerdvpn.de",         # ⚠️ أحياناً يشتغل
-    "https://inv.tux.pizza",                # ⚠️ أحياناً يشتغل
-    "https://vid.puffyan.us",               # ⚠️ أحياناً يشتغل
-    "https://invidious.lunar.icu",          # ⚠️ أحياناً يشتغل
-    "https://invidious.privacyredirect.com", # ⚠️ أحياناً يشتغل
+    "https://invidious.nerdvpn.de",         # ⚠️ أحيانًا يشتغل
+    "https://inv.tux.pizza",                # ⚠️ أحيانًا يشتغل
+    "https://vid.puffyan.us",               # ⚠️ أحيانًا يشتغل
+    "https://invidious.lunar.icu",          # ⚠️ أحيانًا يشتغل
+    "https://invidious.privacyredirect.com", # ⚠️ أحيانًا يشتغل
 ]
 
 # 🔴 يمكن تحديد سيرفر Invidious خاص من البيئة

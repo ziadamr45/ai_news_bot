@@ -8,7 +8,7 @@
 3. بنجيب النتائج من الـ dataset
 4. بنحمل الفيديو من الرابط المباشر
 
-🔴 الميزة: مش بيتأثر بـ YouTube bot detection خالص — سيرفرات مختلفة تماماً
+🔴 الميزة: مش بيتأثر بـ YouTube bot detection خالص — سيرفرات مختلفة تمامًا
 
 🔴 Actors المتاحة:
 - primary: randominique/youtube-video-downloader (مجاني/رخيص)

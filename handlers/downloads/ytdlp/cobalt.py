@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 
 async def _try_cobalt_for_youtube(url: str, quality: str, tmpdir: str) -> dict | None:
-    """تحميل فيديو يوتيوب عبر Cobalt API — Self-Hosted أولاً ثم Public
+    """تحميل فيديو يوتيوب عبر Cobalt API — Self-Hosted أولًا ثم Public
     
     🔴 بيتعمل ليوتيوب بس — باقي المنصات شغالة بـ yt-dlp زي ما هي
     

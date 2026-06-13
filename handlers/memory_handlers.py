@@ -50,7 +50,7 @@ async def memory_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     now = _time.time()
     if user_id in _user_last_memory_response:
         if now - _user_last_memory_response[user_id] < _MEMORY_RESPONSE_COOLDOWN:
-            return  # تم عرض الذاكرة مؤخراً
+            return  # تم عرض الذاكرة مؤخرًا
     _user_last_memory_response[user_id] = now
 
     increment_command_count(user_id)
@@ -235,7 +235,7 @@ async def unsubscribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     if not is_subscribed(user_id):
         if lang == "ar":
-            msg = "❌ أنت مش مشترك في الأخبار اليومية أصلاً!\n\n💡 ممكن تشترك من ⚙️ الإعدادات أو أمر /subscribe"
+            msg = "❌ أنت مش مشترك في الأخبار اليومية أصلًا!\n\n💡 ممكن تشترك من ⚙️ الإعدادات أو أمر /subscribe"
         else:
             msg = "❌ You're not subscribed to daily news!\n\n💡 You can subscribe from ⚙️ Settings or /subscribe"
         await update.message.reply_text(msg, parse_mode="HTML")

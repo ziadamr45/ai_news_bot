@@ -7,7 +7,7 @@
 2. تحليل نتائج البحث (Search Result Analysis) — استبعاد النتائج غير الآمنة
 3. فحص الوسائط (Media Inspection) — تحليل الصور/الفيديو/الصوت الفعلي
 4. الموافقة النهائية (Final Approval) — فحص درجة الأمان
-5. الوضع الآمن (Safe Search) — تفعيل البحث الآمن افتراضياً
+5. الوضع الآمن (Safe Search) — تفعيل البحث الآمن افتراضيًا
 6. التسجيل (Logging) — تسجيل الطلبات المحظورة
 7. تجربة المستخدم (User Experience) — رسائل واضحة بالعربية والإنجليزية
 
@@ -50,15 +50,15 @@ SAFETY_VLM_TIMEOUT = 15      # timeout لكل VLM call
 SAFETY_VIDEO_TIMEOUT = 30    # timeout كلي لفحص الفيديو
 SAFETY_TOTAL_TIMEOUT = 45    # timeout كلي للفحص الشامل
 
-# 🔴 الوضع الصارم — الفحص نفسه صارم جداً
+# 🔴 الوضع الصارم — الفحص نفسه صارم جدًا
 # بس لو الـ AI timeout/fail → نفوت مش نحظر
 # ⚡ السبب: timeout بيحصل كتير على Railway وبيحظر فيديوهات عادية غلط
 # الفحص الصارم بيفصل لما يشتغل، بس لما يفشل مينفعش نحظر عشوائي
 SAFETY_TIMEOUT_MODE = os.environ.get("CONTENT_SAFETY_TIMEOUT_MODE", "open").lower()
 
 def _timeout_blocked(reason: str = "") -> bool:
-    """هل نحظر عند timeout — دايماً False (نفوت مش نحظر)"""
-    # 🔴 الفحص نفسه صارم جداً (كلمات + AI + VLM)
+    """هل نحظر عند timeout — دايمًا False (نفوت مش نحظر)"""
+    # 🔴 الفحص نفسه صارم جدًا (كلمات + AI + VLM)
     # بس لو الـ AI فشل/timeout → مش نحظر عشوائي
     return False
 
@@ -631,7 +631,7 @@ async def check_video_safety(
         return True, "", 100
 
     try:
-        # 1. أولاً نحلل العنوان
+        # 1. أولًا نحلل العنوان
         if title:
             title_blocked, title_reason = _check_keywords(title)
             if title_blocked:
@@ -789,7 +789,7 @@ def check_safety_score(score: int) -> tuple[bool, str]:
 def get_safe_search_params() -> dict:
     """Layer 5: إعدادات البحث الآمن
     
-    🔴 بنفعّل البحث الآمن افتراضياً لكل عمليات البحث
+    🔴 بنفعّل البحث الآمن افتراضيًا لكل عمليات البحث
     
     Returns: dict فيه إعدادات البحث الآمن
     """
@@ -1097,6 +1097,6 @@ async def comprehensive_media_safety_check(
     except asyncio.TimeoutError:
         if _timeout_blocked():
             logger.warning(f"🛡️ Comprehensive safety check timed out ({SAFETY_TOTAL_TIMEOUT}s), BLOCKING (strict mode)")
-            return False, "🛡️ " + ("تجاوز فحص الأمان الوقت — تم حظر الملف احتياطياً" if lang == "ar" else "Safety check timed out — file blocked as precaution"), "timeout_blocked"
+            return False, "🛡️ " + ("تجاوز فحص الأمان الوقت — تم حظر الملف احتياطيًا" if lang == "ar" else "Safety check timed out — file blocked as precaution"), "timeout_blocked"
         logger.warning(f"🛡️ Comprehensive safety check timed out ({SAFETY_TOTAL_TIMEOUT}s), passing through")
         return True, "", ""

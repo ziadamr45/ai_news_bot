@@ -221,7 +221,7 @@ def _tokenize_title(title: str) -> set:
     # تحويل لـ lowercase وإزالة الرموز
     cleaned = re.sub(r'[^\w\s]', ' ', title.lower())
     words = set(cleaned.split())
-    # إزالة stop words والكلمات القصيرة جداً
+    # إزالة stop words والكلمات القصيرة جدًا
     meaningful = {w for w in words if w not in STOP_WORDS and len(w) > 2}
     return meaningful
 
@@ -262,7 +262,7 @@ def fuzzy_title_similarity(title1: str, title2: str) -> float:
 
 def is_similar_to_sent(title: str, sent_titles: List[str], threshold: float = 0.55) -> Tuple[bool, float]:
     """
-    فحص هل العنوان مشابه لعنوان تم إرساله مؤخراً
+    فحص هل العنوان مشابه لعنوان تم إرساله مؤخرًا
     Returns: (is_similar, max_similarity)
     """
     if not sent_titles:
@@ -279,12 +279,12 @@ def is_similar_to_sent(title: str, sent_titles: List[str], threshold: float = 0.
 
 
 def is_url_recently_sent(url: str, sent_urls: set) -> bool:
-    """فحص هل الـ URL تم إرساله مؤخراً"""
+    """فحص هل الـ URL تم إرساله مؤخرًا"""
     return url in sent_urls
 
 
 def is_hash_recently_sent(title: str, sent_hashes: set) -> bool:
-    """فحص هل عنوان مشابه تم إرساله مؤخراً (hash-based)"""
+    """فحص هل عنوان مشابه تم إرساله مؤخرًا (hash-based)"""
     title_hash = _generate_title_hash(title)
     return title_hash in sent_hashes
 
@@ -585,7 +585,7 @@ def select_top_story(articles: List[Dict]) -> Optional[Dict]:
     1. أعلى نتيجة
     2. مذكور في أكبر عدد من المصادر
     3. يتعلق بشركة كبرى
-    4. ليس مشابهاً لأمس
+    4. ليس مشابهًا لأمس
     """
     if not articles:
         return None
@@ -622,7 +622,7 @@ def editorial_review(article: Dict, sent_urls: set, sent_hashes: set,
 
     # 2. هل تم إرسال عنوان مشابه (hash) من قبل؟
     if is_hash_recently_sent(title, sent_hashes):
-        return {"approved": False, "reason": "title_hash_sent", "penalty": -100, "warnings": ["تم إرسال خبر مشابه جداً من قبل"]}
+        return {"approved": False, "reason": "title_hash_sent", "penalty": -100, "warnings": ["تم إرسال خبر مشابه جدًا من قبل"]}
 
     # 3. هل العنوان مشابه fuzzy لعنوان مرسل؟
     is_similar, similarity = is_similar_to_sent(title, sent_titles, threshold=0.55)
@@ -641,7 +641,7 @@ def editorial_review(article: Dict, sent_urls: set, sent_hashes: set,
     if base_score + total_penalty < MIN_QUALITY_SCORE:
         return {"approved": False, "reason": "below_quality", "penalty": total_penalty, "warnings": warnings + [f"نتيجة ضعيفة ({base_score:.1f})"]}
 
-    # 6. هل المقال فعلاً مهم؟ (فحص محتوى)
+    # 6. هل المقال فعلًا مهم؟ (فحص محتوى)
     importance = article.get("scores", {}).get("importance", 0)
     if importance < 1.5 and base_score < 5.0:
         warnings.append("أهمية منخفضة")
@@ -817,7 +817,7 @@ def _balance_categories(articles: List[Dict], max_articles: int) -> List[Dict]:
     num_categories = len(category_groups)
     max_per_category = max(2, max_articles // max(num_categories, 1))
 
-    # اختيار أفضل مقال من كل فئة أولاً (round-robin)
+    # اختيار أفضل مقال من كل فئة أولًا (round-robin)
     selected = []
     remaining_slots = max_articles
 

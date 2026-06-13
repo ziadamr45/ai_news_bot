@@ -72,9 +72,9 @@ def set_workflow(user_id: int, workflow_name: str, step: str = None, data: Dict 
     
     Args:
         user_id: معرف المستخدم
-        workflow_name: اسم الـ Workflow (مثلاً study_mode)
-        step: المرحلة الحالية (مثلاً waiting_for_subject)
-        data: بيانات إضافية (مثلاً image_base64, pdf_context)
+        workflow_name: اسم الـ Workflow (مثلًا study_mode)
+        step: المرحلة الحالية (مثلًا waiting_for_subject)
+        data: بيانات إضافية (مثلًا image_base64, pdf_context)
     """
     workflow = {
         "workflow": workflow_name,
@@ -104,8 +104,8 @@ def set_workflow(user_id: int, workflow_name: str, step: str = None, data: Dict 
 def get_workflow(user_id: int) -> Optional[Dict[str, Any]]:
     """استرجاع حالة Workflow النشط للمستخدم
     
-    يبحث أولاً في الذاكرة، وبعدين في الداتابيز.
-    لو الـ Workflow انتهت صلاحيته (أكتر من 30 دقيقة) يتم مسحه تلقائياً.
+    يبحث أولًا في الذاكرة، وبعدين في الداتابيز.
+    لو الـ Workflow انتهت صلاحيته (أكتر من 30 دقيقة) يتم مسحه تلقائيًا.
     
     Returns:
         Dict with workflow/step/data أو None لو مفيش workflow نشط

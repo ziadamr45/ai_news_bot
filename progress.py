@@ -185,7 +185,7 @@ class ProgressManager:
     async def start(self):
         """بدء نظام التقدم — شريط تقدم بس + مؤشر كتابة
         
-        🟢 v9.18: رسالة خفيفة جداً (عنوان + شريط تقدم بس)
+        🟢 v9.18: رسالة خفيفة جدًا (عنوان + شريط تقدم بس)
         مؤشر الكتابة بيشتغل في الـ background
         """
         # إرسال رسالة التقدم الأولى
@@ -206,7 +206,7 @@ class ProgressManager:
         return self
 
     async def _timeout_watchdog(self):
-        """مراقب المهلة — يوقف المهام الخلفية تلقائياً لو العملية طالت"""
+        """مراقب المهلة — يوقف المهام الخلفية تلقائيًا لو العملية طالت"""
         try:
             await asyncio.sleep(self._timeout_seconds)
             if not self._finished:
@@ -320,7 +320,7 @@ class ProgressManager:
                 # حذف رسالة التقدم وإرسال النتيجة النهائية
                 await self.progress_msg.delete()
             elif final_message:
-                # 🔴 FIX v2: لو الرسالة طويلة جداً أو فيها HTML غلط،
+                # 🔴 FIX v2: لو الرسالة طويلة جدًا أو فيها HTML غلط،
                 # احذف الـ progress وابعت الرسالة كرسالة جديدة
                 if len(final_message) > 4096:
                     logger.warning(f"⚠️ Response too long ({len(final_message)} chars) for edit_text, sending as new message")

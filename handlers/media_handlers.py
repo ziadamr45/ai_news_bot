@@ -175,7 +175,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Check file size
     if doc.file_size and doc.file_size > PDF_MAX_FILE_SIZE:
         if lang == "ar":
-            msg = f"❌ حجم الملف كبير جداً! الحد الأقصى {PDF_MAX_FILE_SIZE // (1024*1024)}MB"
+            msg = f"❌ حجم الملف كبير جدًا! الحد الأقصى {PDF_MAX_FILE_SIZE // (1024*1024)}MB"
         else:
             msg = f"❌ File too large! Maximum size is {PDF_MAX_FILE_SIZE // (1024*1024)}MB"
         await update.message.reply_text(msg, parse_mode="HTML")
@@ -203,7 +203,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if ext not in supported_exts:
         if lang == "ar":
-            msg = f"❌ نوع الملف '.{ext}' مش مدعوم حالياً.\n\nالأنواع المدعومة: PDF, Word (docx), TXT, MD, CSV, JSON\n\n💡 ابعت ملف من الأنواع دي وهحللهولك!"
+            msg = f"❌ نوع الملف '.{ext}' مش مدعوم حاليًا.\n\nالأنواع المدعومة: PDF, Word (docx), TXT, MD, CSV, JSON\n\n💡 ابعت ملف من الأنواع دي وهحللهولك!"
         else:
             msg = f"❌ File type '.{ext}' is not supported yet.\n\nSupported: PDF, Word (docx), TXT, MD, CSV, JSON\n\n💡 Send a supported file and I'll analyze it!"
         await update.message.reply_text(msg, parse_mode="HTML")
@@ -444,7 +444,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "user_text": user_text,
         }
 
-        # 🖌️ حفظ الصورة تلقائياً عشان المستخدم يقدر يعدلها بـ /edit بعد كده
+        # 🖌️ حفظ الصورة تلقائيًا عشان المستخدم يقدر يعدلها بـ /edit بعد كده
         try:
             from handlers.image_handlers import _user_edit_images
             import time as _time
@@ -600,7 +600,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # رسالة خطأ أوضح حسب سبب الفشل
             if result.get("error") == "no_api_key":
                 if lang == "ar":
-                    error_text = "⚠️ خدمة تحويل الصوت لنص مش متاحة حالياً.\n\n💡 ممكن تكتب رسالتك كنص بدل الصوت وهرد عليك عادي!"
+                    error_text = "⚠️ خدمة تحويل الصوت لنص مش متاحة حاليًا.\n\n💡 ممكن تكتب رسالتك كنص بدل الصوت وهرد عليك عادي!"
                 else:
                     error_text = "⚠️ Voice transcription is currently unavailable.\n\n💡 You can type your message instead and I'll respond normally!"
             else:

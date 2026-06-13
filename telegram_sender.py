@@ -180,7 +180,7 @@ def send_split_message(message: str) -> bool:
                 success = False
         return success
 
-    # إرسال الهيدر أولاً
+    # إرسال الهيدر أولًا
     header = parts[0].strip()
     if header:
         send_telegram_message(header)

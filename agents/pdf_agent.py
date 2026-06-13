@@ -246,13 +246,13 @@ class PDFAgent:
 • استنتاجات إن وُجدت
 
 🔴🔴🔴 قواعد صارمة:
-• ماتستخدمش Markdown أبداً (لا *, **, #, |, []). استخدم HTML فقط: <b>عريض</b> <i>مائل</i> <code>كود</code> • نقاط
-• 🔴 ماتقولش أبداً إنك مش قادر تلخص! لازم تلخص المحتوى ده — ده وظيفتك!
-• 🔴 ماتقولش "لم أتمكن" أو "لا أستطيع" أو "لا يمكنني" — ده ممنوع تماماً!
+• ماتستخدمش Markdown أبدًا (لا *, **, #, |, []). استخدم HTML فقط: <b>عريض</b> <i>مائل</i> <code>كود</code> • نقاط
+• 🔴 ماتقولش أبدًا إنك مش قادر تلخص! لازم تلخص المحتوى ده — ده وظيفتك!
+• 🔴 ماتقولش "لم أتمكن" أو "لا أستطيع" أو "لا يمكنني" — ده ممنوع تمامًا!
 • 🔴 لو النص طويل، لخص أهم النقاط بس — بس لازم تلخص!
 • 🔴 ماتعرضش النص الأصلي كده — لازم تلخصه بأسلوبك!
 
-أنت مساعد ذكي متخصص في تلخيص المستندات. تلخص بالعربية بشكل منظم وواضح. ماتستخدمش Markdown أبداً. استخدم HTML فقط. 🔴最重要: لازم تلخص دايماً — ماتقولش أبداً إنك مش قادر تلخص!"""
+أنت مساعد ذكي متخصص في تلخيص المستندات. تلخص بالعربية بشكل منظم وواضح. ماتستخدمش Markdown أبدًا. استخدم HTML فقط. 🔴最重要: لازم تلخص دايمًا — ماتقولش أبدًا إنك مش قادر تلخص!"""
         else:
             prompt = f"""Summarize the following content comprehensively in English:
 
@@ -298,7 +298,7 @@ You are a smart assistant specialized in document summarization. Summarize in a 
 
 ⚠️ ماتستخدمش Markdown (لا *, **, #, |). ماتستخدمش عريض (<b>) خالص في النقاط. اكتب كل نقطة بشكل عادي بدون أي تنسيق عريض. استخدم • نقاط فقط.
 
-أنت مساعد ذكي تستخرج النقاط الرئيسية من النصوص. ماتستخدمش Markdown أبداً. ماتستخدمش <b> أو عريض أبداً."""
+أنت مساعد ذكي تستخرج النقاط الرئيسية من النصوص. ماتستخدمش Markdown أبدًا. ماتستخدمش <b> أو عريض أبدًا."""
         else:
             prompt = f"""Extract key points from the following content:
 
@@ -348,7 +348,7 @@ You are a smart assistant that extracts key points from texts. NEVER use Markdow
 
 ⚠️ ماتستخدمش Markdown (لا *, **, #, |). استخدم HTML فقط.
 
-أنت مساعد تعليمي تنشئ كويزات من المحتوى. ماتستخدمش Markdown أبداً."""
+أنت مساعد تعليمي تنشئ كويزات من المحتوى. ماتستخدمش Markdown أبدًا."""
         else:
             prompt = f"""Create a quiz from the following content ({num_questions} questions):
 
@@ -401,7 +401,7 @@ You are an educational assistant that creates quizzes from content. NEVER use Ma
 
 ⚠️ ماتستخدمش Markdown (لا *, **, #, |). استخدم HTML فقط.
 
-أنت مدرس ذكي يشرح المحتوى بطريقة مبسطة ومفهومة. ماتستخدمش Markdown أبداً."""
+أنت مدرس ذكي يشرح المحتوى بطريقة مبسطة ومفهومة. ماتستخدمش Markdown أبدًا."""
         else:
             prompt = f"""Explain the following content in a simplified, educational way:{chapter_hint}
 
@@ -458,7 +458,7 @@ You are a smart teacher who explains content simply and clearly. NEVER use Markd
 
 ⚠️ ماتستخدمش Markdown (لا *, **, #, |). استخدم HTML فقط.
 
-أنت مساعد تعليمي تنشئ ملاحظات دراسية شاملة ومنظمة. ماتستخدمش Markdown أبداً."""
+أنت مساعد تعليمي تنشئ ملاحظات دراسية شاملة ومنظمة. ماتستخدمش Markdown أبدًا."""
         else:
             prompt = f"""Create comprehensive study notes from the following content:
 
@@ -514,7 +514,7 @@ You are an educational assistant that creates comprehensive and organized study 
 
 ⚠️ ماتستخدمش Markdown (لا *, **, #, |). استخدم HTML فقط.
 
-أنت مساعد ذكي تجيب على الأسئلة بناءً على المحتوى المقدم فقط. لو مش عارف، قول صراحة. ماتستخدمش Markdown أبداً."""
+أنت مساعد ذكي تجيب على الأسئلة بناءً على المحتوى المقدم فقط. لو مش عارف، قول صراحة. ماتستخدمش Markdown أبدًا."""
         else:
             prompt = f"""Based on the following content, answer the question:
 

@@ -4,12 +4,12 @@ SoundCloud Search Module 🔍🎵
 
 🔴 ليه SoundCloud بدل YouTube للصوت؟
 1. SoundCloud مخصص للصوت والمزيكا — نتائج أدق
-2. مش محتاج API key دائم — بنستخرج client_id تلقائياً
+2. مش محتاج API key دائم — بنستخرج client_id تلقائيًا
 3. مفيش bot detection زي YouTube
 4. جودة صوت عالية ومتنوعة
 
 🔴 كيف بيشتغل:
-1. بيستخرج SoundCloud client_id تلقائياً من الـ JS bundles
+1. بيستخرج SoundCloud client_id تلقائيًا من الـ JS bundles
 2. بيستخدم SoundCloud API v2 للبحث
 3. بيرجع قائمة نتائج فيها: عنوان، رابط، مدة، فنان، صورة ألبوم
 4. بيشتغل مع download_handlers عشان يحمّل النتيجة المختارة
@@ -150,11 +150,11 @@ async def _get_soundcloud_client_id() -> Optional[str]:
 async def search_soundcloud(query: str, max_results: int = 5) -> Optional[List[Dict]]:
     """بحث صوت/مزيكا في SoundCloud
     
-    🔴 بيستخدم SoundCloud API v2 مع client_id مستخرج تلقائياً
+    🔴 بيستخدم SoundCloud API v2 مع client_id مستخرج تلقائيًا
     
     Args:
         query: كلمة البحث
-        max_results: أقصى عدد نتائج (5 افتراضياً)
+        max_results: أقصى عدد نتائج (5 افتراضيًا)
     
     Returns:
         قائمة نتائج أو None لو فشل البحث

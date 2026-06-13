@@ -98,7 +98,7 @@ PREMIUM_CHAT_MODELS = [
     {"provider": "mistral", "model": "mistral-large-latest"},
     # ⭐ Mistral Medium — fallback سريع
     {"provider": "mistral", "model": "mistral-medium-latest"},
-    # ⭐ NVIDIA Kimi K2.6 — نموذج ذكي جداً
+    # ⭐ NVIDIA Kimi K2.6 — نموذج ذكي جدًا
     {"provider": "nvidia", "model": "moonshotai/kimi-k2.6", "api_key": NVIDIA_KIMI_K26_KEY},
     # ⭐ NVIDIA MiniMax M2.7 — نموذج متقدم
     {"provider": "nvidia", "model": "minimaxai/minimax-m2.7", "api_key": NVIDIA_MINIMAX_M27_KEY},

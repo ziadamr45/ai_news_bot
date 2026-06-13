@@ -58,7 +58,7 @@ def is_within_timeframe(published_date: datetime = None) -> bool:
     التحقق من أن الخبر ضمن الإطار الزمني المحدد
     
     🔴 FIX v3: بنقرأ NEWS_FETCH_HOURS ديناميكي من الـ config module
-    عشان لو البوت غيّر القيمة (مثلاً بناءً على last_news_delivery)، التغيير ينعكس هنا
+    عشان لو البوت غيّر القيمة (مثلًا بناءً على last_news_delivery)، التغيير ينعكس هنا
     """
     if published_date is None:
         return True  # لو مفيش تاريخ، نسيبه يعدي
@@ -82,7 +82,7 @@ def is_duplicate(title: str, seen_titles: List[str], threshold: float = 0.55) ->
     - Containment ratio
     - hash-based exact matching
     """
-    # أولاً: فحص الـ hash (مطابقة تامة بعد التنظيف)
+    # أولًا: فحص الـ hash (مطابقة تامة بعد التنظيف)
     try:
         from news_editor import _generate_title_hash
         title_hash = _generate_title_hash(title)
@@ -94,7 +94,7 @@ def is_duplicate(title: str, seen_titles: List[str], threshold: float = 0.55) ->
     except ImportError:
         pass
 
-    # ثانياً: fuzzy matching
+    # ثانيًا: fuzzy matching
     try:
         from news_editor import is_similar_to_sent
         is_similar, similarity = is_similar_to_sent(title, seen_titles, threshold=threshold)
