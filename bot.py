@@ -335,7 +335,11 @@ async def broadcast_daily_news(context: ContextTypes.DEFAULT_TYPE):
             
             # WhatsApp مش بيدعم HTML — لازم نشيل الـ tags
             import re as _re
-            wa_message = _re.sub(r'<[^>]+>', '', message)
+            # 🔴 FIX: قبل شيل الـ tags، نحول الروابط <a href="url">اقرأ المزيد</a> للرابط الفعلي
+            # عشان واتساب يعرض الرابط مباشرة بدل ما يختفي
+            wa_message = _re.sub(r'<a\s+href="([^"]+)"[^>]*>([^<]*)</a>', r'\2: \1', message)
+            # نشيل باقي الـ HTML tags
+            wa_message = _re.sub(r'<[^>]+>', '', wa_message)
             # نحول الـ &amp; وغيره
             wa_message = wa_message.replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>')
 
