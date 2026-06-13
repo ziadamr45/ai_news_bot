@@ -367,6 +367,12 @@ async def _analyze_document(media_id: str, caption: str = "", wa_user_id: int = 
 
     except Exception as e:
         logger.error(f"❌ Document analysis error: {e}")
+        try:
+            from sentry_config import capture_exception, set_context
+            set_context("whatsapp", {"media_id": media_id, "filename": filename, "user_id": wa_user_id})
+            capture_exception(e)
+        except Exception:
+            pass
         return ""
 
 
@@ -472,6 +478,12 @@ async def _execute_photo_search(wa_id: str, query: str, count: int, wa_user_id: 
         
     except Exception as e:
         logger.error(f"WA photo search error: {e}", exc_info=True)
+        try:
+            from sentry_config import capture_exception, set_context
+            set_context("whatsapp", {"query": query, "user_id": wa_user_id})
+            capture_exception(e)
+        except Exception:
+            pass
         await _send_whatsapp_message(wa_id, "❌ حصل خطأ. جرب تاني!")
 
 

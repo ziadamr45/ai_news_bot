@@ -138,7 +138,20 @@ async def webhook_receiver(request: web.Request):
                             if wa_id and rate_limiter.is_rate_limited(wa_id, "message"):
                                 logger.warning(f"⚠️ Rate limited WhatsApp user: {wa_id}")
                                 continue  # Skip this message but still return 200
-                            asyncio.create_task(_handle_incoming_message(message, value))
+                            # 🐦 Sentry — global error handler for WhatsApp async tasks
+                            task = asyncio.create_task(_handle_incoming_message(message, value))
+                            def _on_task_error(t):
+                                """Catch unhandled exceptions from WhatsApp async tasks and report to Sentry"""
+                                try:
+                                    exc = t.exception()
+                                    if exc:
+                                        logger.error(f"❌ Unhandled WA task error: {exc}", exc_info=exc)
+                                        from sentry_config import capture_exception, set_context
+                                        set_context("whatsapp", {"wa_id": wa_id, "source": "async_task"})
+                                        capture_exception(exc)
+                                except Exception:
+                                    pass
+                            task.add_done_callback(_on_task_error)
 
                     statuses = value.get("statuses", [])
                     if statuses:

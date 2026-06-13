@@ -63,6 +63,16 @@ from i18n import t
 logger = logging.getLogger(__name__)
 
 
+def _report_to_sentry(exc: Exception, wa_id: str = "", command: str = "", wa_user_id: int = 0):
+    """Report error to Sentry + Telegram alert for WhatsApp errors"""
+    try:
+        from sentry_config import capture_exception, set_context
+        set_context("whatsapp", {"wa_id": wa_id, "command": command, "user_id": wa_user_id})
+        capture_exception(exc)
+    except Exception:
+        pass
+
+
 async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_name: str, message_id: str = ""):
     """Handle WhatsApp commands and send interactive responses — full Telegram parity"""
 
@@ -116,6 +126,7 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
             await _send_whatsapp_message(wa_id, admin_text)
         except Exception as e:
             logger.error(f"❌ Admin command error: {e}")
+            _report_to_sentry(e, wa_id, command, wa_user_id)
             await _send_whatsapp_message(wa_id, f"⚠️ خطأ في لوحة التحكم: {e}")
         return True
 
@@ -825,6 +836,7 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
             await _send_whatsapp_message(wa_id, mem_text)
         except Exception as e:
             logger.error(f"❌ Memory view error: {e}")
+            _report_to_sentry(e, wa_id, "memory_view", wa_user_id)
             # Fallback to AI-based memory display
             from whatsapp_webhook import _send_ai_response
             await _send_ai_response(wa_id, "ماذا تتذكر عني؟ اذكر الأشياء المهمة التي تعرفها عني",
@@ -855,6 +867,7 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
             await _send_whatsapp_message(wa_id, "🗑️ تم مسح كل الذاكرة.\n\nهبدأ أعرفك من الأول!")
         except Exception as e:
             logger.error(f"❌ Memory reset error: {e}")
+            _report_to_sentry(e, wa_id, "memory_reset", wa_user_id)
             await _send_whatsapp_message(wa_id, "🗑️ تم مسح الذاكرة.\n\nهبدأ أعرفك من الأول!")
 
     elif command == "forget":
@@ -972,6 +985,7 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
                 f"📩 تواصل مع المطور على واتساب:\n📱 {DEVELOPER_WHATSAPP_URL}")
         except Exception as e:
             logger.error(f"❌ Premium command error: {e}")
+            _report_to_sentry(e, wa_id, "premium", wa_user_id)
         return True
 
     elif command == "plan":
@@ -1056,6 +1070,7 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
             await _send_whatsapp_message(wa_id, plan_text)
         except Exception as e:
             logger.error(f"❌ Plan command error: {e}")
+            _report_to_sentry(e, wa_id, "plan", wa_user_id)
             await _send_whatsapp_message(wa_id, "⚠️ حصل خطأ في عرض الخطة.")
 
     # ══════════════════════════════════════
@@ -1505,6 +1520,7 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
                 await _send_whatsapp_message(wa_id, "⚠️ مش قادر أستخرج النقاط. جرب تاني!")
         except Exception as e:
             logger.error(f"❌ PDF key points error: {e}")
+            _report_to_sentry(e, wa_id, "pdf_keypoints", wa_user_id)
             await _send_whatsapp_message(wa_id, "⚠️ حصل خطأ. جرب تاني!")
         return True
 
@@ -1572,6 +1588,7 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
                 await _send_whatsapp_message(wa_id, "⚠️ مش قادر أعمل ملاحظات دراسية. جرب تاني!")
         except Exception as e:
             logger.error(f"❌ PDF study notes error: {e}")
+            _report_to_sentry(e, wa_id, "pdf_study", wa_user_id)
             await _send_whatsapp_message(wa_id, "⚠️ حصل خطأ. جرب تاني!")
         return True
 
@@ -1782,6 +1799,7 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
                     await _send_whatsapp_message(wa_id, "⚠️ مش قادر أدرس الملف. جرب تاني!")
             except Exception as e:
                 logger.error(f"❌ PDF study error: {e}")
+                _report_to_sentry(e, wa_id, "pdf_study_cmd", wa_user_id)
                 await _send_whatsapp_message(wa_id, "⚠️ حصل خطأ في الدراسة. جرب تاني!")
         else:
             # No PDF — ask for topic
@@ -1911,6 +1929,7 @@ async def _handle_command_with_arg(wa_id: str, cmd_name: str, arg: str, wa_user_
                 await feedback.error()
         except Exception as e:
             logger.error(f"❌ YouTube summary error: {e}", exc_info=True)
+            _report_to_sentry(e, wa_id, "youtube_summary", wa_user_id)
             await _send_whatsapp_message(wa_id, "❌ حصل خطأ في تلخيص الفيديو. جرب تاني! 🎬")
             await feedback.error()
 

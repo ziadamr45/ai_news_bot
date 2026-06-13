@@ -111,6 +111,13 @@ async def _send_ai_response(wa_id: str, user_message: str, wa_user_id: int, cont
 
     except Exception as e:
         logger.error(f"❌ AI engine error for WA {wa_id}: {e}", exc_info=True)
+        # 🐦 Sentry — capture WhatsApp AI errors
+        try:
+            from sentry_config import capture_exception, set_context
+            set_context("whatsapp", {"wa_id": wa_id, "user_id": wa_user_id, "context_type": context_type})
+            capture_exception(e)
+        except Exception:
+            pass
         await feedback.error()
         await _send_whatsapp_message(wa_id, "⚠️ مش قادر أرد دلوقتي — جرب تاني بعد شوية! 🔄")
 
