@@ -729,7 +729,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         title = "تحليل تفصيلي للصورة" if lang == "ar" else "Detailed Image Analysis"
         # 🟢 FIX: استخدام TelegramThinkingFeedback للعمليات السريعة
-        feedback = TelegramThinkingFeedback(query, context)
+        feedback = TelegramThinkingFeedback(update, context)
         await feedback.start()
 
         try:

@@ -426,7 +426,14 @@ class TelegramThinkingFeedback:
         self.typing_task = None
         self._finished = False
         self._chat_id = update.effective_chat.id if update.effective_chat else None
-        self._message_id = update.message.message_id if update.message else None
+        # 🔴 FIX: في الـ callback queries، update.message بيكون None
+        # الرسالة موجودة في update.callback_query.message
+        if update.message:
+            self._message_id = update.message.message_id
+        elif update.callback_query and update.callback_query.message:
+            self._message_id = update.callback_query.message.message_id
+        else:
+            self._message_id = None
     
     async def start(self):
         """بدء التفكير — 💭 reaction + مؤشر كتابة"""
