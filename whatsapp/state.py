@@ -287,16 +287,45 @@ def _strip_html_for_whatsapp(text: str) -> str:
     """
     Strip HTML tags from AI response for WhatsApp.
     WhatsApp doesn't support HTML — only plain text and *bold*, _italic_, ~strikethrough~, ```code```
+    
+    🔴 FIX v2: كمان بيشيل Markdown الغريب (**) اللي بيبان كرموز
     """
     if not text:
         return text
 
+    # 🔴 FIX: أولًا نشيل **bold** (Markdown من AI) — نحوله لـ *bold* (WhatsApp format)
+    # لازم نعمل ده قبل تحويل <b> عشان ميتعفسش
+    text = re.sub(r'\*\*(.+?)\*\*', r'*\1*', text)
+    
+    # شيل *italic* Markdown واحده — نحولها لـ _italic_ (WhatsApp)
+    text = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'_\1_', text)
+    
+    # شيل ### headings
+    text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
+    
+    # شيل روابط Markdown [text](url) → text (url)
+    text = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'\1 (\2)', text)
+    
+    # شيل أقواس مرجعية [1] [2]
+    text = re.sub(r'\[\d+\]\s*', '', text)
+    
+    # شيل ```code blocks``` — نحولها لـ WhatsApp format
+    text = re.sub(r'```\w*\n?(.*?)```', r'```\1```', text, flags=re.DOTALL)
+    text = re.sub(r'`([^`]+)`', r'```\1```', text)
+
+    # HTML → WhatsApp formatting
     text = re.sub(r'<b>(.*?)</b>', r'*\1*', text, flags=re.DOTALL)
     text = re.sub(r'<i>(.*?)</i>', r'_\1_', text, flags=re.DOTALL)
     text = re.sub(r'<code>(.*?)</code>', r'```\1```', text, flags=re.DOTALL)
     text = re.sub(r'<s>(.*?)</s>', r'~\1~', text, flags=re.DOTALL)
     text = re.sub(r'<a\s+href="([^"]*)"[^>]*>(.*?)</a>', r'\2 (\1)', text, flags=re.DOTALL)
+    
+    # شيل أي HTML tags متبقية
     text = re.sub(r'<[^>]+>', '', text)
+    
+    # شيل أي * متبقية لوحدها (مش جوا formatting)
+    # بس نحافظ على *text* و _text_ و ~text~ و ```text```
+    
     text = re.sub(r'\n{3,}', '\n\n', text)
     text = re.sub(r' {2,}', ' ', text)
 

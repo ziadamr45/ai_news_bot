@@ -13,7 +13,7 @@ from memory import (
     get_language, increment_command_count,
 )
 from formatters import (
-    format_news_item, format_error, _strip_non_telegram_html,
+    format_news_item, format_error, _strip_non_telegram_html, _quick_clean_text,
 )
 from news_fetcher import fetch_news
 from filters import filter_news
@@ -570,7 +570,7 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         # تفكيك الترجمة
                         translated_parts = translated.split("---")
                         for i, r in enumerate(web_results[:5], 1):
-                            title_text = r.get("title", "")
+                            title_text = _quick_clean_text(r.get("title", ""))
                             snippet = r.get("snippet", "")
                             link = r.get("link", "")
                             
@@ -579,13 +579,13 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                 part = translated_parts[i-1]
                                 # استخراج العنوان والمقتطف المترجم
                                 trans_title = title_text
-                                trans_snippet = _strip_non_telegram_html(snippet)[:200]
+                                trans_snippet = _quick_clean_text(_strip_non_telegram_html(snippet))[:200]
                                 for line in part.strip().split("\n"):
                                     line = line.strip()
                                     if line.upper().startswith("TITLE:"):
-                                        trans_title = line[6:].strip()
+                                        trans_title = _quick_clean_text(line[6:].strip())
                                     elif line.upper().startswith("SNIPPET:"):
-                                        trans_snippet = _strip_non_telegram_html(line[8:].strip())[:200]
+                                        trans_snippet = _quick_clean_text(_strip_non_telegram_html(line[8:].strip()))[:200]
                                 title_text = trans_title
                                 snippet = trans_snippet
                             
@@ -598,8 +598,8 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     else:
                         # fallback: عرض النتائج بدون ترجمة
                         for i, r in enumerate(web_results[:5], 1):
-                            title_text = r.get("title", "")
-                            snippet = _strip_non_telegram_html(r.get("snippet", ""))[:200]
+                            title_text = _quick_clean_text(r.get("title", ""))
+                            snippet = _quick_clean_text(_strip_non_telegram_html(r.get("snippet", "")))[:200]
                             link = r.get("link", "")
                             message += f"{i}. 📄 <b>{title_text}</b>\n"
                             if snippet:
@@ -611,8 +611,8 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     logger.warning(f"⚠️ Translation of search results failed: {e}")
                     # fallback: عرض بدون ترجمة
                     for i, r in enumerate(web_results[:5], 1):
-                        title_text = r.get("title", "")
-                        snippet = _strip_non_telegram_html(r.get("snippet", ""))[:200]
+                        title_text = _quick_clean_text(r.get("title", ""))
+                        snippet = _quick_clean_text(_strip_non_telegram_html(r.get("snippet", "")))[:200]
                         link = r.get("link", "")
                         message += f"{i}. 📄 <b>{title_text}</b>\n"
                         if snippet:
@@ -623,8 +623,8 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 # English: عرض النتائج كما هي
                 for i, r in enumerate(web_results[:5], 1):
-                    title_text = r.get("title", "")
-                    snippet = _strip_non_telegram_html(r.get("snippet", ""))[:200]
+                    title_text = _quick_clean_text(r.get("title", ""))
+                    snippet = _quick_clean_text(_strip_non_telegram_html(r.get("snippet", "")))[:200]
                     link = r.get("link", "")
                     message += f"{i}. 📄 <b>{title_text}</b>\n"
                     if snippet:

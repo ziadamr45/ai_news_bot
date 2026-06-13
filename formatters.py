@@ -6,6 +6,73 @@
 import re
 
 
+def _quick_clean_text(text: str) -> str:
+    """
+    تنظيف سريع من Markdown و HTML الغريب — بيشتغل على العناوين والتلخيصات
+    أخف من clean_ai_response() عشان ميتعملش overhead على كل خبر
+    
+    بيشيل:
+    - **bold** → النص بس (مش محتاجين bold جوا <b> تاني)
+    - *italic* → النص بس
+    - ```code``` → الكود بس
+    - `code` → الكود بس
+    - [text](url) → text (شيل الروابط)
+    - ### headings → النص بس
+    - <tag> غريب → شيله
+    - أقواس [1] مرجعية → شيلها
+    """
+    if not text:
+        return text
+    
+    # تحويل **bold** للنص بس (إحنا حاطين <b> بره)
+    text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
+    
+    # تحويل *italic* للنص بس
+    text = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'\1', text)
+    
+    # تحويل __bold__ للنص بس
+    text = re.sub(r'__(.+?)__', r'\1', text)
+    
+    # تحويل ~~strikethrough~~ للنص بس
+    text = re.sub(r'~~(.+?)~~', r'\1', text)
+    
+    # شيل code blocks
+    text = re.sub(r'```\w*\n?(.*?)```', r'\1', text, flags=re.DOTALL)
+    text = re.sub(r'`([^`]+)`', r'\1', text)
+    
+    # شيل Markdown links [text](url) → text
+    text = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'\1', text)
+    
+    # شيل أقواس مرجعية [1] [2]
+    text = re.sub(r'\[\d+\]\s*', '', text)
+    
+    # شيل ### headings
+    text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
+    
+    # شيل --- خطوط أفقية
+    text = re.sub(r'^[-*_]{3,}\s*$', '', text, flags=re.MULTILINE)
+    
+    # شيل أي HTML tags متبقية (مش المدعومة من تليجرام)
+    # بس نحافظ على: b, i, u, s, code, pre, a
+    allowed_tags = {'b', 'i', 'u', 's', 'code', 'pre', 'a'}
+    def _clean_tag(match):
+        tag_content = match.group(1)
+        tag_name = tag_content.strip().split()[0].rstrip('/').lstrip('/')
+        if tag_name.lower() in allowed_tags:
+            return match.group(0)
+        return ''
+    text = re.sub(r'<([^>]+)>', _clean_tag, text)
+    
+    # شيل أي * متبقية لوحدها
+    text = re.sub(r'(?<!\w)\*(?!\w)', '', text)
+    
+    # شيل مسافات زيادة
+    text = re.sub(r' {2,}', ' ', text)
+    text = text.strip()
+    
+    return text
+
+
 def _strip_non_telegram_html(text: str) -> str:
     """
     تنظيف HTML غير المدعوم من تليجرام
@@ -607,6 +674,11 @@ Send a link from YouTube, Instagram, TikTok, Facebook, Twitter
 
 def format_news_item(index: int, title: str, summary: str, url: str, is_top: bool = False, category: str = "", language: str = "ar") -> str:
     """تنسيق خبر واحد مع دعم الفئات وخبر اليوم واللغة"""
+    # 🔴 FIX: تنظيف العناوين والتلخيصات من Markdown و HTML الغريب
+    # الـ AI بيرجع **عنوان** وده بيبان كرموز في تليجرام
+    title = _quick_clean_text(title)
+    summary = _quick_clean_text(summary)
+
     # عرض الفئة
     category_display = ""
     if category:
