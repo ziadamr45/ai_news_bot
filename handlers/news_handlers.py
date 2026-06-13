@@ -13,7 +13,7 @@ from memory import (
     get_language, increment_command_count,
 )
 from formatters import (
-    format_news_item, format_error,
+    format_news_item, format_error, _strip_non_telegram_html,
 )
 from news_fetcher import fetch_news
 from filters import filter_news
@@ -579,19 +579,19 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                 part = translated_parts[i-1]
                                 # استخراج العنوان والمقتطف المترجم
                                 trans_title = title_text
-                                trans_snippet = snippet[:200]
+                                trans_snippet = _strip_non_telegram_html(snippet)[:200]
                                 for line in part.strip().split("\n"):
                                     line = line.strip()
                                     if line.upper().startswith("TITLE:"):
                                         trans_title = line[6:].strip()
                                     elif line.upper().startswith("SNIPPET:"):
-                                        trans_snippet = line[8:].strip()
+                                        trans_snippet = _strip_non_telegram_html(line[8:].strip())[:200]
                                 title_text = trans_title
                                 snippet = trans_snippet
                             
                             message += f"{i}. 📄 <b>{title_text}</b>\n"
                             if snippet:
-                                message += f"   {snippet[:200]}\n"
+                                message += f"   {snippet}\n"
                             if link:
                                 message += f'   🔗 <a href="{link}">اقرأ المزيد</a>\n'
                             message += "\n"
@@ -599,11 +599,11 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         # fallback: عرض النتائج بدون ترجمة
                         for i, r in enumerate(web_results[:5], 1):
                             title_text = r.get("title", "")
-                            snippet = r.get("snippet", "")
+                            snippet = _strip_non_telegram_html(r.get("snippet", ""))[:200]
                             link = r.get("link", "")
                             message += f"{i}. 📄 <b>{title_text}</b>\n"
                             if snippet:
-                                message += f"   {snippet[:200]}\n"
+                                message += f"   {snippet}\n"
                             if link:
                                 message += f'   🔗 <a href="{link}">اقرأ المزيد</a>\n'
                             message += "\n"
@@ -612,11 +612,11 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     # fallback: عرض بدون ترجمة
                     for i, r in enumerate(web_results[:5], 1):
                         title_text = r.get("title", "")
-                        snippet = r.get("snippet", "")
+                        snippet = _strip_non_telegram_html(r.get("snippet", ""))[:200]
                         link = r.get("link", "")
                         message += f"{i}. 📄 <b>{title_text}</b>\n"
                         if snippet:
-                            message += f"   {snippet[:200]}\n"
+                            message += f"   {snippet}\n"
                         if link:
                             message += f'   🔗 <a href="{link}">اقرأ المزيد</a>\n'
                         message += "\n"
@@ -624,11 +624,11 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 # English: عرض النتائج كما هي
                 for i, r in enumerate(web_results[:5], 1):
                     title_text = r.get("title", "")
-                    snippet = r.get("snippet", "")
+                    snippet = _strip_non_telegram_html(r.get("snippet", ""))[:200]
                     link = r.get("link", "")
                     message += f"{i}. 📄 <b>{title_text}</b>\n"
                     if snippet:
-                        message += f"   {snippet[:200]}\n"
+                        message += f"   {snippet}\n"
                     if link:
                         message += f'   🔗 <a href="{link}">Read more</a>\n'
                     message += "\n"

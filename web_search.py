@@ -16,6 +16,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict, Optional
 
 from config import REQUEST_TIMEOUT, DEVELOPER_USER_ID, DEVELOPER_USERNAME
+from formatters import _strip_non_telegram_html
 
 logger = logging.getLogger(__name__)
 
@@ -972,14 +973,14 @@ def format_search_results(query: str, results: List[Dict], language: str = "ar")
 
     for i, r in enumerate(results[:5], 1):
         title = r.get("title", "بدون عنوان" if language == "ar" else "No title")
-        snippet = r.get("snippet", "")
+        snippet = _strip_non_telegram_html(r.get("snippet", ""))[:200]
         link = r.get("link", "")
         source = r.get("source", "")
 
         if language == "ar":
             message += f"{i}. 📄 <b>{title}</b>\n"
             if snippet:
-                message += f"   {snippet[:200]}\n"
+                message += f"   {snippet}\n"
             if source:
                 message += f"   📡 {source}\n"
             if link:
@@ -987,7 +988,7 @@ def format_search_results(query: str, results: List[Dict], language: str = "ar")
         else:
             message += f"{i}. 📄 <b>{title}</b>\n"
             if snippet:
-                message += f"   {snippet[:200]}\n"
+                message += f"   {snippet}\n"
             if source:
                 message += f"   📡 {source}\n"
             if link:
