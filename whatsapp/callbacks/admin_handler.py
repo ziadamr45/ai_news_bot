@@ -13,6 +13,7 @@ from whatsapp.state import (
     _wa_phone_to_user_id,
     _wa_phone_to_display,
     _split_whatsapp_message,
+    DEVELOPER_WHATSAPP_URL,
 )
 
 from whatsapp.api import (
@@ -171,7 +172,7 @@ async def _handle_admin_with_args(wa_id: str, content: str, wa_user_id: int, con
                 target_wa_id = phone.lstrip('+').strip()
                 await _send_whatsapp_message(target_wa_id,
                     "❌ تم إلغاء اشتراك Premium.\n\n"
-                    "لو تعتقد إن ده غلطة، تواصل مع الأدمن."
+                    f"لو تعتقد إن ده غلطة، تواصل مع المطور:\n📱 {DEVELOPER_WHATSAPP_URL}"
                 )
             except Exception as e:
                 logger.info(f"Could not notify WA user {phone}: {e}")
@@ -229,7 +230,7 @@ async def _handle_admin_with_args(wa_id: str, content: str, wa_user_id: int, con
             try:
                 target_wa_id = phone.lstrip('+').strip()
                 await _send_whatsapp_message(target_wa_id,
-                    f"🚫 تم حظرك من استخدام البوت.\n📝 السبب: {reason}\n\nلو تعتقد إن ده غلطة، تواصل مع الأدمن."
+                    f"🚫 تم حظرك من استخدام البوت.\n📝 السبب: {reason}\n\nلو تعتقد إن ده غلطة، تواصل مع المطور:\n📱 {DEVELOPER_WHATSAPP_URL}"
                 )
             except Exception as e:
                 logger.info(f"Could not notify WA user {phone}: {e}")

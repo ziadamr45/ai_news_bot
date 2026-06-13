@@ -57,7 +57,8 @@ def _quick_clean_text(text: str) -> str:
     # الإستراجية: نشيل كل الـ tags ونسيب النص بس
     # الروابط الحقيقية بنضيفها يدويًا في مكان تاني (🔗 اقرأ المزيد)
     # أولاً: استخرج النص من جوا <a href="...">text</a> → text
-    text = re.sub(r'<a\s+href=["\'][^"\']*["\'][^>]*>([^<]*)</a>', r'\1', text, flags=re.IGNORECASE)
+    # 🔴 FIX: استخدم (.*?) بدل ([^<]*) عشان يشتغل لو جوه الـ <a> فيه tags تاني
+    text = re.sub(r'<a\s+href=["\'][^"\']*["\'][^>]*>(.*?)</a>', r'\1', text, flags=re.IGNORECASE)
     # ثانياً: شيل كل الـ <a> tags المتكسرة (من غير href أو من غير إغلاق)
     text = re.sub(r'</?a[^>]*>', '', text, flags=re.IGNORECASE)
     # ثالثاً: شيل باقي الـ tags (b, i, u, s, code, pre) — لأن ده نص جوا <b> أصلاً
@@ -198,6 +199,24 @@ def _strip_non_telegram_html(text: str) -> str:
         if open_count > close_count:
             # Unclosed tags — نشيلهم كلهم (opening + closing)
             text = re.sub(rf'</?{tag}>', '', text, flags=re.IGNORECASE)
+    
+    # 🔴 FIX: إصلاح <a> tags المتكسرة — لو فيه orphan </a> أو unclosed <a>
+    a_opens = len(re.findall(r'<a\s+href=', text, re.IGNORECASE))
+    a_closes = len(re.findall(r'</a>', text, re.IGNORECASE))
+    if a_opens > a_closes:
+        # فيه <a> مفتوحة من غير إغلاق — نشيلهم كلهم
+        text = re.sub(r'<a\s+href=["\'][^"\']*["\'][^>]*>', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'</a>', '', text, flags=re.IGNORECASE)
+    elif a_closes > a_opens:
+        # فيه </a> زيادة (orphan) — ده اللي بيعمل </a></a></a> في الآخر!
+        # نشيل الـ orphan </a> tags بس
+        # الاستراتيجية: نحسب الفرق ونشيل الزيادة من الآخر
+        diff = a_closes - a_opens
+        for _ in range(diff):
+            # شيل آخر </a> موجود
+            last_close_pos = text.rfind('</a>')
+            if last_close_pos != -1:
+                text = text[:last_close_pos] + text[last_close_pos + 4:]
     
     return text
 
@@ -359,6 +378,50 @@ def clean_ai_response(text: str) -> str:
     # بس لو جواها كلام مفيد (أكتر من 2 حرف) نسيبها
     text = re.sub(r'\[([^\]]{0,2})\](?!\()', '', text)
 
+    # ═══ مرحلة 5: إصلاح نهائي لـ <a> tags — منع </a></a></a> المتكررة ═══
+    # 🔴 FIX: ده أهم إصلاح — الـ AI بيرجع أحيانًا <a> tags متكررة أو متداخلة
+    # والـ Markdown→HTML conversion (خطوة 7) ممكن تضيف <a> كمان
+    # ده بيسبب </a></a></a></a> في نهاية الرسالة
+    
+    # 🔴 FIX: شيل الـ <a> tags المتداخلة (nested) — تليجرام مش بيدعمها
+    # مثال: <a href="url1"><a href="url2">text</a></a> → <a href="url2">text</a>
+    # الاستراتيجية: لو فيه <a> جوه <a>، نشيل البراني ونسيب الداخلي
+    while True:
+        nested = re.search(r'<a\s+href=["\'][^"\']*["\'][^>]*>\s*<a\s+href=["\']([^"\']*)["\'][^>]*>(.*?)</a>\s*</a>', text, re.IGNORECASE | re.DOTALL)
+        if not nested:
+            break
+        inner_url = nested.group(1)
+        inner_text = nested.group(2)
+        replacement = f'<a href="{inner_url}">{inner_text}</a>'
+        text = text[:nested.start()] + replacement + text[nested.end():]
+    
+    # 🔴 FIX: شيل أي <a> جواها Markdown link متحول → <a> جوه <a>
+    # مثال: <a href="url">text</a>→text</a> (orphan closing)
+    # أولاً: لو فيه <a> فتحت وقفلت وبعدها </a> زيادة
+    text = re.sub(r'(<a\s+href=["\'][^"\']*["\'][^>]*>[^<]*</a>)\s*</a>', r'\1', text, flags=re.IGNORECASE)
+    
+    a_opens = len(re.findall(r'<a\s+href=', text, re.IGNORECASE))
+    a_closes = len(re.findall(r'</a>', text, re.IGNORECASE))
+    if a_opens > a_closes:
+        # فيه <a> مفتوحة من غير إغلاق — نشيل كل الـ <a> tags
+        text = re.sub(r'<a\s+href=["\'][^"\']*["\'][^>]*>([^<]*)</a>', r'\1', text, flags=re.IGNORECASE)
+        text = re.sub(r'<a\s+href=["\'][^"\']*["\'][^>]*>', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'</a>', '', text, flags=re.IGNORECASE)
+    elif a_closes > a_opens:
+        # فيه </a> زيادة — ده السبب الرئيسي لـ </a></a></a></a> في الآخر!
+        diff = a_closes - a_opens
+        for _ in range(diff):
+            last_close_pos = text.rfind('</a>')
+            if last_close_pos != -1:
+                text = text[:last_close_pos] + text[last_close_pos + 4:]
+    
+    # 🔴 FIX: شيل أي </a> لوحدها في سطر (orphan tags من الـ AI)
+    text = re.sub(r'^\s*</a>\s*$', '', text, flags=re.MULTILINE)
+    # 🔴 FIX: شيل أي </a> متكررة متلصقة
+    while '</a></a>' in text:
+        # شيل واحدة من كل زوج متلصق
+        text = text.replace('</a></a>', '</a>', 1)
+
     return text.strip()
 
 
@@ -473,56 +536,61 @@ def smart_split_message(text: str, max_length: int = 3900) -> list:
 
     # إصلاح HTML tags المكسورة
     # لو جزء فيه opening tag من غير closing tag، نحط الـ closing tag
+    # 🔴 FIX: استخدم counter بدل list عشان list.remove() بيشيل أول عنصر بس
+    # ده كان بيعمل مشكلة مع <a> tags المتعددة
+    # 🔴 FIX v2: لازم نعمل opens الأول وبعدين closes — عشان لو الاتنين في نفس الجزء
+    # يعتبروا متقفلين ومش نضيف closing tags زيادة
     fixed_chunks = []
-    open_tags = []  # tags اللي لسه مفتوحة
+    open_tag_counts = {}  # tag_name → count المفتوحة
+    # 🔴 FIX v3: نحفظ الـ pending tags (اللي اتقفلوا مؤقتًا) لكل جزء
+    # عشان نعرف نفتحهم في الجزء اللي بعده من غير ما نحسبهم تاني
+    chunk_pending_tags = []  # list of dicts: [{tag: count}]
 
     for chunk in chunks:
         # دور على tags مفتوحة في الجزء ده
         opens = re.findall(r'<(b|i|code|s|u|a)\b[^>]*>', chunk)
         closes = re.findall(r'</(b|i|code|s|u|a)>', chunk)
 
-        # شيل من open_tags اللي اتقفلت
-        for tag in closes:
-            tag_name = tag
-            if tag_name in open_tags:
-                open_tags.remove(tag_name)
-
-        # ضيف الـ tags الجديدة المفتوحة
+        # 🔴 FIX: ضيف الـ tags الجديدة المفتوحة الأول
         for tag_match in opens:
             tag_name = re.match(r'(\w+)', tag_match).group(1) if re.match(r'(\w+)', tag_match) else tag_match
-            open_tags.append(tag_name)
+            open_tag_counts[tag_name] = open_tag_counts.get(tag_name, 0) + 1
+
+        # 🔴 FIX: وبعدين شيل اللي اتقفلت — ده الصح عشان لو <a> و </a> في نفس الجزء
+        # يعتبروا متقفلين ومش نزود closing tags زيادة
+        for tag in closes:
+            tag_name = tag
+            if tag_name in open_tag_counts and open_tag_counts[tag_name] > 0:
+                open_tag_counts[tag_name] -= 1
+                if open_tag_counts[tag_name] == 0:
+                    del open_tag_counts[tag_name]
 
         # لو في tags مفتوحة وده مش آخر جزء، اقفلهم مؤقتًا
-        if open_tags and chunk != chunks[-1]:
-            for tag in reversed(open_tags):
-                chunk += f'</{tag}>'
+        if open_tag_counts and chunk != chunks[-1]:
+            for tag in reversed(list(open_tag_counts.keys())):
+                for _ in range(open_tag_counts[tag]):
+                    chunk += f'</{tag}>'
 
         fixed_chunks.append(chunk)
+        # 🔴 FIX v3: احفظ الـ tags اللي لسه مفتوحة (اللي محتاجة تتفتح في الجزء اللي بعده)
+        chunk_pending_tags.append(dict(open_tag_counts))
 
     # الجزء الأول يفتح الـ tags اللي كانت مفتوحة من الجزء اللي قبله
     final_chunks = []
-    pending_opens = []
 
     for i, chunk in enumerate(fixed_chunks):
-        prefix = ''
-        for tag in pending_opens:
-            prefix += f'<{tag}>'
+        # 🔴 FIX v3: استخدم الـ pending tags المحفوظة من الجزء اللي فات
+        # بدل ما نحسبهم تاني — لأن الـ auto-close tags بتغير الحساب
+        if i == 0:
+            prefix = ''
+        else:
+            pending = chunk_pending_tags[i - 1] if i - 1 < len(chunk_pending_tags) else {}
+            prefix = ''
+            for tag, count in pending.items():
+                for _ in range(count):
+                    prefix += f'<{tag}>'
 
         final_chunks.append(prefix + chunk)
-
-        # حدث الـ pending_opens
-        # شيل الـ closing tags اللي اتضافت
-        temp_opens = list(pending_opens)
-        all_opens = re.findall(r'<(b|i|code|s|u|a)\b[^>]*>', prefix + chunk)
-        all_closes = re.findall(r'</(b|i|code|s|u|a)>', prefix + chunk)
-
-        for o in all_opens:
-            temp_opens.append(o)
-        for c in all_closes:
-            if c in temp_opens:
-                temp_opens.remove(c)
-
-        pending_opens = temp_opens
 
     return final_chunks if final_chunks else [text]
 

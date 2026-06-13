@@ -828,7 +828,8 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
                     f"👨‍💻 المطور: {CREATOR_INFO['name_ar']}\n"
                     f"🏢 الشركة: {CREATOR_INFO['company_ar']}\n"
                     f"📧 {CREATOR_INFO['email']}\n"
-                    f"🌐 {CREATOR_INFO['website']}\n\n"
+                    f"🌐 {CREATOR_INFO['website']}\n"
+                    f"📩 واتساب: {DEVELOPER_WHATSAPP_URL}\n\n"
                     f"المميزات:\n"
                     f"💬 محادثة ذكية بالعربي والإنجليزي\n"
                     f"🎤 تحويل الصوت لنص\n"
@@ -940,14 +941,14 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
                         logger.info(f"✅ subscribe_confirm: retry UPDATE worked for user {wa_user_id}")
                         await _send_whatsapp_message(wa_id, "✅ تم الاشتراك بنجاح! 🎉\n\n📬 هنبعتلك أخبار AI كل يوم الساعة 12 الظهر (توقيت القاهرة).\n\n⏰ لو عايز تغير الوقت ابعت الوقت اللي يعجبك:\nمثال: 5 مساءً أو 5:00 pm أو 17:00\n\nلو عايز تلغي الاشتراك ابعت: إلغاء")
                     else:
-                        await _send_whatsapp_message(wa_id, "⚠️ حصل خطأ في الاشتراك. جرب تاني أو تواصل مع المطور.")
+                        await _send_whatsapp_message(wa_id, f"⚠️ حصل خطأ في الاشتراك. جرب تاني أو تواصل مع المطور:\n📱 {DEVELOPER_WHATSAPP_URL}")
                 except Exception as e3:
                     logger.error(f"❌ subscribe_confirm triple-fail for user {wa_user_id}: {e3}")
-                    await _send_whatsapp_message(wa_id, "⚠️ حصل خطأ في الاشتراك. جرب تاني أو تواصل مع المطور.")
+                    await _send_whatsapp_message(wa_id, f"⚠️ حصل خطأ في الاشتراك. جرب تاني أو تواصل مع المطور:\n📱 {DEVELOPER_WHATSAPP_URL}")
         except Exception as e:
             # 🔴 BUG FIX: قبل كده كان بيبعت رسالة نجاح حتى لو الاشتراك فشل
             logger.error(f"❌ subscribe_confirm failed for user {wa_user_id} (wa_id={wa_id}): {e}")
-            await _send_whatsapp_message(wa_id, "⚠️ حصل خطأ في الاشتراك. جرب تاني أو تواصل مع المطور.")
+            await _send_whatsapp_message(wa_id, f"⚠️ حصل خطأ في الاشتراك. جرب تاني أو تواصل مع المطور:\n📱 {DEVELOPER_WHATSAPP_URL}")
 
     elif command == "skip_subscribe":
         # 🔴 FIX v3: المستخدم ضغط "لا شكرًا" على سؤال الاشتراك — نحترم اختياره بس نقوله ممكن يشترك بعدين

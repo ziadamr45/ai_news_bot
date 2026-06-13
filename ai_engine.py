@@ -132,12 +132,17 @@ DEEP_SEARCH_TRIGGERS_EN = [
 ]
 
 # Coding triggers
+# 🔴 FIX: شيلنا الكلمات اللي بتظهر في سياق مش برمجي زي: api, class, html, css, sql, function, developer, تطوير, برنامج
+# دي كانت بتخلي البوت يرد برد برمجي لما المستخدم بيسأل عن حاجة عادية
 CODING_TRIGGERS = [
     "كود", "برمجة", "code", "programming", "python", "javascript",
-    "script", "function", "class", "api", "debug", "خطأ برمجي",
-    "coding", "developer", "تطوير", "برنامج", "algorithm",
-    "react", "nextjs", "next.js", "html", "css", "sql",
+    "scripting", "خطأ برمجي",
+    "coding", "algorithm",
+    "react", "nextjs", "next.js",
     "اكتب كود", "write code", "كتب كود", "صلح كود", "fix code",
+    "debug", "typescript", "rust", "golang", "java", "c++",
+    "django", "flask", "node.js", "express",
+    "كود بايثون", "كود جافا", "كود html", "كود css", "كود js",
 ]
 
 # Regex patterns for current info — strong signal (score: 3)
@@ -350,14 +355,35 @@ You are talking to Ziad Amr (@ziadamr) — the person who created you, programme
 
 
 def is_coding_query(text: str) -> bool:
-    """كشف هل السؤال عن برمجة"""
+    """كشف هل السؤال عن برمجة — محسن عشان ميتعرفش على أسئلة عادية كبرمجية"""
     text_lower = text.lower().strip()
-
-    for trigger in CODING_TRIGGERS:
+    
+    # 🔴 FIX: كلمات قوية — لو موجودة يبقى أكيد برمجة
+    strong_triggers = [
+        "اكتب كود", "write code", "كتب كود", "صلح كود", "fix code",
+        "debug", "كود بايثون", "كود جافا", "كود html", "كود css", "كود js",
+    ]
+    for trigger in strong_triggers:
         if trigger in text_lower:
             return True
-
-    return False
+    
+    # 🔴 FIX: كلمات عادية — لازم على الأقل 2 يكونوا موجودين عشان نعتبره برمجي
+    # ده بيمنع كلمة زي "api" أو "html" لوحدها تعتبر السؤال برمجي
+    weak_triggers = [
+        "كود", "برمجة", "code", "programming", "python", "javascript",
+        "scripting", "خطأ برمجي",
+        "coding", "algorithm",
+        "react", "nextjs", "next.js",
+        "typescript", "rust", "golang", "java", "c++",
+        "django", "flask", "node.js", "express",
+    ]
+    weak_count = 0
+    for trigger in weak_triggers:
+        if trigger in text_lower:
+            weak_count += 1
+    
+    # لو فيه 2 أو أكتر من الـ weak triggers، يبقى على الأرجح برمجي
+    return weak_count >= 2
 
 
 def _is_greeting(text: str) -> bool:
