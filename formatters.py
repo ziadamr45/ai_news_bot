@@ -52,16 +52,16 @@ def _quick_clean_text(text: str) -> str:
     # شيل --- خطوط أفقية
     text = re.sub(r'^[-*_]{3,}\s*$', '', text, flags=re.MULTILINE)
     
-    # شيل أي HTML tags متبقية (مش المدعومة من تليجرام)
-    # بس نحافظ على: b, i, u, s, code, pre, a
-    allowed_tags = {'b', 'i', 'u', 's', 'code', 'pre', 'a'}
-    def _clean_tag(match):
-        tag_content = match.group(1)
-        tag_name = tag_content.strip().split()[0].rstrip('/').lstrip('/')
-        if tag_name.lower() in allowed_tags:
-            return match.group(0)
-        return ''
-    text = re.sub(r'<([^>]+)>', _clean_tag, text)
+    # 🔴 FIX: شيل كل HTML tags — حتى الـ <a> لأنها بتيجي متكسرة من نتائج البحث
+    # مثال: <a>[رابط] <a>AquinasCoder 23 — ده بيبان كرموز غريبة
+    # الإستراجية: نشيل كل الـ tags ونسيب النص بس
+    # الروابط الحقيقية بنضيفها يدويًا في مكان تاني (🔗 اقرأ المزيد)
+    # أولاً: استخرج النص من جوا <a href="...">text</a> → text
+    text = re.sub(r'<a\s+href=["\'][^"\']*["\'][^>]*>([^<]*)</a>', r'\1', text, flags=re.IGNORECASE)
+    # ثانياً: شيل كل الـ <a> tags المتكسرة (من غير href أو من غير إغلاق)
+    text = re.sub(r'</?a[^>]*>', '', text, flags=re.IGNORECASE)
+    # ثالثاً: شيل باقي الـ tags (b, i, u, s, code, pre) — لأن ده نص جوا <b> أصلاً
+    text = re.sub(r'</?(?:b|i|u|s|code|pre|div|span|p|br|em|strong|small|font|big|sub|sup|mark|del|ins)[^>]*>', '', text, flags=re.IGNORECASE)
     
     # شيل أي * متبقية لوحدها
     text = re.sub(r'(?<!\w)\*(?!\w)', '', text)
@@ -151,18 +151,31 @@ def _strip_non_telegram_html(text: str) -> str:
     for tag in unsupported_tags:
         text = re.sub(rf'</{tag}>', '', text, flags=re.IGNORECASE)
     
-    # 🔴 نشيل style, class, id, وكل event attributes من أي tag متبقي
+    # 🔴 FIX: نشيل style, class, id من tags متبقية
+    # بس لو <a> مع href نحافظ على الـ href
     # مثال: <b style="..."> ← <b>
-    text = re.sub(r'<(b|i|u|s|code|pre|a|spoiler|blockquote|tg-spoiler)\s+[^>]*?>', r'<\1>', text, flags=re.IGNORECASE)
+    text = re.sub(r'<(b|i|u|s|code|pre|spoiler|blockquote|tg-spoiler)\s+[^>]*?>', r'<\1>', text, flags=re.IGNORECASE)
+    # 🔴 FIX: <a> tag — نشيل الـ attributes الزيادة بس نحافظ على href
+    text = re.sub(r'<a\s+(href=["\'][^"\']*["\'])[^>]*?>', r'<a \1>', text, flags=re.IGNORECASE)
+    
+    # 🔴 FIX: نشيل <a> tags المتكسرة (من غير href) — دي بتيجي من نتائج البحث
+    # مثال: <a>[رابط] <a>AquinasCoder 23 — بنشيل الـ tag ونسيب النص
+    # Strategy: نشيل كل <a> اللي مش ليها href، ونسيب <a href="..."> سليمة
+    # أولاً: <a> لوحدها (من غير href) → نشيل الـ tag بس
+    text = re.sub(r'<a>([^<]*?)</a>', r'\1', text, flags=re.IGNORECASE)
+    # ثانياً: <a > أو <a class=...> الخ (بس مش href) → نشيل الـ tag
+    # بنشيل بس لو أول attribute مش href
+    text = re.sub(r'<a\s+(?!href)[^>]*>', '', text, flags=re.IGNORECASE)
+    # ثالثاً: <a> فاضية متبقية
+    text = re.sub(r'<a\s*>', '', text, flags=re.IGNORECASE)
     
     # 🔴 نشيل أي tag متبقي مش في القائمة المدعومة (catch-all)
     # القائمة المسموحة: b, i, u, s, code, pre, a, spoiler, blockquote, tg-spoiler
     # (strong/em تم تحويلها لـ b/i فوق، مش محتاجين نبقيهم)
-    allowed_pattern = r'/?((?:b|i|u|s|code|pre|a|spoiler|blockquote|tg-spoiler)(?:\s[^>]*)?)'
     # نشيل أي tag مش في القائمة
     def _clean_unknown_tag(match):
         tag_content = match.group(1)
-        tag_name = tag_content.strip().split()[0].rstrip('/')
+        tag_name = tag_content.strip().split()[0].lstrip('/').rstrip('/')
         allowed_names = {'b', 'i', 'u', 's', 'code', 'pre', 'a', 'spoiler', 'blockquote', 'tg-spoiler'}
         if tag_name.lower() in allowed_names:
             return match.group(0)  # نسيبه زي ما هو
