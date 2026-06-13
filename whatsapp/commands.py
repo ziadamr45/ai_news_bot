@@ -1459,17 +1459,22 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
         # Extract key points from stored PDF context
         pdf_ctx = _wa_user_pdf_context.get(wa_user_id, {})
         if not pdf_ctx:
-            # Try loading from DB
+            # Try loading from DB — get_memories returns a LIST of dicts, not a dict!
             try:
                 from memory import get_memories
                 mems = get_memories(wa_user_id)
-                pdf_text = mems.get("pdf_context_text", "")
-                pdf_fn = mems.get("pdf_context_filename", "")
+                pdf_text = ""
+                pdf_fn = ""
+                for m in mems:
+                    if m.get("key") == "pdf_context_text":
+                        pdf_text = m.get("value", "")
+                    elif m.get("key") == "pdf_context_filename":
+                        pdf_fn = m.get("value", "")
                 if pdf_text:
                     pdf_ctx = {"text": pdf_text, "filename": pdf_fn}
                     _wa_user_pdf_context[wa_user_id] = pdf_ctx
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"PDF context DB load failed: {e}")
         
         if not pdf_ctx:
             await _send_whatsapp_message(wa_id, "📄 مفيش ملف محفوظ. ابعت ملف PDF الأول!")
@@ -1492,8 +1497,8 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
                 
                 await _send_interactive_buttons(wa_id, body_text="عايز حاجة تانية مع الملف؟",
                     buttons=[
-                        {"id": "cmd_study", "title": "📚 ادرسه"},
-                        {"id": "cmd_chat", "title": "💬 اسأل سؤال"},
+                        {"id": "cmd_pdf_study", "title": "📚 ادرس الملف"},
+                        {"id": "cmd_pdf_ask", "title": "💬 اسأل عنه"},
                         {"id": "cmd_commands", "title": "📋 الأوامر"},
                     ])
             else:
@@ -1504,10 +1509,70 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
         return True
 
     elif command == "pdf_ask":
+        # 🔴 FIX: Set PDF QA state so next message is treated as a question about the file
+        _set_user_state(wa_id, "pdf_qa", {"user_id": wa_user_id})
         await _send_whatsapp_message(wa_id, 
             "💬 *اسأل عن الملف*\n\n"
             "اكتب سؤالك عن الملف وانا هجاوبك!\n"
-            "مثال: ايه أهم النتائج في الملف ده؟")
+            "مثال: ايه أهم النتائج في الملف ده؟\n\n"
+            "⏱️ وضع الأسئلة بيفضل نشط 5 دقايق\n"
+            "🚪 اكتب *خروج* عشان ترجع للمحادثة العادية")
+        return True
+
+    elif command == "pdf_study":
+        # 🔴 FIX: Study the PDF file directly (not generic study mode)
+        pdf_ctx = _wa_user_pdf_context.get(wa_user_id, {})
+        if not pdf_ctx:
+            # Try loading from DB
+            try:
+                from memory import get_memories
+                mems = get_memories(wa_user_id)
+                pdf_text = ""
+                pdf_fn = ""
+                for m in mems:
+                    if m.get("key") == "pdf_context_text":
+                        pdf_text = m.get("value", "")
+                    elif m.get("key") == "pdf_context_filename":
+                        pdf_fn = m.get("value", "")
+                if pdf_text:
+                    pdf_ctx = {"text": pdf_text, "filename": pdf_fn}
+                    _wa_user_pdf_context[wa_user_id] = pdf_ctx
+            except Exception:
+                pass
+        
+        if not pdf_ctx:
+            await _send_whatsapp_message(wa_id, "📄 مفيش ملف محفوظ. ابعت ملف PDF الأول!")
+            return True
+        
+        from agents.pdf_agent import PDFAgent
+        pdf_agent = PDFAgent()
+        filename = pdf_ctx.get("filename", "الملف")
+        try:
+            # Generate study notes from the file content
+            result = await asyncio.wait_for(
+                pdf_agent.generate_study_notes(pdf_ctx["text"][:30000], "ar", user_id=wa_user_id),
+                timeout=120.0
+            )
+            from formatters import clean_ai_response
+            result = clean_ai_response(result)
+            if result:
+                header = f"📚 ملاحظات دراسية: {filename}\n━━━━━━━━━━━━━━━━━\n\n"
+                response_text = header + _strip_html_for_whatsapp(result)
+                chunks = _split_whatsapp_message(response_text)
+                for chunk in chunks:
+                    await _send_whatsapp_message(wa_id, chunk)
+                
+                await _send_interactive_buttons(wa_id, body_text="عايز حاجة تانية مع الملف؟",
+                    buttons=[
+                        {"id": "cmd_pdf_keypoints", "title": "🔑 نقاط رئيسية"},
+                        {"id": "cmd_pdf_ask", "title": "💬 اسأل عنه"},
+                        {"id": "cmd_commands", "title": "📋 الأوامر"},
+                    ])
+            else:
+                await _send_whatsapp_message(wa_id, "⚠️ مش قادر أعمل ملاحظات دراسية. جرب تاني!")
+        except Exception as e:
+            logger.error(f"❌ PDF study notes error: {e}")
+            await _send_whatsapp_message(wa_id, "⚠️ حصل خطأ. جرب تاني!")
         return True
 
     # ══════════════════════════════════════

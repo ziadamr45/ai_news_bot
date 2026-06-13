@@ -507,12 +507,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     # User can still ask more questions via the PDF buttons,
                     # but normal conversation will work again
                     clear_workflow(user_id)
-                    from handlers.callbacks import user_states
                     user_states.pop(user_id, None)
                 except asyncio.TimeoutError:
                     logger.error(f"⏰ PDF question timed out for user {user_id}")
                     clear_workflow(user_id)
-                    from handlers.callbacks import user_states
                     user_states.pop(user_id, None)
                     if lang == "ar":
                         await update.message.reply_text("⏰ استغرق الرد وقت طويل. جرب تاني!")
@@ -521,13 +519,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 except Exception as e:
                     logger.error(f"Error answering PDF question: {e}")
                     clear_workflow(user_id)
-                    from handlers.callbacks import user_states
                     user_states.pop(user_id, None)
                     await update.message.reply_text("❌ حصل خطأ. جرب تاني." if lang == "ar" else "❌ Error occurred. Please try again.")
             else:
                 # No PDF context — clear workflow and fall through to normal chat
                 clear_workflow(user_id)
-                from handlers.callbacks import user_states
                 user_states.pop(user_id, None)
             
             return

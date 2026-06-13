@@ -483,6 +483,7 @@ async def _handle_incoming_message(message: dict, value: dict):
                 "cmd_pdf": "pdf",
                 "cmd_pdf_keypoints": "pdf_keypoints",
                 "cmd_pdf_ask": "pdf_ask",
+                "cmd_pdf_study": "pdf_study",
                 # Image gen/edit
                 "cmd_image_gen": "image_gen",
                 "cmd_image_edit": "image_edit",
@@ -929,8 +930,8 @@ async def _handle_incoming_message(message: dict, value: dict):
                     await _send_interactive_buttons(wa_id, body_text=pdf_body,
                         buttons=[
                             {"id": "cmd_pdf_keypoints", "title": "🔑 نقاط رئيسية"},
-                            {"id": "cmd_study", "title": "📚 ادرسه"},
-                            {"id": "cmd_chat", "title": "💬 اسأل عنه"},
+                            {"id": "cmd_pdf_study", "title": "📚 ادرس الملف"},
+                            {"id": "cmd_pdf_ask", "title": "💬 اسأل عنه"},
                         ])
                 else:
                     await _send_whatsapp_message(wa_id, "⚠️ مش قادر أحلل الملف ده. جرب تاني! 📄")
