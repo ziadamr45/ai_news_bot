@@ -73,6 +73,222 @@ def _report_to_sentry(exc: Exception, wa_id: str = "", command: str = "", wa_use
         pass
 
 
+async def _wa_search_and_format(wa_id: str, query: str, wa_user_id: int, contact_name: str, message_id: str = ""):
+    """بحث موحد لواتساب — زي تليجرام بالظبط
+    
+    🔴 بيعمل:
+    1. بحث RSS في الأخبار المسبقة
+    2. بحث ويب حقيقي (Tavily + DuckDuckGo)
+    3. ترجمة النتائج الإنجليزي للعربي
+    4. Fallback لـ search_and_summarize لو مفيش نتائج
+    5. Fallback أخير لـ AI engine
+    
+    🔴 الروابط بتكون فعليه (مش HTML <a>) عشان واتساب مش بيدعمها
+    """
+    from whatsapp.api import ThinkingFeedback
+    
+    feedback = ThinkingFeedback(wa_id, message_id, context_type="search")
+    
+    try:
+        await feedback.start()
+        
+        # 🔴 بنبعتب رسالة إننا بنبحث عشان المستخدم يعرف إن فيه حاجة بتشتغل
+        await _send_whatsapp_message(wa_id, f"🔍 جاري البحث عن: {query}...")
+        
+        message = ""
+        
+        # ══════════════════════════════════════
+        # 1) أخبار RSS
+        # ══════════════════════════════════════
+        try:
+            from news_fetcher import fetch_news_sync
+            articles = fetch_news_sync()
+            if articles:
+                query_lower = query.lower()
+                rss_results = []
+                for article in articles:
+                    title_text = article.get("title", "").lower()
+                    desc = article.get("description", "").lower()
+                    # 🔴 FIX: بحث أوسع — بنشوف كلمات الاستعلام في العنوان أو الوصف
+                    query_words = query_lower.split()
+                    if any(w in title_text or w in desc for w in query_words if len(w) > 2):
+                        rss_results.append(article)
+                    elif query_lower in title_text or query_lower in desc:
+                        rss_results.append(article)
+                
+                if rss_results:
+                    message += f"📰 *أخبار RSS عن: {query}*\n━━━━━━━━━━━━━━━━━\n\n"
+                    for i, article in enumerate(rss_results[:5], 1):
+                        title = article.get("arabic_title", "") or article.get("title", "")
+                        summary = article.get("arabic_summary", "") or article.get("description", "") or ""
+                        link = article.get("link", "")
+                        badge = "🔥" if i == 1 else "⚪️"
+                        # تنظيف النص
+                        from formatters import _quick_clean_text
+                        title = _quick_clean_text(title)
+                        summary = _quick_clean_text(summary)[:200]
+                        message += f"{badge} *{title}*\n"
+                        if summary:
+                            message += f"{summary}\n"
+                        if link:
+                            # 🔴 واتساب: الرابط الفعلي مباشرة (مش HTML <a>)
+                            message += f"🔗 {link}\n"
+                        message += "\n"
+        except Exception as e:
+            logger.warning(f"⚠️ WA search RSS failed: {e}")
+        
+        # ══════════════════════════════════════
+        # 2) نتائج بحث الويب
+        # ══════════════════════════════════════
+        web_results = []
+        try:
+            from web_search import search_web
+            from formatters import _quick_clean_text
+            web_results = await search_web(query, max_results=5, language="ar")
+            
+            if web_results:
+                message += f"🌐 *نتائج بحث الويب: {query}*\n━━━━━━━━━━━━━━━━━\n\n"
+                
+                # 🔴 FIX: ترجمة العناوين والمقتطفات الإنجليزي للعربي (زي تليجرام)
+                translated_web = web_results
+                try:
+                    # نجرب نترجم لو فيه نتائج إنجليزي
+                    texts_to_translate = []
+                    for r in web_results[:5]:
+                        t = r.get("title", "")
+                        s = r.get("snippet", "")[:150]
+                        texts_to_translate.append(f"TITLE: {t}\nSNIPPET: {s}")
+                    
+                    combined = "\n---\n".join(texts_to_translate)
+                    from provider_manager import call_ai
+                    translation = await call_ai(
+                        f"""ترجم العناوين والمقتطفات التالية من الإنجليزية للعربية (عربية فصحى واضحة).
+⚠️ حافظ على التنسيق: TITLE: [العنوان المترجم] SNIPPET: [المقتطف المترجم]
+⚠️ أسماء العلم والشركات سيبها بالإنجليزي زي ما هي
+
+{combined}""",
+                        system_prompt="أنت مترجم محترف من الإنجليزية للعربية. تترجم بدقة ووضوح. ماتستخدمش Markdown.",
+                        task_type="simple",
+                        temperature=0.2,
+                        max_tokens=8192,
+                        user_id=wa_user_id,
+                    )
+                    
+                    if translation:
+                        translated_parts = translation.split("---")
+                        translated_web = []
+                        for i, r in enumerate(web_results[:5]):
+                            new_r = dict(r)
+                            if i < len(translated_parts):
+                                part = translated_parts[i].strip()
+                                for line in part.split("\n"):
+                                    line = line.strip()
+                                    if line.upper().startswith("TITLE:"):
+                                        new_r["title"] = _quick_clean_text(line[6:].strip())
+                                    elif line.upper().startswith("SNIPPET:"):
+                                        new_r["snippet"] = _quick_clean_text(line[8:].strip())[:200]
+                            translated_web.append(new_r)
+                except Exception as e:
+                    logger.warning(f"⚠️ WA search translation failed, using original: {e}")
+                    translated_web = web_results
+                
+                # عرض النتائج
+                for i, r in enumerate(translated_web[:5], 1):
+                    title = _quick_clean_text(r.get("title", ""))
+                    snippet = _quick_clean_text(r.get("snippet", ""))[:200]
+                    link = r.get("link", "")
+                    message += f"{i}. 📄 *{title}*\n"
+                    if snippet:
+                        message += f"   {snippet}\n"
+                    if link:
+                        # 🔴 واتساب: الرابط الفعلي مباشرة (مش HTML <a>)
+                        message += f"   🔗 {link}\n"
+                    message += "\n"
+        except Exception as e:
+            logger.warning(f"⚠️ WA search web failed: {e}")
+        
+        # ══════════════════════════════════════
+        # 3) لو مفيش نتائج خالص، نجرب search_and_summarize
+        # ══════════════════════════════════════
+        if not message.strip():
+            try:
+                from web_search import search_and_summarize_async
+                search_result = await search_and_summarize_async(query, language="ar", user_id=wa_user_id)
+                if search_result:
+                    from formatters import clean_ai_response
+                    from whatsapp.state import _strip_html_for_whatsapp
+                    cleaned = clean_ai_response(search_result)
+                    message = _strip_html_for_whatsapp(cleaned)
+                else:
+                    message = "⚠️ لم أجد نتائج. جرب تاني بكلمات بحث مختلفة."
+            except Exception as e:
+                logger.error(f"❌ WA search_and_summarize fallback failed: {e}")
+                # 🔴 FIX: Fallback أخير لـ AI engine بدل ما نسيب المستخدم من غير رد
+                try:
+                    from ai_engine import smart_chat
+                    ai_result = await smart_chat(f"ابحث عن معلومات عن: {query}", "ar", user_id=wa_user_id)
+                    if ai_result:
+                        from formatters import clean_ai_response
+                        from whatsapp.state import _strip_html_for_whatsapp
+                        cleaned = clean_ai_response(ai_result)
+                        message = _strip_html_for_whatsapp(cleaned)
+                    else:
+                        message = "⚠️ حدث خطأ في البحث. جرب تاني بعد شوية."
+                except Exception as e2:
+                    logger.error(f"❌ WA AI engine fallback also failed: {e2}")
+                    message = "⚠️ حدث خطأ في البحث. جرب تاني بعد شوية."
+        
+        # ══════════════════════════════════════
+        # إرسال النتائج
+        # ══════════════════════════════════════
+        if message.strip():
+            message += "\n━━━━━━━━━━━━━━━━━\n🤖 _My Bro — بحث متقدم_"
+            from whatsapp.state import _split_whatsapp_message
+            chunks = _split_whatsapp_message(message)
+            for chunk in chunks:
+                await _send_whatsapp_message(wa_id, chunk)
+                if len(chunks) > 1:
+                    await asyncio.sleep(0.05)
+        else:
+            await _send_whatsapp_message(wa_id, "⚠️ لم أجد نتائج. جرب تاني بكلمات بحث مختلفة.")
+        
+        await feedback.complete()
+        
+        # Increment usage
+        try:
+            from premium import increment_usage
+            increment_usage(wa_user_id, "searches")
+        except Exception:
+            pass
+        
+        # Contextual buttons
+        try:
+            await _send_interactive_buttons(wa_id, body_text="عايز حاجة تانية؟",
+                buttons=[
+                    {"id": "cmd_search", "title": "🔍 بحث تاني"},
+                    {"id": "cmd_news", "title": "📰 أخبار"},
+                    {"id": "cmd_commands", "title": "📋 الأوامر"},
+                ])
+        except Exception:
+            pass
+        
+    except Exception as e:
+        logger.error(f"❌ WA unified search error: {e}")
+        await feedback.error()
+        
+        # 🔴 FIX: Fallback أخير — نحاول نبعت رد حتى لو كل حاجة فشلت
+        try:
+            from whatsapp_webhook import _send_ai_response
+            await _send_ai_response(wa_id, f"ابحث لي عن: {query}",
+                wa_user_id, contact_name, message_id, context_type="search", increment_feature="searches")
+        except Exception as e2:
+            logger.error(f"❌ WA search ultimate fallback failed: {e2}")
+            try:
+                await _send_whatsapp_message(wa_id, "⚠️ حدث خطأ في البحث. جرب تاني بعد شوية. 🔄")
+            except Exception:
+                pass
+
+
 async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_name: str, message_id: str = ""):
     """Handle WhatsApp commands and send interactive responses — full Telegram parity"""
 
@@ -1694,123 +1910,12 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
             "cmd_search_code": "أحدث تقنيات البرمجة وتطوير البرمجيات",
         }
         query = search_queries.get(command, "أحدث التطورات التقنية")
-        
-        # 🔴 FIX v2: بحث واتساب زي تليجرام بالظبط
-        # نجيب أخبار RSS + نتائج بحث الويب ونعمل format لواتساب
-        # الروابط بنحطها فعليه (مش HTML <a>) عشان واتساب مش بيدعمها
-        try:
-            from whatsapp.api import ThinkingFeedback
-            feedback = ThinkingFeedback(wa_id, message_id, context_type="search")
-            await feedback.start()
-            
-            message = ""
-            
-            # ── 1) أخبار RSS ──
-            try:
-                from news_fetcher import fetch_news_sync
-                articles = fetch_news_sync()
-                if articles:
-                    query_lower = query.lower()
-                    rss_results = []
-                    for article in articles:
-                        title_text = article.get("title", "").lower()
-                        desc = article.get("description", "").lower()
-                        if query_lower in title_text or query_lower in desc:
-                            rss_results.append(article)
-                    
-                    if rss_results:
-                        message += f"📰 *أخبار RSS عن: {query}*\n━━━━━━━━━━━━━━━━━\n\n"
-                        for i, article in enumerate(rss_results[:5], 1):
-                            title = article.get("arabic_title", "") or article.get("title", "")
-                            summary = article.get("arabic_summary", "") or article.get("description", "") or ""
-                            link = article.get("link", "")
-                            badge = "🔥" if i == 1 else "⚪️"
-                            # تنظيف النص
-                            from formatters import _quick_clean_text
-                            title = _quick_clean_text(title)
-                            summary = _quick_clean_text(summary)[:200]
-                            message += f"{badge} *{title}*\n"
-                            if summary:
-                                message += f"{summary}\n"
-                            if link:
-                                message += f"🔗 {link}\n"
-                            message += "\n"
-            except Exception as e:
-                logger.warning(f"⚠️ WA search RSS failed: {e}")
-            
-            # ── 2) نتائج بحث الويب ──
-            try:
-                from web_search import search_web
-                from formatters import _quick_clean_text
-                web_results = await search_web(query, max_results=5, language="ar")
-                
-                if web_results:
-                    message += f"🌐 *نتائج بحث الويب: {query}*\n━━━━━━━━━━━━━━━━━\n\n"
-                    for i, r in enumerate(web_results[:5], 1):
-                        title = _quick_clean_text(r.get("title", ""))
-                        snippet = _quick_clean_text(r.get("snippet", ""))[:200]
-                        link = r.get("link", "")
-                        message += f"{i}. 📄 *{title}*\n"
-                        if snippet:
-                            message += f"   {snippet}\n"
-                        if link:
-                            message += f"   🔗 {link}\n"
-                        message += "\n"
-            except Exception as e:
-                logger.warning(f"⚠️ WA search web failed: {e}")
-            
-            # ── 3) لو مفيش نتائج خالص، نجرب search_and_summarize ──
-            if not message.strip():
-                try:
-                    from web_search import search_and_summarize_async
-                    search_result = await search_and_summarize_async(query, language="ar", user_id=wa_user_id)
-                    if search_result:
-                        from formatters import clean_ai_response
-                        from whatsapp.state import _strip_html_for_whatsapp, _split_whatsapp_message
-                        cleaned = clean_ai_response(search_result)
-                        message = _strip_html_for_whatsapp(cleaned)
-                    else:
-                        message = "⚠️ لم أجد نتائج. جرب تاني بكلمات بحث مختلفة."
-                except Exception as e:
-                    logger.error(f"❌ WA search_and_summarize fallback failed: {e}")
-                    message = "⚠️ حدث خطأ في البحث. جرب تاني بعد شوية."
-            
-            # ── إرسال النتائج ──
-            if message.strip():
-                message += "\n━━━━━━━━━━━━━━━━━\n🤖 _My Bro — بحث متقدم_"
-                from whatsapp.state import _split_whatsapp_message
-                chunks = _split_whatsapp_message(message)
-                for chunk in chunks:
-                    await _send_whatsapp_message(wa_id, chunk)
-                    if len(chunks) > 1:
-                        await asyncio.sleep(0.05)
-            
-            await feedback.complete()
-            
-            # Increment usage
-            try:
-                from premium import increment_usage
-                increment_usage(wa_user_id, "searches")
-            except Exception:
-                pass
-            
-            # Contextual buttons
-            try:
-                await _send_interactive_buttons(wa_id, body_text="عايز حاجة تانية؟",
-                    buttons=[
-                        {"id": "cmd_search", "title": "🔍 بحث تاني"},
-                        {"id": "cmd_news", "title": "📰 أخبار"},
-                        {"id": "cmd_commands", "title": "📋 الأوامر"},
-                    ])
-            except Exception:
-                pass
-            
-        except Exception as e:
-            logger.error(f"❌ WA search error: {e}")
-            # Fallback: نروح لـ smart_chat لو البحث فشل
-            from whatsapp_webhook import _send_ai_response
-            await _send_ai_response(wa_id, f"ابحث لي عن: {query}",
-                wa_user_id, contact_name, message_id, context_type="search", increment_feature="searches")
+        await _wa_search_and_format(wa_id, query, wa_user_id, contact_name, message_id)
+
+    elif command == "wa_search_query":
+        # 🔴 FIX: /search <query> بيمرر الاستعلام لدالة البحث الموحدة
+        # بدل ما يروح لـ _send_ai_response اللي مش بيعمل بحث حقيقي
+        pass  # بيتعامل معاه في _handle_command_with_arg
 
     elif command.startswith("ask_") or command in ("cmd_ask_ai", "cmd_ask_code"):
         from whatsapp_webhook import _send_ai_response
@@ -2116,10 +2221,9 @@ async def _handle_command_with_arg(wa_id: str, cmd_name: str, arg: str, wa_user_
             wa_user_id, contact_name, message_id, context_type="study")
 
     elif cmd_name == "search":
-        from whatsapp_webhook import _send_ai_response
-        await _send_ai_response(wa_id, f"ابحث لي عن: {arg}",
-            wa_user_id, contact_name, message_id, context_type="search",
-            increment_feature="searches")
+        # 🔴 FIX: /search <query> بيعمل بحث حقيقي في الويب زي تليجرام
+        # بدل ما كان بيروح لـ _send_ai_response اللي مش بيعمل بحث حقيقي
+        await _wa_search_and_format(wa_id, arg, wa_user_id, contact_name, message_id)
 
     # ══════════════════════════════════════
     # VIDEO SEARCH / AUDIO SEARCH / PHOTO SEARCH (with args)

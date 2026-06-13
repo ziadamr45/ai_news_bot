@@ -318,7 +318,22 @@ def _strip_html_for_whatsapp(text: str) -> str:
     text = re.sub(r'<i>(.*?)</i>', r'_\1_', text, flags=re.DOTALL)
     text = re.sub(r'<code>(.*?)</code>', r'```\1```', text, flags=re.DOTALL)
     text = re.sub(r'<s>(.*?)</s>', r'~\1~', text, flags=re.DOTALL)
-    text = re.sub(r'<a\s+href="([^"]*)"[^>]*>(.*?)</a>', r'\2 (\1)', text, flags=re.DOTALL)
+    
+    # 🔴 FIX: روابط HTML — واتساب مش بيدعم clickable links
+    # لو الرابط نصه "اقرأ المزيد" أو "Read more" → نعرض الرابط الفعلي بس
+    # لو الرابط نصه أي حاجة تانية → نعرض النص + الرابط
+    def _wa_link_replacer(match):
+        url = match.group(1)
+        link_text = match.group(2).strip()
+        # لو النص هو "اقرأ المزيد" أو "Read more" أو مجرد 🔗 → نعرض الرابط بس
+        if link_text.lower() in ("اقرأ المزيد", "read more", "المزيد", "more", "🔗"):
+            return f"🔗 {url}"
+        # لو النص مختلف → نعرض النص + الرابط
+        return f"{link_text} ({url})"
+    
+    text = re.sub(r'<a\s+href="([^"]*)"[^>]*>(.*?)</a>', _wa_link_replacer, text, flags=re.DOTALL)
+    # كمان روابط بعلامات تنصيص مفردة
+    text = re.sub(r"<a\s+href='([^']*)'[^>]*>(.*?)</a>", _wa_link_replacer, text, flags=re.DOTALL)
     
     # شيل أي HTML tags متبقية
     text = re.sub(r'<[^>]+>', '', text)
