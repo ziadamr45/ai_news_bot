@@ -44,7 +44,7 @@ _user_truncated = {}    # {user_id: {"response": str, "user_message": str, "lang
 
 
 def _get_pdf_context(user_id: int) -> dict:
-    """استرجاع سياق PDF - أولاً من الذاكرة، وبعدين من الداتابيز"""
+    """استرجاع سياق PDF - أولًا من الذاكرة، وبعدين من الداتابيز"""
     # محاولة 1: من الذاكرة (أسرع)
     ctx = _user_pdf_context.get(user_id)
     if ctx and ctx.get("text"):
@@ -655,7 +655,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "cmd_ask":
         if lang == "ar":
-            msg = "🤖 اكتب سؤالك وسأجيبك فوراً!"
+            msg = "🤖 اكتب سؤالك وسأجيبك فورًا!"
         else:
             msg = "🤖 Type your question and I'll answer right away!"
         await query.message.reply_text(msg)

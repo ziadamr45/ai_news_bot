@@ -6,6 +6,74 @@
 import re
 
 
+def _quick_clean_text(text: str) -> str:
+    """
+    تنظيف سريع من Markdown و HTML الغريب — بيشتغل على العناوين والتلخيصات
+    أخف من clean_ai_response() عشان ميتعملش overhead على كل خبر
+    
+    بيشيل:
+    - **bold** → النص بس (مش محتاجين bold جوا <b> تاني)
+    - *italic* → النص بس
+    - ```code``` → الكود بس
+    - `code` → الكود بس
+    - [text](url) → text (شيل الروابط)
+    - ### headings → النص بس
+    - <tag> غريب → شيله
+    - أقواس [1] مرجعية → شيلها
+    """
+    if not text:
+        return text
+    
+    # تحويل **bold** للنص بس (إحنا حاطين <b> بره)
+    text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
+    
+    # تحويل *italic* للنص بس
+    text = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'\1', text)
+    
+    # تحويل __bold__ للنص بس
+    text = re.sub(r'__(.+?)__', r'\1', text)
+    
+    # تحويل ~~strikethrough~~ للنص بس
+    text = re.sub(r'~~(.+?)~~', r'\1', text)
+    
+    # شيل code blocks
+    text = re.sub(r'```\w*\n?(.*?)```', r'\1', text, flags=re.DOTALL)
+    text = re.sub(r'`([^`]+)`', r'\1', text)
+    
+    # شيل Markdown links [text](url) → text
+    text = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'\1', text)
+    
+    # شيل أقواس مرجعية [1] [2]
+    text = re.sub(r'\[\d+\]\s*', '', text)
+    
+    # شيل ### headings
+    text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
+    
+    # شيل --- خطوط أفقية
+    text = re.sub(r'^[-*_]{3,}\s*$', '', text, flags=re.MULTILINE)
+    
+    # 🔴 FIX: شيل كل HTML tags — حتى الـ <a> لأنها بتيجي متكسرة من نتائج البحث
+    # مثال: <a>[رابط] <a>AquinasCoder 23 — ده بيبان كرموز غريبة
+    # الإستراجية: نشيل كل الـ tags ونسيب النص بس
+    # الروابط الحقيقية بنضيفها يدويًا في مكان تاني (🔗 اقرأ المزيد)
+    # أولاً: استخرج النص من جوا <a href="...">text</a> → text
+    # 🔴 FIX: استخدم (.*?) بدل ([^<]*) عشان يشتغل لو جوه الـ <a> فيه tags تاني
+    text = re.sub(r'<a\s+href=["\'][^"\']*["\'][^>]*>(.*?)</a>', r'\1', text, flags=re.IGNORECASE)
+    # ثانياً: شيل كل الـ <a> tags المتكسرة (من غير href أو من غير إغلاق)
+    text = re.sub(r'</?a[^>]*>', '', text, flags=re.IGNORECASE)
+    # ثالثاً: شيل باقي الـ tags (b, i, u, s, code, pre) — لأن ده نص جوا <b> أصلاً
+    text = re.sub(r'</?(?:b|i|u|s|code|pre|div|span|p|br|em|strong|small|font|big|sub|sup|mark|del|ins)[^>]*>', '', text, flags=re.IGNORECASE)
+    
+    # شيل أي * متبقية لوحدها
+    text = re.sub(r'(?<!\w)\*(?!\w)', '', text)
+    
+    # شيل مسافات زيادة
+    text = re.sub(r' {2,}', ' ', text)
+    text = text.strip()
+    
+    return text
+
+
 def _strip_non_telegram_html(text: str) -> str:
     """
     تنظيف HTML غير المدعوم من تليجرام
@@ -25,7 +93,7 @@ def _strip_non_telegram_html(text: str) -> str:
     if not text:
         return text
     
-    # 🔴 أولاً: نحول العناوين h1-h6 لـ bold
+    # 🔴 أولًا: نحول العناوين h1-h6 لـ bold
     text = re.sub(r'<h[1-6][^>]*>', '\n<b>', text, flags=re.IGNORECASE)
     text = re.sub(r'</h[1-6]>', '</b>\n', text, flags=re.IGNORECASE)
     
@@ -72,7 +140,7 @@ def _strip_non_telegram_html(text: str) -> str:
         'map', 'area', 'track', 'wbr', 'ruby', 'rt', 'rp',
     )
     
-    # نشيل الـ self-closing tags أولاً
+    # نشيل الـ self-closing tags أولًا
     for tag in unsupported_tags:
         text = re.sub(rf'<{tag}[^>]*/\s*>', '', text, flags=re.IGNORECASE)
     
@@ -84,18 +152,31 @@ def _strip_non_telegram_html(text: str) -> str:
     for tag in unsupported_tags:
         text = re.sub(rf'</{tag}>', '', text, flags=re.IGNORECASE)
     
-    # 🔴 نشيل style, class, id, وكل event attributes من أي tag متبقي
+    # 🔴 FIX: نشيل style, class, id من tags متبقية
+    # بس لو <a> مع href نحافظ على الـ href
     # مثال: <b style="..."> ← <b>
-    text = re.sub(r'<(b|i|u|s|code|pre|a|spoiler|blockquote|tg-spoiler)\s+[^>]*?>', r'<\1>', text, flags=re.IGNORECASE)
+    text = re.sub(r'<(b|i|u|s|code|pre|spoiler|blockquote|tg-spoiler)\s+[^>]*?>', r'<\1>', text, flags=re.IGNORECASE)
+    # 🔴 FIX: <a> tag — نشيل الـ attributes الزيادة بس نحافظ على href
+    text = re.sub(r'<a\s+(href=["\'][^"\']*["\'])[^>]*?>', r'<a \1>', text, flags=re.IGNORECASE)
+    
+    # 🔴 FIX: نشيل <a> tags المتكسرة (من غير href) — دي بتيجي من نتائج البحث
+    # مثال: <a>[رابط] <a>AquinasCoder 23 — بنشيل الـ tag ونسيب النص
+    # Strategy: نشيل كل <a> اللي مش ليها href، ونسيب <a href="..."> سليمة
+    # أولاً: <a> لوحدها (من غير href) → نشيل الـ tag بس
+    text = re.sub(r'<a>([^<]*?)</a>', r'\1', text, flags=re.IGNORECASE)
+    # ثانياً: <a > أو <a class=...> الخ (بس مش href) → نشيل الـ tag
+    # بنشيل بس لو أول attribute مش href
+    text = re.sub(r'<a\s+(?!href)[^>]*>', '', text, flags=re.IGNORECASE)
+    # ثالثاً: <a> فاضية متبقية
+    text = re.sub(r'<a\s*>', '', text, flags=re.IGNORECASE)
     
     # 🔴 نشيل أي tag متبقي مش في القائمة المدعومة (catch-all)
     # القائمة المسموحة: b, i, u, s, code, pre, a, spoiler, blockquote, tg-spoiler
     # (strong/em تم تحويلها لـ b/i فوق، مش محتاجين نبقيهم)
-    allowed_pattern = r'/?((?:b|i|u|s|code|pre|a|spoiler|blockquote|tg-spoiler)(?:\s[^>]*)?)'
     # نشيل أي tag مش في القائمة
     def _clean_unknown_tag(match):
         tag_content = match.group(1)
-        tag_name = tag_content.strip().split()[0].rstrip('/')
+        tag_name = tag_content.strip().split()[0].lstrip('/').rstrip('/')
         allowed_names = {'b', 'i', 'u', 's', 'code', 'pre', 'a', 'spoiler', 'blockquote', 'tg-spoiler'}
         if tag_name.lower() in allowed_names:
             return match.group(0)  # نسيبه زي ما هو
@@ -118,6 +199,24 @@ def _strip_non_telegram_html(text: str) -> str:
         if open_count > close_count:
             # Unclosed tags — نشيلهم كلهم (opening + closing)
             text = re.sub(rf'</?{tag}>', '', text, flags=re.IGNORECASE)
+    
+    # 🔴 FIX: إصلاح <a> tags المتكسرة — لو فيه orphan </a> أو unclosed <a>
+    a_opens = len(re.findall(r'<a\s+href=', text, re.IGNORECASE))
+    a_closes = len(re.findall(r'</a>', text, re.IGNORECASE))
+    if a_opens > a_closes:
+        # فيه <a> مفتوحة من غير إغلاق — نشيلهم كلهم
+        text = re.sub(r'<a\s+href=["\'][^"\']*["\'][^>]*>', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'</a>', '', text, flags=re.IGNORECASE)
+    elif a_closes > a_opens:
+        # فيه </a> زيادة (orphan) — ده اللي بيعمل </a></a></a> في الآخر!
+        # نشيل الـ orphan </a> tags بس
+        # الاستراتيجية: نحسب الفرق ونشيل الزيادة من الآخر
+        diff = a_closes - a_opens
+        for _ in range(diff):
+            # شيل آخر </a> موجود
+            last_close_pos = text.rfind('</a>')
+            if last_close_pos != -1:
+                text = text[:last_close_pos] + text[last_close_pos + 4:]
     
     return text
 
@@ -171,7 +270,7 @@ def clean_ai_response(text: str) -> str:
     # ده كان السبب الرئيسي في ظهور الأقواس [ ] الغريبة!
     text = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<a href="\2">\1</a>', text)
 
-    # 7b. شيل روابط مرجعية زي [1] أو [2] اللي بتيجي من النماذج أحياناً
+    # 7b. شيل روابط مرجعية زي [1] أو [2] اللي بتيجي من النماذج أحيانًا
     text = re.sub(r'\[(\d+)\]\s*', '', text)
 
     # 7c. شيل أقواس [ ] فاضية أو مليانة حاجات غريبة من النموذج
@@ -279,6 +378,50 @@ def clean_ai_response(text: str) -> str:
     # بس لو جواها كلام مفيد (أكتر من 2 حرف) نسيبها
     text = re.sub(r'\[([^\]]{0,2})\](?!\()', '', text)
 
+    # ═══ مرحلة 5: إصلاح نهائي لـ <a> tags — منع </a></a></a> المتكررة ═══
+    # 🔴 FIX: ده أهم إصلاح — الـ AI بيرجع أحيانًا <a> tags متكررة أو متداخلة
+    # والـ Markdown→HTML conversion (خطوة 7) ممكن تضيف <a> كمان
+    # ده بيسبب </a></a></a></a> في نهاية الرسالة
+    
+    # 🔴 FIX: شيل الـ <a> tags المتداخلة (nested) — تليجرام مش بيدعمها
+    # مثال: <a href="url1"><a href="url2">text</a></a> → <a href="url2">text</a>
+    # الاستراتيجية: لو فيه <a> جوه <a>، نشيل البراني ونسيب الداخلي
+    while True:
+        nested = re.search(r'<a\s+href=["\'][^"\']*["\'][^>]*>\s*<a\s+href=["\']([^"\']*)["\'][^>]*>(.*?)</a>\s*</a>', text, re.IGNORECASE | re.DOTALL)
+        if not nested:
+            break
+        inner_url = nested.group(1)
+        inner_text = nested.group(2)
+        replacement = f'<a href="{inner_url}">{inner_text}</a>'
+        text = text[:nested.start()] + replacement + text[nested.end():]
+    
+    # 🔴 FIX: شيل أي <a> جواها Markdown link متحول → <a> جوه <a>
+    # مثال: <a href="url">text</a>→text</a> (orphan closing)
+    # أولاً: لو فيه <a> فتحت وقفلت وبعدها </a> زيادة
+    text = re.sub(r'(<a\s+href=["\'][^"\']*["\'][^>]*>[^<]*</a>)\s*</a>', r'\1', text, flags=re.IGNORECASE)
+    
+    a_opens = len(re.findall(r'<a\s+href=', text, re.IGNORECASE))
+    a_closes = len(re.findall(r'</a>', text, re.IGNORECASE))
+    if a_opens > a_closes:
+        # فيه <a> مفتوحة من غير إغلاق — نشيل كل الـ <a> tags
+        text = re.sub(r'<a\s+href=["\'][^"\']*["\'][^>]*>([^<]*)</a>', r'\1', text, flags=re.IGNORECASE)
+        text = re.sub(r'<a\s+href=["\'][^"\']*["\'][^>]*>', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'</a>', '', text, flags=re.IGNORECASE)
+    elif a_closes > a_opens:
+        # فيه </a> زيادة — ده السبب الرئيسي لـ </a></a></a></a> في الآخر!
+        diff = a_closes - a_opens
+        for _ in range(diff):
+            last_close_pos = text.rfind('</a>')
+            if last_close_pos != -1:
+                text = text[:last_close_pos] + text[last_close_pos + 4:]
+    
+    # 🔴 FIX: شيل أي </a> لوحدها في سطر (orphan tags من الـ AI)
+    text = re.sub(r'^\s*</a>\s*$', '', text, flags=re.MULTILINE)
+    # 🔴 FIX: شيل أي </a> متكررة متلصقة
+    while '</a></a>' in text:
+        # شيل واحدة من كل زوج متلصق
+        text = text.replace('</a></a>', '</a>', 1)
+
     return text.strip()
 
 
@@ -311,7 +454,7 @@ def _fix_broken_arabic_text(text: str) -> str:
             result_lines.append(line)
             continue
         
-        # لو السطر قصير جداً وبيبدأ بحرف عربي والسطر اللي فات بيند بحرف عربي
+        # لو السطر قصير جدًا وبيبدأ بحرف عربي والسطر اللي فات بيند بحرف عربي
         # يبقى ده تكملة كلمة — نوصلهم بدون مسافة
         if (i > 0 
             and len(stripped) <= 6
@@ -393,56 +536,61 @@ def smart_split_message(text: str, max_length: int = 3900) -> list:
 
     # إصلاح HTML tags المكسورة
     # لو جزء فيه opening tag من غير closing tag، نحط الـ closing tag
+    # 🔴 FIX: استخدم counter بدل list عشان list.remove() بيشيل أول عنصر بس
+    # ده كان بيعمل مشكلة مع <a> tags المتعددة
+    # 🔴 FIX v2: لازم نعمل opens الأول وبعدين closes — عشان لو الاتنين في نفس الجزء
+    # يعتبروا متقفلين ومش نضيف closing tags زيادة
     fixed_chunks = []
-    open_tags = []  # tags اللي لسه مفتوحة
+    open_tag_counts = {}  # tag_name → count المفتوحة
+    # 🔴 FIX v3: نحفظ الـ pending tags (اللي اتقفلوا مؤقتًا) لكل جزء
+    # عشان نعرف نفتحهم في الجزء اللي بعده من غير ما نحسبهم تاني
+    chunk_pending_tags = []  # list of dicts: [{tag: count}]
 
     for chunk in chunks:
         # دور على tags مفتوحة في الجزء ده
         opens = re.findall(r'<(b|i|code|s|u|a)\b[^>]*>', chunk)
         closes = re.findall(r'</(b|i|code|s|u|a)>', chunk)
 
-        # شيل من open_tags اللي اتقفلت
-        for tag in closes:
-            tag_name = tag
-            if tag_name in open_tags:
-                open_tags.remove(tag_name)
-
-        # ضيف الـ tags الجديدة المفتوحة
+        # 🔴 FIX: ضيف الـ tags الجديدة المفتوحة الأول
         for tag_match in opens:
             tag_name = re.match(r'(\w+)', tag_match).group(1) if re.match(r'(\w+)', tag_match) else tag_match
-            open_tags.append(tag_name)
+            open_tag_counts[tag_name] = open_tag_counts.get(tag_name, 0) + 1
 
-        # لو في tags مفتوحة وده مش آخر جزء، اقفلهم مؤقتاً
-        if open_tags and chunk != chunks[-1]:
-            for tag in reversed(open_tags):
-                chunk += f'</{tag}>'
+        # 🔴 FIX: وبعدين شيل اللي اتقفلت — ده الصح عشان لو <a> و </a> في نفس الجزء
+        # يعتبروا متقفلين ومش نزود closing tags زيادة
+        for tag in closes:
+            tag_name = tag
+            if tag_name in open_tag_counts and open_tag_counts[tag_name] > 0:
+                open_tag_counts[tag_name] -= 1
+                if open_tag_counts[tag_name] == 0:
+                    del open_tag_counts[tag_name]
+
+        # لو في tags مفتوحة وده مش آخر جزء، اقفلهم مؤقتًا
+        if open_tag_counts and chunk != chunks[-1]:
+            for tag in reversed(list(open_tag_counts.keys())):
+                for _ in range(open_tag_counts[tag]):
+                    chunk += f'</{tag}>'
 
         fixed_chunks.append(chunk)
+        # 🔴 FIX v3: احفظ الـ tags اللي لسه مفتوحة (اللي محتاجة تتفتح في الجزء اللي بعده)
+        chunk_pending_tags.append(dict(open_tag_counts))
 
     # الجزء الأول يفتح الـ tags اللي كانت مفتوحة من الجزء اللي قبله
     final_chunks = []
-    pending_opens = []
 
     for i, chunk in enumerate(fixed_chunks):
-        prefix = ''
-        for tag in pending_opens:
-            prefix += f'<{tag}>'
+        # 🔴 FIX v3: استخدم الـ pending tags المحفوظة من الجزء اللي فات
+        # بدل ما نحسبهم تاني — لأن الـ auto-close tags بتغير الحساب
+        if i == 0:
+            prefix = ''
+        else:
+            pending = chunk_pending_tags[i - 1] if i - 1 < len(chunk_pending_tags) else {}
+            prefix = ''
+            for tag, count in pending.items():
+                for _ in range(count):
+                    prefix += f'<{tag}>'
 
         final_chunks.append(prefix + chunk)
-
-        # حدث الـ pending_opens
-        # شيل الـ closing tags اللي اتضافت
-        temp_opens = list(pending_opens)
-        all_opens = re.findall(r'<(b|i|code|s|u|a)\b[^>]*>', prefix + chunk)
-        all_closes = re.findall(r'</(b|i|code|s|u|a)>', prefix + chunk)
-
-        for o in all_opens:
-            temp_opens.append(o)
-        for c in all_closes:
-            if c in temp_opens:
-                temp_opens.remove(c)
-
-        pending_opens = temp_opens
 
     return final_chunks if final_chunks else [text]
 
@@ -451,7 +599,7 @@ def welcome_message(language: str = "ar", user_name: str = "") -> str:
     """رسالة الترحيب الاحترافية"""
     name_part = f" {user_name}" if user_name else ""
     if language == "ar":
-        return f"""🤖 <b>أهلاً بك{name_part} في My Bro</b>
+        return f"""🤖 <b>أهلًا بك{name_part} في My Bro</b>
 ━━━━━━━━━━━━━━━━━
 
 مساعدك الذكي الشامل 🧠
@@ -502,7 +650,7 @@ def help_message(language: str = "ar") -> str:
 
 💬 <b>المحادثة والذكاء الاصطناعي</b>
 /ask &lt;سؤال&gt; — سؤال مباشر
-ابعت أي سؤال وهجاوبك فوراً!
+ابعت أي سؤال وهجاوبك فورًا!
 
 📄 <b>تحليل الملفات</b>
 ارفع PDF أو مستند وهحللهولك
@@ -607,6 +755,11 @@ Send a link from YouTube, Instagram, TikTok, Facebook, Twitter
 
 def format_news_item(index: int, title: str, summary: str, url: str, is_top: bool = False, category: str = "", language: str = "ar") -> str:
     """تنسيق خبر واحد مع دعم الفئات وخبر اليوم واللغة"""
+    # 🔴 FIX: تنظيف العناوين والتلخيصات من Markdown و HTML الغريب
+    # الـ AI بيرجع **عنوان** وده بيبان كرموز في تليجرام
+    title = _quick_clean_text(title)
+    summary = _quick_clean_text(summary)
+
     # عرض الفئة
     category_display = ""
     if category:
@@ -664,7 +817,7 @@ def subscription_prompt(language: str = "ar") -> str:
 
 ✅ آخر أخبار AI من مصادر عالمية
 ✅ ملخص بالعربية مفهوم وبسيط
-✅ مجاني تماماً
+✅ مجاني تمامًا
 
 👇 اضغط على الزر بالأسفل عشان تشترك!"""
     else:
@@ -685,15 +838,17 @@ def subscription_confirmed(language: str = "ar") -> str:
     if language == "ar":
         return """✅ <b>تم الاشتراك بنجاح!</b>
 
-📬 هابعتلك أخبار AI كل يوم الساعة 12 الظهر
+📬 هابعتلك أخبار AI كل يوم الساعة 12 الظهر (توقيت القاهرة)
 💡 ممكن تلغي الاشتراك أي وقت من ⚙️ الإعدادات
-⏰ ممكن تغير وقت الأخبار من ⚙️ الإعدادات > وقت الأخبار"""
+⏰ ممكن تغير وقت الأخبار من ⚙️ الإعدادات > وقت الأخبار
+    اكتب الوقت اللي يعجبك: 5 مساءً أو 5:00 pm أو 17:00"""
     else:
         return """✅ <b>Subscribed successfully!</b>
 
-📬 I'll send you AI news every day at 12:00 PM
+📬 I'll send you AI news every day at 12:00 PM (Cairo time)
 💡 You can unsubscribe anytime from ⚙️ Settings
-⏰ You can change news time from ⚙️ Settings > News Time"""
+⏰ You can change news time from ⚙️ Settings > News Time
+    Send your preferred time: 5 pm or 5:00 pm or 17:00"""
 
 
 def unsubscription_confirmed(language: str = "ar") -> str:
@@ -754,7 +909,7 @@ def subscribe_command_message(language: str = "ar") -> str:
 
 ✅ آخر أخبار AI من مصادر عالمية
 ✅ ملخص بالعربية مفهوم وبسيط
-✅ مجاني تماماً
+✅ مجاني تمامًا
 
 👇 اضغط على الزر بالأسفل عشان تشترك!"""
     else:
@@ -817,21 +972,147 @@ def language_selection() -> str:
 
 
 def time_selection(current_time: str, language: str = "ar") -> str:
-    """رسالة اختيار الوقت"""
+    """رسالة اختيار الوقت — بدعم نظام 12 ساعة و24 ساعة"""
+    # تحويل الوقت الحالي لعرضه بنظام 12 ساعة
+    try:
+        parts = current_time.split(":")
+        h, m = int(parts[0]), int(parts[1])
+        if h == 0:
+            time_12h = f"12:{m:02d} صباحًا"
+        elif h < 12:
+            time_12h = f"{h}:{m:02d} صباحًا"
+        elif h == 12:
+            time_12h = f"12:{m:02d} مساءً"
+        else:
+            time_12h = f"{h - 12}:{m:02d} مساءً"
+    except Exception:
+        time_12h = current_time
+
     if language == "ar":
         return f"""⏰ <b>تغيير وقت الأخبار</b>
 
-الوقت الحالي: {current_time} (توقيت القاهرة)
+الوقت الحالي: {time_12h} ({current_time} — توقيت القاهرة)
 
-أرسل الوقت بالصيغة التالية:
-مثال: <code>12:00</code> أو <code>14:30</code>"""
+اكتب الوقت اللي عايزه بأي صيغة من دول:
+• <code>5:00 مساءً</code> أو <code>5 مساء</code> أو <code>5pm</code>
+• <code>12:00 الظهر</code> أو <code>12 مساءً</code>
+• <code>12:00 الصبح</code> أو <code>12 صباحًا</code>
+• <code>9:00</code> (لو مكتوب رقم بس هيبقى 9 الصبح)
+• أو بنظام 24 ساعة: <code>14:30</code> أو <code>17:00</code>"""
     else:
         return f"""⏰ <b>Change News Time</b>
 
-Current time: {current_time} (Cairo time)
+Current time: {time_12h} ({current_time} — Cairo time)
 
-Send the time in this format:
-Example: <code>12:00</code> or <code>14:30</code>"""
+Send the time in any of these formats:
+• <code>5:00 pm</code> or <code>5pm</code> or <code>5 pm</code>
+• <code>12:00 noon</code> or <code>12 pm</code>
+• <code>12:00 am</code> or <code>12 midnight</code>
+• <code>9:00</code> (without am/pm = morning)
+• Or 24-hour format: <code>14:30</code> or <code>17:00</code>"""
+
+
+def parse_time_input(user_input: str) -> str:
+    """
+    تحويل إدخال المستخدم للوقت (12 أو 24 ساعة) لصيغة HH:MM بنظام 24 ساعة
+    
+    يدعم:
+    - "5:00 مساءً" / "5 مساء" / "5pm" / "5:00 pm" → 17:00
+    - "12:00 الظهر" / "12 مساءً" / "12pm" → 12:00
+    - "12:00 الصبح" / "12 صباحًا" / "12am" → 00:00
+    - "9:00" (بدون am/pm = صباح) → 09:00
+    - "14:30" (نظام 24 ساعة) → 14:30
+    - "11:30 مساء" → 23:30
+    - "1:00 الفجر" → 01:00
+    
+    Returns: "HH:MM" بنظام 24 ساعة أو None لو الإدخال مش وقت
+    """
+    import re
+    text = user_input.strip()
+    
+    # ── 1. محاولة نظام 24 ساعة مباشرة (HH:MM) ──
+    match_24 = re.match(r'^([0-1]?[0-9]|2[0-3]):([0-5][0-9])$', text)
+    if match_24:
+        return f"{int(match_24.group(1)):02d}:{match_24.group(2)}"
+    
+    # ── 2. محاولة نظام 12 ساعة ──
+    # أنماط: "5:00 مساءً", "5 مساء", "5pm", "5:00 pm", "12 الظهر", "12 الصبح"
+    # كلمات مسائية (PM)
+    pm_keywords = [
+        r'مساءً?', r'مساء', r'م', r'pm', r'p\.m\.?', r'الظهر', r'ظهر',
+        r'بعد\s*الظهر', r'العصر', r'المغرب', r'العشاء',
+    ]
+    # كلمات صباحية (AM)
+    am_keywords = [
+        r'صباحًا?', r'صباح', r'ص', r'am', r'a\.m\.?', r'الصبح', r'صبح',
+        r'الفجر', r'فجر', r'الليل', r'ليل',
+    ]
+    
+    is_pm = False
+    is_am = False
+    
+    for kw in pm_keywords:
+        if re.search(kw, text, re.IGNORECASE):
+            is_pm = True
+            break
+    
+    for kw in am_keywords:
+        if re.search(kw, text, re.IGNORECASE):
+            is_am = True
+            break
+    
+    # استخراج الساعة والدقائق
+    # نمط: رقم أو رقم:رقم في بداية النص
+    time_match = re.match(r'^(\d{1,2})(?::(\d{2}))?\s*', text)
+    if time_match:
+        hour = int(time_match.group(1))
+        minute = int(time_match.group(2)) if time_match.group(2) else 0
+        
+        # التحقق من صحة الساعة
+        if hour > 23 or minute > 59:
+            return None
+        
+        # لو فيه am/pm صريح
+        if is_pm:
+            if hour == 12:
+                hour = 12  # 12 مساءً = 12:00
+            elif hour < 12:
+                hour += 12
+        elif is_am:
+            if hour == 12:
+                hour = 0   # 12 صباحًا = 00:00
+            # غير كده الساعة زي ما هي
+        else:
+            # لو مفيش am/pm — لو الساعة من 1-6 يبقى صباح (AM)
+            # لو من 7-11 يبقى صباح كمان (الوضع الافتراضي AM)
+            # لو 12 يبقى الظهر (PM)
+            # لو أكتر من 12 يبقى 24 ساعة
+            if hour == 12:
+                hour = 12  # 12 بدون تحديد = الظهر (PM)
+            elif hour > 12:
+                pass  # نظام 24 ساعة
+            # else: AM (صباح) — الساعة زي ما هي
+        
+        return f"{hour:02d}:{minute:02d}"
+    
+    # ── 3. محاولة "5 pm" أو "5pm" بدون نقطتين ──
+    time_match2 = re.match(r'^(\d{1,2})\s*(am|pm|ص|م)\s*$', text, re.IGNORECASE)
+    if time_match2:
+        hour = int(time_match2.group(1))
+        period = time_match2.group(2).lower()
+        
+        if period in ('pm', 'م'):
+            if hour == 12:
+                hour = 12
+            elif hour < 12:
+                hour += 12
+        elif period in ('am', 'ص'):
+            if hour == 12:
+                hour = 0
+        
+        return f"{hour:02d}:00"
+    
+    return None
 
 
 def sources_selection(language: str = "ar") -> str:

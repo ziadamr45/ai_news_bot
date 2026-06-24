@@ -45,7 +45,7 @@ async def ask_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not question:
         if lang == "ar":
-            msg = "🤖 <b>اسأل My Bro</b>\n\nاكتب سؤالك مباشرة أو بعد الأمر\nمثال: <code>/ask ما هي علوم القرآن؟</code>\n\n💡 يمكنك أيضاً الكتابة مباشرة بدون أوامر وسأفهمك!"
+            msg = "🤖 <b>اسأل My Bro</b>\n\nاكتب سؤالك مباشرة أو بعد الأمر\nمثال: <code>/ask ما هي علوم القرآن؟</code>\n\n💡 يمكنك أيضًا الكتابة مباشرة بدون أوامر وسأفهمك!"
         else:
             msg = "🤖 <b>Ask My Bro</b>\n\nType your question directly or after the command\nExample: <code>/ask What are the sciences of the Quran?</code>\n\n💡 You can also just type naturally without commands!"
         await update.message.reply_text(msg, parse_mode="HTML")
@@ -236,7 +236,7 @@ async def deepsearch_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     try:
         # 🔴 FIX: تحديث المراحل في الوقت الفعلي أثناء البحث
         # بدل ما نحدّث كل المراحل قبل البحث (كان بيخلي الـ progress مش دقيق)
-        # بنمرر الـ progress callback عشان كل مرحلة تتحدث لما تخلص فعلاً
+        # بنمرر الـ progress callback عشان كل مرحلة تتحدث لما تخلص فعلًا
         from web_search import deep_search_and_summarize_async
         import asyncio
 

@@ -69,7 +69,7 @@ async def search_dailymotion(query: str, max_results: int = 5) -> Optional[List[
     
     Args:
         query: كلمة البحث
-        max_results: أقصى عدد نتائج (5 افتراضياً)
+        max_results: أقصى عدد نتائج (5 افتراضيًا)
     
     Returns:
         قائمة نتائج أو None لو فشل البحث

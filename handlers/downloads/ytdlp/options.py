@@ -25,8 +25,8 @@ def _get_ydl_opts(quality: str, output_template: str, platform: str = "",
     
     🔴 FIX v3: 
     - بنضيف cookies.txt لو موجود — الحل الأقوى لتخطي bot detection
-    - 🔴 الكوكيز الوهمية اتشالت نهائياً — مش بتفيد وبتضر
-    - بنستخدم player_client=mweb أولاً (أقل كشف) مع fallback لـ android → ios → tv → web
+    - 🔴 الكوكيز الوهمية اتشالت نهائيًا — مش بتفيد وبتضر
+    - بنستخدم player_client=mweb أولًا (أقل كشف) مع fallback لـ android → ios → tv → web
     - بنكشف ffmpeg تلقائي وبنعدل التنسيقات حسب التوفر
     """
     ffmpeg_ok = use_ffmpeg and _is_ffmpeg_available()
@@ -35,14 +35,14 @@ def _get_ydl_opts(quality: str, output_template: str, platform: str = "",
     # platform بتتباصى من _detect_platform() — لو فاضي بنعامل كأنه YouTube
     is_youtube = platform_lower == "youtube" or platform_lower == ""
     
-    # 🔴 الكوكيز الوهمية اتشالت نهائياً!
+    # 🔴 الكوكيز الوهمية اتشالت نهائيًا!
     # الكوكيز الوهمية (visitor cookies) بتضر أكتر مما تنفع لأن:
     # 1. YouTube بيكتشف إنها random/generated وبيعتبرنا bot
     # 2. كل محاولة بتولد visitor_id مختلف = سلوك مش طبيعي
-    # 3. yt-dlp بيدير كوكيز YouTube داخلياً حسب player_client
+    # 3. yt-dlp بيدير كوكيز YouTube داخليًا حسب player_client
     # بنستخدم الكوكيز الوهمية بس للمنصات التانية
     
-    # 🔴 الكوكيز الوهمية اتشالت نهائياً — مش بتفيد وبتضر
+    # 🔴 الكوكيز الوهمية اتشالت نهائيًا — مش بتفيد وبتضر
     # بنستخدم headers نظيفة بدون أي Cookie
     headers = {
         'User-Agent': _USER_AGENT,
@@ -125,7 +125,7 @@ def _get_ydl_opts(quality: str, output_template: str, platform: str = "",
         # vcodec^=avc1 = h264 video codec (اللي Telegram بيشغله)
         # بنحط h264 الأول، وبعدين fallback لـ أي mp4، وبعدين best
         #
-        # Facebook/Instagram مش بيوفر separate video+audio دايماً
+        # Facebook/Instagram مش بيوفر separate video+audio دايمًا
         # فبنفضل pre-merged formats (best[ext=mp4]) عشان نتجنب مشاكل الدمج
         
         is_facebook_family = platform_lower in ("facebook", "instagram", "threads")
@@ -136,7 +136,7 @@ def _get_ydl_opts(quality: str, output_template: str, platform: str = "",
                 # 1. Facebook بيوفر فيديوهات pre-merged بجودة عالية
                 # 2. دمج separate streams من Facebook بيدي فيديو شاشة سوداء
                 # 3. Pre-merged بتكون h264 جاهزة للتليجرام
-                # 4. بنحط pre-mergedmp4 الأول دايماً عشان نتجنب مشاكل الدمج
+                # 4. بنحط pre-mergedmp4 الأول دايمًا عشان نتجنب مشاكل الدمج
                 format_map = {
                     "best": (
                         # 🔴 pre-merged mp4 الأول — أضمن حل للشاشة السوداء

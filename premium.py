@@ -711,7 +711,7 @@ def grant_premium(user_id: int, granted_by: str = "admin", expires: str = None, 
     _log_premium_history(user_id, action="grant", plan_before=old_plan, plan_after=plan, granted_by=granted_by, expires=expires)
     
     logger.info(f"⭐ Premium granted to user {user_id} (plan: {plan})")
-    # ⚡ مسح الكاش عشان التغيير يظهر فوراً
+    # ⚡ مسح الكاش عشان التغيير يظهر فورًا
     _plan_cache.pop(user_id, None)
     _usage_cache.pop(user_id, None)
 
@@ -731,7 +731,7 @@ def revoke_premium(user_id: int):
     _log_premium_history(user_id, action="revoke", plan_before=old_plan, plan_after="free")
     
     logger.info(f"❌ Premium revoked for user {user_id}")
-    # ⚡ مسح الكاش عشان التغيير يظهر فوراً
+    # ⚡ مسح الكاش عشان التغيير يظهر فورًا
     _plan_cache.pop(user_id, None)
     _usage_cache.pop(user_id, None)
 
@@ -1397,7 +1397,7 @@ def get_premium_keyboard(lang: str = "ar", user_id: int = None) -> "InlineKeyboa
         except Exception:
             pass
     
-    # لو Premium أو أدمن → مفيش أزرار (هو أصلاً مشترك، الرسالة بتقول كده)
+    # لو Premium أو أدمن → مفيش أزرار (هو أصلًا مشترك، الرسالة بتقول كده)
     if is_premium_user or is_admin_user:
         return InlineKeyboardMarkup([])
     
@@ -1421,7 +1421,7 @@ def get_premium_keyboard(lang: str = "ar", user_id: int = None) -> "InlineKeyboa
 def premium_features_message(lang: str = "ar", user_id: int = None) -> str:
     """Detailed premium features message
     
-    لو المستخدم Premium أو أدمن → مبيظهرش معلومات الاشتراك (هو أصلاً مشترك)
+    لو المستخدم Premium أو أدمن → مبيظهرش معلومات الاشتراك (هو أصلًا مشترك)
     لو المستخدم مجاني → بيظهر معلومات التواصل عشان يشترك
     """
     # فحص نوع المستخدم

@@ -51,7 +51,7 @@ def get_news_inline_buttons(language: str = "ar") -> InlineKeyboardMarkup:
 def get_trending_inline_buttons(language: str = "ar", trends: list = None) -> InlineKeyboardMarkup:
     """أزرار رسالة الترندات - أزرار مرقمة لكل ترند عشان المستخدم يدوس ويجيب تفاصيله
     
-    🔴 FIX: شيلنا زرار التريندات من رسالة التريندات نفسها لأن المستخدم أصلاً في التريندات!
+    🔴 FIX: شيلنا زرار التريندات من رسالة التريندات نفسها لأن المستخدم أصلًا في التريندات!
     بدل كده حطينا أزرار مرقمة لكل ترند عشان المستخدم يدوس على الرقم ويجيب أخبار/تفاصيل الترند ده
     
     trends: list of (keyword, count) tuples
@@ -233,7 +233,7 @@ def get_subscribe_keyboard(language: str = "ar") -> InlineKeyboardMarkup:
         keyboard = [
             [
                 InlineKeyboardButton("✅ اشترك الآن", callback_data="settings_subscribe"),
-                InlineKeyboardButton("لا شكراً", callback_data="skip_subscribe"),
+                InlineKeyboardButton("لا شكرًا", callback_data="skip_subscribe"),
             ],
         ]
     else:
@@ -260,9 +260,15 @@ def get_companies_keyboard(language: str = "ar") -> InlineKeyboardMarkup:
     """أزرار شركات AI (لسه شغالة مع /company بس مش في الكيبورد الرئيسي)"""
     keyboard = [
         [InlineKeyboardButton("🏢 OpenAI", callback_data="company_openai"), InlineKeyboardButton("🏢 Google", callback_data="company_google")],
-        [InlineKeyboardButton("🏢 Anthropic", callback_data="company_anthropic"), InlineKeyboardButton("🏢 Microsoft", callback_data="company_microsoft")],
-        [InlineKeyboardButton("🏢 Meta", callback_data="company_meta"), InlineKeyboardButton("🏢 xAI", callback_data="company_xai")],
-        [InlineKeyboardButton("🏢 NVIDIA", callback_data="company_nvidia"), InlineKeyboardButton("🏢 DeepMind", callback_data="company_deepmind")],
+        [InlineKeyboardButton("🏢 Anthropic", callback_data="company_anthropic"), InlineKeyboardButton("🍎 Apple AI", callback_data="company_apple")],
+        [InlineKeyboardButton("🏢 Microsoft", callback_data="company_microsoft"), InlineKeyboardButton("🏢 Meta", callback_data="company_meta")],
+        [InlineKeyboardButton("🏢 xAI", callback_data="company_xai"), InlineKeyboardButton("🏢 NVIDIA", callback_data="company_nvidia")],
+        [InlineKeyboardButton("🏢 DeepMind", callback_data="company_deepmind"), InlineKeyboardButton("🔬 DeepSeek", callback_data="company_deepseek")],
+        [InlineKeyboardButton("🇫🇷 Mistral", callback_data="company_mistral"), InlineKeyboardButton("🔬 MiniMax", callback_data="company_minimax")],
+        [InlineKeyboardButton("🔍 Perplexity", callback_data="company_perplexity"), InlineKeyboardButton("🇨🇳 GLM/Zhipu", callback_data="company_zhipu")],
+        [InlineKeyboardButton("🇨🇳 Alibaba/Qwen", callback_data="company_alibaba"), InlineKeyboardButton("🇨🇳 Baidu/ERNIE", callback_data="company_baidu")],
+        [InlineKeyboardButton("🇨🇳 Tencent", callback_data="company_tencent"), InlineKeyboardButton("💻 AMD AI", callback_data="company_amd")],
+        [InlineKeyboardButton("🤖 Figure AI", callback_data="company_figure_ai")],
     ]
     return InlineKeyboardMarkup(keyboard)
 

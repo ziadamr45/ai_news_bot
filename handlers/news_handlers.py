@@ -13,7 +13,7 @@ from memory import (
     get_language, increment_command_count,
 )
 from formatters import (
-    format_news_item, format_error,
+    format_news_item, format_error, _strip_non_telegram_html, _quick_clean_text,
 )
 from news_fetcher import fetch_news
 from filters import filter_news
@@ -71,7 +71,7 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await progress.update_stage(0)
         articles = await fetch_news()
         if not articles:
-            await progress.error("لا توجد أخبار AI جديدة حالياً. 🤖" if lang == "ar" else "No new AI news right now. 🤖")
+            await progress.error("لا توجد أخبار AI جديدة حاليًا. 🤖" if lang == "ar" else "No new AI news right now. 🤖")
             return
 
         await progress.update_stage(1)
@@ -188,7 +188,7 @@ async def breaking_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         filtered = filter_news(articles)
 
         if not filtered:
-            await progress.error("لا توجد أخبار عاجلة حالياً. 🤖" if lang == "ar" else "No breaking news right now. 🤖")
+            await progress.error("لا توجد أخبار عاجلة حاليًا. 🤖" if lang == "ar" else "No breaking news right now. 🤖")
             return
 
         await progress.update_stage(2)
@@ -196,7 +196,7 @@ async def breaking_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         top = ranked[0] if ranked else None
 
         if not top:
-            await progress.error("لا توجد أخبار عاجلة حالياً. 🤖" if lang == "ar" else "No breaking news right now. 🤖")
+            await progress.error("لا توجد أخبار عاجلة حاليًا. 🤖" if lang == "ar" else "No breaking news right now. 🤖")
             return
 
         summarized = await summarize_articles([top])
@@ -362,7 +362,7 @@ async def trending_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         filtered = filter_news(articles)
 
         if not filtered:
-            await progress.error("لا توجد ترندات حالياً. 🤖" if lang == "ar" else "No trending topics right now. 🤖")
+            await progress.error("لا توجد ترندات حاليًا. 🤖" if lang == "ar" else "No trending topics right now. 🤖")
             return
 
         await progress.update_stage(2)
@@ -383,7 +383,7 @@ async def trending_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         top_trends = keyword_counter.most_common(10)
 
         if not top_trends:
-            await progress.error("لا توجد ترندات حالياً. 🤖" if lang == "ar" else "No trending topics right now. 🤖")
+            await progress.error("لا توجد ترندات حاليًا. 🤖" if lang == "ar" else "No trending topics right now. 🤖")
             return
 
         if lang == "ar":
@@ -570,7 +570,7 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         # تفكيك الترجمة
                         translated_parts = translated.split("---")
                         for i, r in enumerate(web_results[:5], 1):
-                            title_text = r.get("title", "")
+                            title_text = _quick_clean_text(r.get("title", ""))
                             snippet = r.get("snippet", "")
                             link = r.get("link", "")
                             
@@ -579,31 +579,31 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                 part = translated_parts[i-1]
                                 # استخراج العنوان والمقتطف المترجم
                                 trans_title = title_text
-                                trans_snippet = snippet[:200]
+                                trans_snippet = _quick_clean_text(_strip_non_telegram_html(snippet))[:200]
                                 for line in part.strip().split("\n"):
                                     line = line.strip()
                                     if line.upper().startswith("TITLE:"):
-                                        trans_title = line[6:].strip()
+                                        trans_title = _quick_clean_text(line[6:].strip())
                                     elif line.upper().startswith("SNIPPET:"):
-                                        trans_snippet = line[8:].strip()
+                                        trans_snippet = _quick_clean_text(_strip_non_telegram_html(line[8:].strip()))[:200]
                                 title_text = trans_title
                                 snippet = trans_snippet
                             
                             message += f"{i}. 📄 <b>{title_text}</b>\n"
                             if snippet:
-                                message += f"   {snippet[:200]}\n"
+                                message += f"   {snippet}\n"
                             if link:
                                 message += f'   🔗 <a href="{link}">اقرأ المزيد</a>\n'
                             message += "\n"
                     else:
                         # fallback: عرض النتائج بدون ترجمة
                         for i, r in enumerate(web_results[:5], 1):
-                            title_text = r.get("title", "")
-                            snippet = r.get("snippet", "")
+                            title_text = _quick_clean_text(r.get("title", ""))
+                            snippet = _quick_clean_text(_strip_non_telegram_html(r.get("snippet", "")))[:200]
                             link = r.get("link", "")
                             message += f"{i}. 📄 <b>{title_text}</b>\n"
                             if snippet:
-                                message += f"   {snippet[:200]}\n"
+                                message += f"   {snippet}\n"
                             if link:
                                 message += f'   🔗 <a href="{link}">اقرأ المزيد</a>\n'
                             message += "\n"
@@ -611,24 +611,24 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     logger.warning(f"⚠️ Translation of search results failed: {e}")
                     # fallback: عرض بدون ترجمة
                     for i, r in enumerate(web_results[:5], 1):
-                        title_text = r.get("title", "")
-                        snippet = r.get("snippet", "")
+                        title_text = _quick_clean_text(r.get("title", ""))
+                        snippet = _quick_clean_text(_strip_non_telegram_html(r.get("snippet", "")))[:200]
                         link = r.get("link", "")
                         message += f"{i}. 📄 <b>{title_text}</b>\n"
                         if snippet:
-                            message += f"   {snippet[:200]}\n"
+                            message += f"   {snippet}\n"
                         if link:
                             message += f'   🔗 <a href="{link}">اقرأ المزيد</a>\n'
                         message += "\n"
             else:
                 # English: عرض النتائج كما هي
                 for i, r in enumerate(web_results[:5], 1):
-                    title_text = r.get("title", "")
-                    snippet = r.get("snippet", "")
+                    title_text = _quick_clean_text(r.get("title", ""))
+                    snippet = _quick_clean_text(_strip_non_telegram_html(r.get("snippet", "")))[:200]
                     link = r.get("link", "")
                     message += f"{i}. 📄 <b>{title_text}</b>\n"
                     if snippet:
-                        message += f"   {snippet[:200]}\n"
+                        message += f"   {snippet}\n"
                     if link:
                         message += f'   🔗 <a href="{link}">Read more</a>\n'
                     message += "\n"
@@ -675,7 +675,7 @@ async def _send_news_callback(query, context, lang):
     try:
         articles = await fetch_news()
         if not articles:
-            await loading_msg.edit_text("لا توجد أخبار AI جديدة حالياً. 🤖" if lang == "ar" else "No new AI news right now. 🤖")
+            await loading_msg.edit_text("لا توجد أخبار AI جديدة حاليًا. 🤖" if lang == "ar" else "No new AI news right now. 🤖")
             return
 
         await loading_msg.edit_text(
@@ -749,7 +749,7 @@ async def _send_trending_callback(query, context, lang):
         filtered = filter_news(articles)
 
         if not filtered:
-            await loading_msg.edit_text("لا توجد ترندات حالياً. 🤖" if lang == "ar" else "No trending topics right now. 🤖")
+            await loading_msg.edit_text("لا توجد ترندات حاليًا. 🤖" if lang == "ar" else "No trending topics right now. 🤖")
             return
 
         from collections import Counter
@@ -768,7 +768,7 @@ async def _send_trending_callback(query, context, lang):
         top_trends = keyword_counter.most_common(10)
 
         if not top_trends:
-            await loading_msg.edit_text("لا توجد ترندات حالياً. 🤖" if lang == "ar" else "No trending topics right now. 🤖")
+            await loading_msg.edit_text("لا توجد ترندات حاليًا. 🤖" if lang == "ar" else "No trending topics right now. 🤖")
             return
 
         if lang == "ar":

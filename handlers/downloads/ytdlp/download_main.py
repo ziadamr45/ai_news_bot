@@ -625,7 +625,7 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
             last_error = first_error
             logger.warning(f"⚠️ yt-dlp first attempt failed (default+deno): {first_error}")
             
-            # 🔴 لو YouTube حجبنا (bot detection) — حدث yt-dlp فوراً
+            # 🔴 لو YouTube حجبنا (bot detection) — حدث yt-dlp فورًا
             if any(kw in err_str for kw in ["sign in", "bot", "captcha", "confirm", "login", "403"]):
                 logger.warning("🔴 YouTube bot detection detected! Triggering yt-dlp update...")
                 trigger_ytdlp_update()
@@ -684,7 +684,7 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                                 last_error = po_err_a
                             
                             # ═══ محاولة B: PO Token بس (بدون remote_components) ═══
-                            # أحياناً remote_components بتتعارض مع PO Token
+                            # أحيانًا remote_components بتتعارض مع PO Token
                             if info is None:
                                 logger.info("🔑 Trying PO Token without remote_components...")
                                 po_opts_b = _get_ydl_opts(quality, output_template, platform, player_client_idx=0)
@@ -1149,7 +1149,7 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                                 )
                         except Exception as send_err:
                             logger.warning(f"⚠️ Invidious video send failed (likely too large): {send_err}")
-                            # 🔴 لو الملف كبير → رفع على Supabase فوراً
+                            # 🔴 لو الملف كبير → رفع على Supabase فورًا
                             try:
                                 from supabase_storage import upload_and_get_link
                                 cloud_msg = await upload_and_get_link(
@@ -1291,7 +1291,7 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                                 )
                         except Exception as send_err:
                             if "too large" in str(send_err).lower() or "file is too big" in str(send_err).lower():
-                                # 🔴 لو الملف كبير → رفع على Supabase فوراً
+                                # 🔴 لو الملف كبير → رفع على Supabase فورًا
                                 try:
                                     from supabase_storage import upload_and_get_link
                                     cloud_msg = await upload_and_get_link(
@@ -1472,7 +1472,7 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                             except Exception as send_err:
                                 logger.warning(f"⚠️ Cobalt JWT video send failed: {send_err}")
                                 if "too large" in str(send_err).lower() or "file is too big" in str(send_err).lower():
-                                    # 🔴 لو الملف كبير → رفع على Supabase فوراً
+                                    # 🔴 لو الملف كبير → رفع على Supabase فورًا
                                     try:
                                         from supabase_storage import upload_and_get_link
                                         cloud_msg = await upload_and_get_link(
@@ -1712,7 +1712,7 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
         #
         # 🔴 المسار الجديد (بدون تجربة جودة أقل — على طول السحابة):
         # 1. لو الملف > 2GB → جودة أقل (الاستثناء الوحيد)
-        # 2. لو الملف > 50MB → رفع على Supabase فوراً + بعت رابط
+        # 2. لو الملف > 50MB → رفع على Supabase فورًا + بعت رابط
         # 3. لو الملف <= 50MB → إرسال مباشر
         # 4. لو الإرسال المباشر فشل → نحاول كـ document → Supabase
         #
@@ -1732,7 +1732,7 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                 return await _download_with_ytdlp(update_or_query, url, lower_quality, lang, user_id, status_msg=None)
             else:
                 if lang == "ar":
-                    await status_msg.edit_text(f"❌ الملف كبير جداً ({filesize // (1024*1024)}MB). الحد الأقصى 2GB.\n💡 جرب تحميل صوت أقل جودة.")
+                    await status_msg.edit_text(f"❌ الملف كبير جدًا ({filesize // (1024*1024)}MB). الحد الأقصى 2GB.\n💡 جرب تحميل صوت أقل جودة.")
                 else:
                     await status_msg.edit_text(f"❌ File too large ({filesize // (1024*1024)}MB). Maximum is 2GB.\n💡 Try downloading lower quality audio.")
                 return
@@ -1762,7 +1762,7 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
         title = info.get("title", filename) if info else filename
         duration = info.get("duration", 0) if info else 0
         
-        # 🔴 FIX v5: لو الجودة صوت، نتأكد إن الملف فعلاً صوت بس
+        # 🔴 FIX v5: لو الجودة صوت، نتأكد إن الملف فعلًا صوت بس
         # بعض طرق التحميل بترجع فيديو حتى لو طلبنا صوت
         if _is_audio_quality(quality):
             bitrate = _get_audio_bitrate(quality)
@@ -1812,7 +1812,7 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                 send_failed = True
                 # 🔴 FIX: نفرق بين "ملف كبير" و "خطأ تاني"
                 err_str = str(send_err).lower()
-                # 🔴 FIX: نقول "كبير" بس لو فعلاً عدى الحد
+                # 🔴 FIX: نقول "كبير" بس لو فعلًا عدى الحد
                 file_exceeds_limit = filesize > TELEGRAM_MAX_FREE  # 50MB — ده الحد الحقيقي للبوت المجاني
                 is_too_large = file_exceeds_limit and any(kw in err_str for kw in ["too large", "file is too big", "file too large", "exceeds", "413"])
                 logger.warning(f"⚠️ Video send failed: {send_err} | is_too_large={is_too_large} | file_size={filesize}")

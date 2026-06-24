@@ -1,7 +1,7 @@
 """
 YouTube RapidAPI Downloader Module
 تحميل فيديوهات YouTube عبر RapidAPI بدل yt-dlp
-يُستخدم من التليجرام والواتساب معاً
+يُستخدم من التليجرام والواتساب معًا
 
 الميزات:
 - تحميل فيديو بجودات مختلفة (360p, 720p, 1080p)
@@ -225,7 +225,7 @@ def download_youtube(url: str, format: str = "720") -> Optional[Dict]:
             return {
                 "success": False,
                 "error": "server_error",
-                "message": "الخدمة مش متاحة حالياً. جرب تاني بعد شوية.",
+                "message": "الخدمة مش متاحة حاليًا. جرب تاني بعد شوية.",
             }
         elif init_response.status_code != 200:
             logger.error(f"🔴 YouTube RapidAPI: Unexpected status {init_response.status_code}, body={init_response.text[:500]}")
@@ -540,7 +540,7 @@ def get_error_message(error_code: str, lang: str = "ar") -> str:
             "unauthorized": "❌ مفتاح API مش صالح. تواصل مع الدعم @ziadamr",
             "forbidden": "❌ مش مصرح لك. ممكن الاشتراك خلص.",
             "rate_limited": "❌ خلصت حدود التحميل لهذا الشهر. جرب الشهر الجاي.",
-            "server_error": "❌ الخدمة مش متاحة حالياً. جرب تاني بعد شوية.",
+            "server_error": "❌ الخدمة مش متاحة حاليًا. جرب تاني بعد شوية.",
             "timeout": "❌ التحميل أخد وقت طويل أوي. جرب تاني.",
             "connection_error": "❌ مش قادر أوصل بالخدمة. جرب تاني.",
             "download_failed": "❌ فشل تحميل الملف. جرب تاني.",

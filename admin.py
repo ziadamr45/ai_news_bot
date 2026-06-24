@@ -125,7 +125,7 @@ except (ValueError, TypeError):
     pass
 
 # 🔴 FIX: إضافة developer ID كـ fallback عشان لو CHAT_ID مش موجود
-# الـ developer لازم يكون أدمن دايماً
+# الـ developer لازم يكون أدمن دايمًا
 try:
     from config import DEVELOPER_USER_ID
     if DEVELOPER_USER_ID:
@@ -231,8 +231,8 @@ def _remove_admin_from_db(user_id: int):
 
 def ensure_admin_premium(user_id: int):
     """
-    التأكد إن الأدمن دايماً Premium
-    يتضاف تلقائياً لو مش Premium
+    التأكد إن الأدمن دايمًا Premium
+    يتضاف تلقائيًا لو مش Premium
     
     🔴 محسن: بيستخدم cache عشان ميعملش DB query مع كل رسالة
     الـ cache بيتجدد كل 5 دقايق بس
@@ -404,7 +404,7 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=keyboard
     )
 
-    # 🔴 FIX: إعادة إرسال الواجهة (ReplyKeyboard) للأدمن عشان التليجرام بيخفيها أحياناً
+    # 🔴 FIX: إعادة إرسال الواجهة (ReplyKeyboard) للأدمن عشان التليجرام بيخفيها أحيانًا
     from handlers.keyboards import get_main_keyboard
     from memory import get_language
     admin_lang = get_language(user_id)
@@ -457,7 +457,7 @@ async def grant_premium_command(update: Update, context: ContextTypes.DEFAULT_TY
         )
         return
 
-    # 🔴 فحص كلمة force — عشان تجديد Premium للمستخدم اللي أصلاً Premium
+    # 🔴 فحص كلمة force — عشان تجديد Premium للمستخدم اللي أصلًا Premium
     force_renew = False
     if args[0].lower() == "force":
         force_renew = True
@@ -518,7 +518,7 @@ async def grant_premium_command(update: Update, context: ContextTypes.DEFAULT_TY
 
         _ensure_user_in_db(target_id)
         
-        # 🔴 فحص هل المستخدم أصلاً Premium
+        # 🔴 فحص هل المستخدم أصلًا Premium
         current_info = get_premium_info(target_id)
         
         # محاولة جلب اسم المستخدم
@@ -533,14 +533,14 @@ async def grant_premium_command(update: Update, context: ContextTypes.DEFAULT_TY
         name_display = f" ({target_name})" if target_name else ""
 
         if current_info["is_premium"] and not force_renew:
-            # المستخدم أصلاً Premium — نقول للأدمن ونعرض معلوماته
+            # المستخدم أصلًا Premium — نقول للأدمن ونعرض معلوماته
             current_expires = current_info["expires_display"]
             current_since = current_info["premium_since"][:10] if current_info["premium_since"] else "مش محدد"
             
             # 🔴 هل المدة الجديدة أطول من الحالية؟ لو آه → تجديد
-            # لو لأ → نقول للأدمن إنه أصلاً Premium
+            # لو لأ → نقول للأدمن إنه أصلًا Premium
             await update.message.reply_text(
-                f"⚠️ <b>المستخدم ده أصلاً Premium!</b>\n\n"
+                f"⚠️ <b>المستخدم ده أصلًا Premium!</b>\n\n"
                 f"👤 المستخدم: <code>{target_id}</code>{name_display}\n"
                 f"⭐ الخطة الحالية: Premium\n"
                 f"📅 مفعل من: {current_since}\n"
@@ -652,7 +652,7 @@ async def revoke_premium_command(update: Update, context: ContextTypes.DEFAULT_T
 
         current_info = get_premium_info(target_id)
         
-        # 🔴 فحص هل المستخدم أصلاً مش Premium
+        # 🔴 فحص هل المستخدم أصلًا مش Premium
         if not current_info["is_premium"]:
             # محاولة جلب اسم المستخدم
             try:
@@ -665,7 +665,7 @@ async def revoke_premium_command(update: Update, context: ContextTypes.DEFAULT_T
             name_display = f" ({target_name})" if target_name else ""
             
             await update.message.reply_text(
-                f"⚠️ <b>المستخدم ده أصلاً مش Premium!</b>\n\n"
+                f"⚠️ <b>المستخدم ده أصلًا مش Premium!</b>\n\n"
                 f"👤 المستخدم: <code>{target_id}</code>{name_display}\n"
                 f"📊 الخطة الحالية: Free\n\n"
                 f"مفيش حاجة تتشيل — المستخدم على الخطه المجانيه بالفعل.",
@@ -867,7 +867,7 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     subscribers = get_all_subscribers()
 
     if not subscribers:
-        await update.message.reply_text("❌ مفيش مشتركين حالياً.")
+        await update.message.reply_text("❌ مفيش مشتركين حاليًا.")
         return
 
     # تأكيد
@@ -1166,7 +1166,7 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
                 if len(rows) > 30:
                     text += f"\n... و{len(rows) - 30} تانيين"
             else:
-                text = "⭐ مفيش مشتركي Premium حالياً"
+                text = "⭐ مفيش مشتركي Premium حاليًا"
 
             keyboard = InlineKeyboardMarkup([
                 [InlineKeyboardButton("🔙 رجوع", callback_data="admin_refresh")],
@@ -1190,7 +1190,7 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
                 if len(subscribers) > 30:
                     text += f"\n... و{len(subscribers) - 30} تانيين"
             else:
-                text = "👥 مفيش مشتركين حالياً"
+                text = "👥 مفيش مشتركين حاليًا"
 
             keyboard = InlineKeyboardMarkup([
                 [InlineKeyboardButton("🔙 رجوع", callback_data="admin_refresh")],
@@ -1484,7 +1484,7 @@ async def warn_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args or []
     if not args:
         await update.message.reply_text(
-            "⚠️ <b>تحذير مستخدم</b>\n\nالاستخدام: <code>/warn user_id [السبب]</code>\nبعد 3 تحذيرات يتم الحظر تلقائياً",
+            "⚠️ <b>تحذير مستخدم</b>\n\nالاستخدام: <code>/warn user_id [السبب]</code>\nبعد 3 تحذيرات يتم الحظر تلقائيًا",
             parse_mode="HTML"
         )
         return
@@ -1502,12 +1502,12 @@ async def warn_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if count >= 3:
         ban_user(target_id, reason="حظر تلقائي بعد 3 تحذيرات", banned_by=f"admin_{user_id}")
         await update.message.reply_text(
-            f"🚫 <b>تم الحظر تلقائياً!</b>\n\n👤 ID: <code>{target_id}</code>\n⚠️ وصل 3 تحذيرات\n📝 آخر سبب: {reason}",
+            f"🚫 <b>تم الحظر تلقائيًا!</b>\n\n👤 ID: <code>{target_id}</code>\n⚠️ وصل 3 تحذيرات\n📝 آخر سبب: {reason}",
             parse_mode="HTML"
         )
     else:
         await update.message.reply_text(
-            f"⚠️ <b>تحذير {count}/3</b>\n\n👤 ID: <code>{target_id}</code>\n📝 السبب: {reason}\n💡 بعد 3 تحذيرات يتم الحظر تلقائياً",
+            f"⚠️ <b>تحذير {count}/3</b>\n\n👤 ID: <code>{target_id}</code>\n📝 السبب: {reason}\n💡 بعد 3 تحذيرات يتم الحظر تلقائيًا",
             parse_mode="HTML"
         )
 
@@ -1525,7 +1525,7 @@ async def allusers_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         fetch=True
     )
     if not rows:
-        await update.message.reply_text("👥 مفيش مستخدمين حالياً.")
+        await update.message.reply_text("👥 مفيش مستخدمين حاليًا.")
         return
     text = "👥 <b>كل المستخدمين</b>\n━━━━━━━━━━━━━━━━━\n\n"
     for i, r in enumerate(rows, 1):
@@ -1642,7 +1642,7 @@ async def addadmin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "👑 <b>إضافة أدمن جديد</b>\n\n"
             "الاستخدام: <code>/addadmin user_id</code>\n"
             "مثال: <code>/addadmin 123456789</code>\n\n"
-            "⚠️ الأدمن الجديد هيكون ليه نفس صلاحياتك تقريباً (ما عدا إنه يشيلك)",
+            "⚠️ الأدمن الجديد هيكون ليه نفس صلاحياتك تقريبًا (ما عدا إنه يشيلك)",
             parse_mode="HTML"
         )
         return
@@ -1655,7 +1655,7 @@ async def addadmin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # منع إضافة أدمن موجود
     if is_admin(target_id):
-        await update.message.reply_text("⚠️ المستخدم ده أدمن فعلاً!")
+        await update.message.reply_text("⚠️ المستخدم ده أدمن فعلًا!")
         return
 
     # إضافة الأدمن
@@ -1680,7 +1680,7 @@ async def addadmin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"✅ <b>تم إضافة أدمن جديد!</b>\n\n"
         f"👤 المستخدم: <code>{target_id}</code>{name_display}\n"
         f"👑 الدور: Admin\n"
-        f"⭐ Premium: مفعّل تلقائياً\n"
+        f"⭐ Premium: مفعّل تلقائيًا\n"
         f"🔑 أُضيف بواسطة: @{username or 'owner'}",
         parse_mode="HTML"
     )
@@ -1739,7 +1739,7 @@ async def removeadmin_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
     if not is_admin(target_id):
-        await update.message.reply_text("⚠️ المستخدم ده مش أدمن أصلاً!")
+        await update.message.reply_text("⚠️ المستخدم ده مش أدمن أصلًا!")
         return
 
     # منع شيل نفسك

@@ -294,7 +294,7 @@ async def _analyze_document(media_id: str, caption: str = "", wa_user_id: int = 
         ext = filename.lower().split('.')[-1] if '.' in filename else "pdf"
         supported_exts = ["pdf", "docx", "doc", "txt", "md", "csv", "json", "py", "js", "html", "css", "xml", "log"]
         if ext not in supported_exts:
-            return f"❌ نوع الملف '.{ext}' مش مدعوم حالياً.\n\nالأنواع المدعومة: PDF, Word (docx), TXT, MD, CSV, JSON\n\n💡 ابعت ملف من الأنواع دي وهحللهولك!"
+            return f"❌ نوع الملف '.{ext}' مش مدعوم حاليًا.\n\nالأنواع المدعومة: PDF, Word (docx), TXT, MD, CSV, JSON\n\n💡 ابعت ملف من الأنواع دي وهحللهولك!"
 
         # Use PDFAgent for extraction (same as Telegram)
         from agents.pdf_agent import PDFAgent
@@ -394,7 +394,7 @@ async def _execute_photo_search(wa_id: str, query: str, count: int, wa_user_id: 
         from image_search import search_images, download_image_bytes
         
         # 🔴 FIX: بنبحث عن عدد أكبر عشان نوفر بدائل لو فشل تحميل بعض الصور
-        # search_images داخلياً بيزود count * 3 في DuckDuckGo
+        # search_images داخليًا بيزود count * 3 في DuckDuckGo
         results = await search_images(query, count=count)
         
         if not results:
@@ -424,7 +424,7 @@ async def _execute_photo_search(wa_id: str, query: str, count: int, wa_user_id: 
             if not url:
                 continue
             
-            # 🔴 محاولة تحميل الصورة الكاملة أولاً
+            # 🔴 محاولة تحميل الصورة الكاملة أولًا
             img_bytes = await download_image_bytes(url)
             
             # 🔴 FIX: لو الصورة الكاملة فشلت، جرب الـ thumbnail كبديل
