@@ -233,7 +233,7 @@ def _create_postgresql_tables(conn):
         cur.execute("CREATE INDEX IF NOT EXISTS idx_learning_user ON learning_progress(user_id);")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_favorites_user ON favorites(user_id, category);")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_memories_user ON user_memories(user_id, category);")
-        # ✅ فهرس لرقم واتساب — مهم جداً لـ find_user_by_wa_phone() و lookup السريع
+        # ✅ فهرس لرقم واتساب — مهم جدًا لـ find_user_by_wa_phone() و lookup السريع
         cur.execute("CREATE INDEX IF NOT EXISTS idx_user_profiles_wa_phone ON user_profiles(wa_phone);")
         cur.close()
         return True
@@ -433,7 +433,7 @@ def _init_sqlite():
 def init_database():
     """إنشاء جداول قاعدة البيانات"""
     logger.info("═══ Initializing Database ═══")
-    # محاولة PostgreSQL أولاً
+    # محاولة PostgreSQL أولًا
     if not _init_postgresql():
         # Fallback لـ SQLite
         logger.warning("⚠️⚠️⚠️ PostgreSQL FAILED! Falling back to SQLite!")
@@ -697,7 +697,7 @@ def _ensure_user_in_db(user_id: int, platform: str = "telegram"):
         # وكمان get_subscribers_for_time() مش تبعت الأخبار اليومية للمستخدم
         #
         # الحل: لو الـ platform الجديد مش 'telegram' (يعني أكتر تحديد)، نصحح القديم
-        # مثلاً: 'telegram' → 'whatsapp' ✅
+        # مثلًا: 'telegram' → 'whatsapp' ✅
         # بس: 'whatsapp' → 'telegram' ❌ (ممنوع نرجع لـ default)
         ph = "%s" if _is_postgres() else "?"
         if platform and platform != 'telegram':
@@ -717,7 +717,7 @@ def _ensure_user_in_db(user_id: int, platform: str = "telegram"):
 def find_user_by_wa_phone(phone: str) -> Optional[int]:
     """البحث عن مستخدم واتساب برقم التليفون بدل الـ user_id
     
-    ⚠️ مهم جداً: لأن Python's hash() مش deterministic عبر الريستارتات،
+    ⚠️ مهم جدًا: لأن Python's hash() مش deterministic عبر الريستارتات،
     ممكن نفس الرقم ينتج user_id مختلف بعد كل ريستارت.
     الدالة دي بتدور في قاعدة البيانات على wa_phone وترجع الـ user_id الصح.
     
@@ -937,7 +937,7 @@ def subscribe_user(user_id: int):
     
     🔴 BUG FIX: كان بيستخدم update_user() اللي بتستدعي _ensure_user_in_db() 
     بدون platform، وده ممكن يسبب مشاكل. دلوقتي بنعمل UPDATE مباشر.
-    كمان بنعمل verification إن الـ UPDATE فعلاً اتعمل.
+    كمان بنعمل verification إن الـ UPDATE فعلًا اتعمل.
     """
     _ensure_user_in_db(user_id)
     ph = "%s" if _is_postgres() else "?"
@@ -947,7 +947,7 @@ def subscribe_user(user_id: int):
         (now, user_id)
     )
     _cache_invalidate(f"user_{user_id}")
-    # ✅ Verification: نتأكد إن الاشتراك اتحفظ فعلاً
+    # ✅ Verification: نتأكد إن الاشتراك اتحفظ فعلًا
     row = _execute(
         f"SELECT subscribed FROM user_profiles WHERE user_id = {ph}",
         (user_id,), fetchone=True
@@ -1291,7 +1291,7 @@ def get_favorite_companies(user_id: int) -> List[str]:
 
 
 # ═══════════════════════════════════════
-# كشف الاهتمامات تلقائياً - Auto-Detect Interests
+# كشف الاهتمامات تلقائيًا - Auto-Detect Interests
 # ═══════════════════════════════════════
 
 INTEREST_KEYWORDS = {
@@ -1333,7 +1333,7 @@ COMPANY_KEYWORDS = {
 
 
 def detect_interests(user_id: int, text: str):
-    """كشف وحفظ الاهتمامات تلقائياً من نص المستخدم"""
+    """كشف وحفظ الاهتمامات تلقائيًا من نص المستخدم"""
     text_lower = text.lower()
     for keyword, interest in INTEREST_KEYWORDS.items():
         if keyword in text_lower:
@@ -1540,7 +1540,7 @@ def format_progress_display(user_id: int, lang: str = "ar") -> str:
                 text += "\n"
 
             if learning_in_progress:
-                text += f"📖 <b>بتتعلم حالياً ({len(learning_in_progress)}):</b>\n"
+                text += f"📖 <b>بتتعلم حاليًا ({len(learning_in_progress)}):</b>\n"
                 for l in learning_in_progress[:10]:
                     text += f"  • {l['topic']}\n"
                 text += "\n"
@@ -1670,7 +1670,7 @@ PREFERENCE_PATTERNS_EN = [
     "i need", "my preference", "i enjoy", "i'm into",
 ]
 
-# بيانات حساسة لا يتم حفظها أبداً
+# بيانات حساسة لا يتم حفظها أبدًا
 SENSITIVE_PATTERNS = [
     "password", "كلمة سر", "باسورد", "pin", "رمز سري",
     "api key", "مفتاح", "token", "توكين",
@@ -1706,7 +1706,7 @@ def smart_save(user_id: int, text: str, role: str = "user"):
     حفظ ذكي - بيحفظ بس المهم والحساس
     - بيتجنب البيانات الحساسة
     - بيفحص تفضيلات المستخدم
-    - بيحفظ الاهتمامات تلقائياً
+    - بيحفظ الاهتمامات تلقائيًا
     """
     if is_sensitive(text):
         logger.debug(f"Skipping sensitive content for user {user_id}")
@@ -1735,9 +1735,9 @@ def get_personalized_greeting(user_id: int, lang: str = "ar") -> str:
 
     if lang == "ar":
         if name:
-            greeting = f"أهلاً {name}! 👋"
+            greeting = f"أهلًا {name}! 👋"
         else:
-            greeting = "أهلاً! 👋"
+            greeting = "أهلًا! 👋"
 
         if interests:
             top_interest = interests[0] if interests else ""

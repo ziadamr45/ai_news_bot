@@ -145,7 +145,7 @@ async def _show_quality_selection_for_search(wa_id: str, url: str, title: str,
                 {"id": f"dl_aq_320_{url_key}", "title": "🎧 320kbps", "description": "أعلى جودة صوت - وضوح ممتاز"},
                 {"id": f"dl_aq_192_{url_key}", "title": "🎵 192kbps", "description": "جودة عالية - توازن مثالي"},
                 {"id": f"dl_aq_128_{url_key}", "title": "🎶 128kbps", "description": "جودة متوسطة - حجم أقل"},
-                {"id": f"dl_aq_64_{url_key}", "title": "📻 64kbps", "description": "جودة منخفضة - حجم صغير جداً"},
+                {"id": f"dl_aq_64_{url_key}", "title": "📻 64kbps", "description": "جودة منخفضة - حجم صغير جدًا"},
             ],
         }]
     else:
@@ -184,7 +184,7 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
     4. yt-dlp player_client fallback (android → ios → mweb → tv → web) + كوكيز
     5. 🟠 Cobalt API
     6. 🔵 Apify
-    7. 🔄 yt-dlp WITHOUT cookies (أحياناً الكوكيز بتسبب مشاكل!) — جديد!
+    7. 🔄 yt-dlp WITHOUT cookies (أحيانًا الكوكيز بتسبب مشاكل!) — جديد!
     8. 🟢 Piped API (fallback إضافي)
     9. 🟣 Invidious API (fallback إضافي)
     10. 🔵 Cobalt Self-Hosted — جديد!
@@ -961,7 +961,7 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
             except Exception as e:
                 last_error = e
                 logger.warning(f"⚠️ yt-dlp direct download failed: {e}")
-                # 🔴 لو YouTube حجبنا — حدث yt-dlp فوراً
+                # 🔴 لو YouTube حجبنا — حدث yt-dlp فورًا
                 err_str = str(e).lower()
                 if any(kw in err_str for kw in ["sign in", "bot", "captcha", "confirm", "login", "403"]):
                     logger.warning("🔴 YouTube bot detection in WA! Triggering yt-dlp update...")
@@ -1180,7 +1180,7 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                     except Exception as e2:
                         last_error = e2
                         logger.warning(f"⚠️ yt-dlp {pc} client failed: {e2}")
-                        # 🔴 لو bot detection — حدث yt-dlp فوراً
+                        # 🔴 لو bot detection — حدث yt-dlp فورًا
                         err_str2 = str(e2).lower()
                         if any(kw in err_str2 for kw in ["sign in", "bot", "captcha", "confirm", "login", "403"]):
                             try:
@@ -1505,7 +1505,7 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
                     logger.warning(f"⚠️ Apify error: {apify_err}, trying yt-dlp without cookies...")
             
             # ═══ المرحلة 4.5: yt-dlp WITHOUT cookies (زي التليجرام بالظبط!) ═══
-            # 🔴 أحياناً الكوكيز نفسها بتسبب مشاكل (expired/invalid) → نجرب بدونها
+            # 🔴 أحيانًا الكوكيز نفسها بتسبب مشاكل (expired/invalid) → نجرب بدونها
             # 🔴 FIX: زي التليجرام — بنشيل الكوكيز بس، مش remote_components
             if info is None and is_youtube:
                 logger.info("🔄 WhatsApp: All methods failed (including Cobalt & Apify), trying WITHOUT cookies...")
@@ -1695,7 +1695,7 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
             # ═══ المرحلة 6: Piped API (تم تجربته فوق — هنا fallback إضافي) ═══
             # 🔴 نفس ترتيب التليجرام: Piped بعد Invidious
             # Piped = واجهة بديلة لليوتيوب مفتوحة المصدر — مختلفة عن Invidious
-            # بيستخدم NewPipe Extractor — أحياناً بيشتغل لما Invidious يبقى منطفي
+            # بيستخدم NewPipe Extractor — أحيانًا بيشتغل لما Invidious يبقى منطفي
             if info is None and is_youtube:
                 try:
                     from piped_api import download_youtube_piped_file

@@ -8,12 +8,12 @@ Media Search Handler 🔍🎬🎵🖼️
 - /photo <بحث> — بحث عن صور وتحميلها
 
 🔴 كيف بيشتغل:
-1. المستخدم يكتب /video قرآن كريم مثلاً
+1. المستخدم يكتب /video قرآن كريم مثلًا
 2. البوت بيبحث في Dailymotion ويعرض 5 نتائج كأزرار
 3. المستخدم يدوس على نتيجة ويتحمل الفيديو/الصوت
 
 🔴 تحميل الصور:
-1. المستخدم يكتب /photo مسجد مثلاً
+1. المستخدم يكتب /photo مسجد مثلًا
 2. البوت بيسأله: عايز كام صورة؟ وبيعرض أزرار (3 / 5 / 10 / 15)
 3. المستخدم يدوس على العدد ويتحملوا
 """
@@ -182,7 +182,7 @@ async def video_search_command(update: Update, context: ContextTypes.DEFAULT_TYP
     except ImportError:
         logger.error("❌ dailymotion_search module not available")
         await status_msg.edit_text(
-            "❌ ميزة البحث مش متاحة حالياً." if lang == "ar"
+            "❌ ميزة البحث مش متاحة حاليًا." if lang == "ar"
             else "❌ Search feature is currently unavailable."
         )
     except Exception as e:
@@ -419,7 +419,7 @@ async def _execute_photo_search(query_obj, query_text: str, count: int, lang: st
             await query_obj.edit_message_text(f"🖼️ Searching for {count} images: {query_text}...")
         
         # 🔴 FIX: بنبحث عن عدد أكبر عشان نوفر بدائل لو فشل تحميل بعض الصور
-        # search_images داخلياً بيزود count * 3 في DuckDuckGo
+        # search_images داخليًا بيزود count * 3 في DuckDuckGo
         results = await search_images(query_text, count=count)
         
         if not results:
@@ -458,7 +458,7 @@ async def _execute_photo_search(query_obj, query_text: str, count: int, lang: st
                 if not url:
                     continue
                 
-                # 🔴 محاولة تحميل الصورة الكاملة أولاً
+                # 🔴 محاولة تحميل الصورة الكاملة أولًا
                 file_path = await download_image(url, output_dir=tmpdir)
                 
                 # 🔴 FIX: لو الصورة الكاملة فشلت، جرب الـ thumbnail كبديل
@@ -554,7 +554,7 @@ async def _execute_photo_search(query_obj, query_text: str, count: int, lang: st
     except ImportError:
         logger.error("❌ image_search module not available")
         if lang == "ar":
-            await query_obj.edit_message_text("❌ ميزة البحث عن صور مش متاحة حالياً.")
+            await query_obj.edit_message_text("❌ ميزة البحث عن صور مش متاحة حاليًا.")
         else:
             await query_obj.edit_message_text("❌ Image search feature is currently unavailable.")
     except Exception as e:

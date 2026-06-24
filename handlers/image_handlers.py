@@ -2,7 +2,7 @@
 Image Generation & Editing Handlers
 🎨 /image — إنشاء صور من وصف نصي (بريميوم بس)
 🖌️ /edit — تعديل صورة بناءً على وصف نصي (بريميوم بس)
-🔴 FIX: ترجمة الوصف العربي تلقائياً للإنجليزية قبل الإرسال لنماذج الصور
+🔴 FIX: ترجمة الوصف العربي تلقائيًا للإنجليزية قبل الإرسال لنماذج الصور
    لأن نماذج الصور (SD 3.5, Flux) مش بتفهم عربي كويس
 """
 
@@ -74,7 +74,7 @@ English translation:"""
         )
         
         if translated and translated.strip():
-            # تنظيف الرد — أحياناً النموذج بيضيف حاجات زي "English translation:" أو علامات اقتباس
+            # تنظيف الرد — أحيانًا النموذج بيضيف حاجات زي "English translation:" أو علامات اقتباس
             translated = translated.strip()
             # شيل علامات اقتباس لو موجودة
             if translated.startswith('"') and translated.endswith('"'):
@@ -391,7 +391,7 @@ Two ways to use:
 
 
 async def handle_photo_edit(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """حفظ صورة المستخدم تلقائياً عشان يقدر يعدلها بعد كده بـ /edit
+    """حفظ صورة المستخدم تلقائيًا عشان يقدر يعدلها بعد كده بـ /edit
     
     الطريقة: لما المستخدم يبعت صورة مع caption فيه كلمة تعديل أو edit
     أو لما المستخدم يبعت صورة عادية — نحفظها في الكاش عشان يقدر يستخدمها مع /edit

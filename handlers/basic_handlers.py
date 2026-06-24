@@ -99,7 +99,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         is_user_admin = is_admin(user_id, update.effective_user.username)
 
         if lang == "ar":
-            msg = f"أهلاً تاني يا {user_name}! 👋\n\nأنا فاكرك طبعاً — اختار اللي عايزه من الأزرار أو اكتبلي أي حاجة! 🤖"
+            msg = f"أهلًا تاني يا {user_name}! 👋\n\nأنا فاكرك طبعًا — اختار اللي عايزه من الأزرار أو اكتبلي أي حاجة! 🤖"
             if is_user_admin:
                 msg += "\n👑 <i>أنت الأدمن — كل حاجة مفتوحة ليك!</i>"
             if not subscribed:
@@ -190,7 +190,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 {coding_routes}
 
 ━━━━━━━━━━━━━━━━━
-🤖 <i>النظام يبدل تلقائياً بين المزودين عند الفشل</i>"""
+🤖 <i>النظام يبدل تلقائيًا بين المزودين عند الفشل</i>"""
         else:
             message = f"""🔧 <b>Provider Status - {BOT_NAME} v{BOT_VERSION}</b>
 ━━━━━━━━━━━━━━━━━

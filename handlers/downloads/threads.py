@@ -486,7 +486,7 @@ async def _download_threads_media(url: str, tmpdir: str, quality: str = "best") 
                     html = await resp.text()
                     
                     # 🔴 FIX: حتى لو الـ redirect راح لصفحة error،
-                    # Threads بيبعت البيانات في الـ HTML أصلاً!
+                    # Threads بيبعت البيانات في الـ HTML أصلًا!
                     # صفحة error=? بتحتوي على الـ data-sjs scripts بالفيديو
                     # لازم نحاول parse في كل الحالات
                     

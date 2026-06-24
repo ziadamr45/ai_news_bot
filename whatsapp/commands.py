@@ -73,6 +73,222 @@ def _report_to_sentry(exc: Exception, wa_id: str = "", command: str = "", wa_use
         pass
 
 
+async def _wa_search_and_format(wa_id: str, query: str, wa_user_id: int, contact_name: str, message_id: str = ""):
+    """بحث موحد لواتساب — زي تليجرام بالظبط
+    
+    🔴 بيعمل:
+    1. بحث RSS في الأخبار المسبقة
+    2. بحث ويب حقيقي (Tavily + DuckDuckGo)
+    3. ترجمة النتائج الإنجليزي للعربي
+    4. Fallback لـ search_and_summarize لو مفيش نتائج
+    5. Fallback أخير لـ AI engine
+    
+    🔴 الروابط بتكون فعليه (مش HTML <a>) عشان واتساب مش بيدعمها
+    """
+    from whatsapp.api import ThinkingFeedback
+    
+    feedback = ThinkingFeedback(wa_id, message_id, context_type="search")
+    
+    try:
+        await feedback.start()
+        
+        # 🔴 بنبعتب رسالة إننا بنبحث عشان المستخدم يعرف إن فيه حاجة بتشتغل
+        await _send_whatsapp_message(wa_id, f"🔍 جاري البحث عن: {query}...")
+        
+        message = ""
+        
+        # ══════════════════════════════════════
+        # 1) أخبار RSS
+        # ══════════════════════════════════════
+        try:
+            from news_fetcher import fetch_news_sync
+            articles = fetch_news_sync()
+            if articles:
+                query_lower = query.lower()
+                rss_results = []
+                for article in articles:
+                    title_text = article.get("title", "").lower()
+                    desc = article.get("description", "").lower()
+                    # 🔴 FIX: بحث أوسع — بنشوف كلمات الاستعلام في العنوان أو الوصف
+                    query_words = query_lower.split()
+                    if any(w in title_text or w in desc for w in query_words if len(w) > 2):
+                        rss_results.append(article)
+                    elif query_lower in title_text or query_lower in desc:
+                        rss_results.append(article)
+                
+                if rss_results:
+                    message += f"📰 *أخبار RSS عن: {query}*\n━━━━━━━━━━━━━━━━━\n\n"
+                    for i, article in enumerate(rss_results[:5], 1):
+                        title = article.get("arabic_title", "") or article.get("title", "")
+                        summary = article.get("arabic_summary", "") or article.get("description", "") or ""
+                        link = article.get("link", "")
+                        badge = "🔥" if i == 1 else "⚪️"
+                        # تنظيف النص
+                        from formatters import _quick_clean_text
+                        title = _quick_clean_text(title)
+                        summary = _quick_clean_text(summary)[:200]
+                        message += f"{badge} *{title}*\n"
+                        if summary:
+                            message += f"{summary}\n"
+                        if link:
+                            # 🔴 واتساب: الرابط الفعلي مباشرة (مش HTML <a>)
+                            message += f"🔗 {link}\n"
+                        message += "\n"
+        except Exception as e:
+            logger.warning(f"⚠️ WA search RSS failed: {e}")
+        
+        # ══════════════════════════════════════
+        # 2) نتائج بحث الويب
+        # ══════════════════════════════════════
+        web_results = []
+        try:
+            from web_search import search_web
+            from formatters import _quick_clean_text
+            web_results = await search_web(query, max_results=5, language="ar")
+            
+            if web_results:
+                message += f"🌐 *نتائج بحث الويب: {query}*\n━━━━━━━━━━━━━━━━━\n\n"
+                
+                # 🔴 FIX: ترجمة العناوين والمقتطفات الإنجليزي للعربي (زي تليجرام)
+                translated_web = web_results
+                try:
+                    # نجرب نترجم لو فيه نتائج إنجليزي
+                    texts_to_translate = []
+                    for r in web_results[:5]:
+                        t = r.get("title", "")
+                        s = r.get("snippet", "")[:150]
+                        texts_to_translate.append(f"TITLE: {t}\nSNIPPET: {s}")
+                    
+                    combined = "\n---\n".join(texts_to_translate)
+                    from provider_manager import call_ai
+                    translation = await call_ai(
+                        f"""ترجم العناوين والمقتطفات التالية من الإنجليزية للعربية (عربية فصحى واضحة).
+⚠️ حافظ على التنسيق: TITLE: [العنوان المترجم] SNIPPET: [المقتطف المترجم]
+⚠️ أسماء العلم والشركات سيبها بالإنجليزي زي ما هي
+
+{combined}""",
+                        system_prompt="أنت مترجم محترف من الإنجليزية للعربية. تترجم بدقة ووضوح. ماتستخدمش Markdown.",
+                        task_type="simple",
+                        temperature=0.2,
+                        max_tokens=8192,
+                        user_id=wa_user_id,
+                    )
+                    
+                    if translation:
+                        translated_parts = translation.split("---")
+                        translated_web = []
+                        for i, r in enumerate(web_results[:5]):
+                            new_r = dict(r)
+                            if i < len(translated_parts):
+                                part = translated_parts[i].strip()
+                                for line in part.split("\n"):
+                                    line = line.strip()
+                                    if line.upper().startswith("TITLE:"):
+                                        new_r["title"] = _quick_clean_text(line[6:].strip())
+                                    elif line.upper().startswith("SNIPPET:"):
+                                        new_r["snippet"] = _quick_clean_text(line[8:].strip())[:200]
+                            translated_web.append(new_r)
+                except Exception as e:
+                    logger.warning(f"⚠️ WA search translation failed, using original: {e}")
+                    translated_web = web_results
+                
+                # عرض النتائج
+                for i, r in enumerate(translated_web[:5], 1):
+                    title = _quick_clean_text(r.get("title", ""))
+                    snippet = _quick_clean_text(r.get("snippet", ""))[:200]
+                    link = r.get("link", "")
+                    message += f"{i}. 📄 *{title}*\n"
+                    if snippet:
+                        message += f"   {snippet}\n"
+                    if link:
+                        # 🔴 واتساب: الرابط الفعلي مباشرة (مش HTML <a>)
+                        message += f"   🔗 {link}\n"
+                    message += "\n"
+        except Exception as e:
+            logger.warning(f"⚠️ WA search web failed: {e}")
+        
+        # ══════════════════════════════════════
+        # 3) لو مفيش نتائج خالص، نجرب search_and_summarize
+        # ══════════════════════════════════════
+        if not message.strip():
+            try:
+                from web_search import search_and_summarize_async
+                search_result = await search_and_summarize_async(query, language="ar", user_id=wa_user_id)
+                if search_result:
+                    from formatters import clean_ai_response
+                    from whatsapp.state import _strip_html_for_whatsapp
+                    cleaned = clean_ai_response(search_result)
+                    message = _strip_html_for_whatsapp(cleaned)
+                else:
+                    message = "⚠️ لم أجد نتائج. جرب تاني بكلمات بحث مختلفة."
+            except Exception as e:
+                logger.error(f"❌ WA search_and_summarize fallback failed: {e}")
+                # 🔴 FIX: Fallback أخير لـ AI engine بدل ما نسيب المستخدم من غير رد
+                try:
+                    from ai_engine import smart_chat
+                    ai_result = await smart_chat(f"ابحث عن معلومات عن: {query}", "ar", user_id=wa_user_id)
+                    if ai_result:
+                        from formatters import clean_ai_response
+                        from whatsapp.state import _strip_html_for_whatsapp
+                        cleaned = clean_ai_response(ai_result)
+                        message = _strip_html_for_whatsapp(cleaned)
+                    else:
+                        message = "⚠️ حدث خطأ في البحث. جرب تاني بعد شوية."
+                except Exception as e2:
+                    logger.error(f"❌ WA AI engine fallback also failed: {e2}")
+                    message = "⚠️ حدث خطأ في البحث. جرب تاني بعد شوية."
+        
+        # ══════════════════════════════════════
+        # إرسال النتائج
+        # ══════════════════════════════════════
+        if message.strip():
+            message += "\n━━━━━━━━━━━━━━━━━\n🤖 _My Bro — بحث متقدم_"
+            from whatsapp.state import _split_whatsapp_message
+            chunks = _split_whatsapp_message(message)
+            for chunk in chunks:
+                await _send_whatsapp_message(wa_id, chunk)
+                if len(chunks) > 1:
+                    await asyncio.sleep(0.05)
+        else:
+            await _send_whatsapp_message(wa_id, "⚠️ لم أجد نتائج. جرب تاني بكلمات بحث مختلفة.")
+        
+        await feedback.complete()
+        
+        # Increment usage
+        try:
+            from premium import increment_usage
+            increment_usage(wa_user_id, "searches")
+        except Exception:
+            pass
+        
+        # Contextual buttons
+        try:
+            await _send_interactive_buttons(wa_id, body_text="عايز حاجة تانية؟",
+                buttons=[
+                    {"id": "cmd_search", "title": "🔍 بحث تاني"},
+                    {"id": "cmd_news", "title": "📰 أخبار"},
+                    {"id": "cmd_commands", "title": "📋 الأوامر"},
+                ])
+        except Exception:
+            pass
+        
+    except Exception as e:
+        logger.error(f"❌ WA unified search error: {e}")
+        await feedback.error()
+        
+        # 🔴 FIX: Fallback أخير — نحاول نبعت رد حتى لو كل حاجة فشلت
+        try:
+            from whatsapp_webhook import _send_ai_response
+            await _send_ai_response(wa_id, f"ابحث لي عن: {query}",
+                wa_user_id, contact_name, message_id, context_type="search", increment_feature="searches")
+        except Exception as e2:
+            logger.error(f"❌ WA search ultimate fallback failed: {e2}")
+            try:
+                await _send_whatsapp_message(wa_id, "⚠️ حدث خطأ في البحث. جرب تاني بعد شوية. 🔄")
+            except Exception:
+                pass
+
+
 async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_name: str, message_id: str = ""):
     """Handle WhatsApp commands and send interactive responses — full Telegram parity"""
 
@@ -311,7 +527,7 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
                 "I can help you with many things!\nChoose from the menu or just type anything")
         else:
             await _send_whatsapp_message(wa_id,
-                "أهلاً بيك! 🤖 أنا *My Bro* — مساعدك الذكي الشخصي\n\n"
+                "أهلًا بيك! 🤖 أنا *My Bro* — مساعدك الذكي الشخصي\n\n"
                 "ممكن أساعدك في حاجات كتير!\nاختار من القائمة أو ابعت أي رسالة")
 
         # Then send interactive list with all categories
@@ -389,11 +605,11 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
                               "هابعتلك أهم أخبار الذكاء الاصطناعي كل يوم الساعة 12 الظهر بتوقيت القاهرة 🌅\n\n"
                               "✅ آخر أخبار AI من مصادر عالمية\n"
                               "✅ ملخص بالعربية مفهوم وبسيط\n"
-                              "✅ مجاني تماماً\n\n"
+                              "✅ مجاني تمامًا\n\n"
                               "👇 اختار من تحت!",
                     buttons=[
                         {"id": "cmd_subscribe_confirm", "title": "✅ اشترك"},
-                        {"id": "cmd_skip_subscribe", "title": "لا شكراً"},
+                        {"id": "cmd_skip_subscribe", "title": "لا شكرًا"},
                     ],
                     header_text="📬 أخبار يومية",
                 )
@@ -455,7 +671,7 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
     elif command == "trending":
         from whatsapp_webhook import _send_ai_response
         await _send_ai_response(wa_id,
-            "ما هي أهم المواضيع الترند في مجال الذكاء الاصطناعي اليوم؟ اذكر أهم 5 مواضيع أو تقنيات يتكلم عنها الناس حالياً",
+            "ما هي أهم المواضيع الترند في مجال الذكاء الاصطناعي اليوم؟ اذكر أهم 5 مواضيع أو تقنيات يتكلم عنها الناس حاليًا",
             wa_user_id, contact_name, message_id, context_type="news")
 
     # ══════════════════════════════════════
@@ -536,14 +752,38 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
             body_text="🏢 *أخبار الشركات*\n\nاختار الشركة اللي عايز تعرف آخر أخبارها:",
             button_text="اختار شركة",
             sections=[{
-                "title": "🏢 شركات AI",
+                "title": "🏢 شركات AI كبرى",
                 "rows": [
-                    {"id": "cmd_company_openai", "title": "🏢 OpenAI", "description": "آخر أخبار OpenAI"},
-                    {"id": "cmd_company_google", "title": "🏢 Google", "description": "آخر أخبار Google AI"},
-                    {"id": "cmd_company_anthropic", "title": "🏢 Anthropic", "description": "آخر أخبار Anthropic"},
-                    {"id": "cmd_company_meta", "title": "🏢 Meta", "description": "آخر أخبار Meta AI"},
-                    {"id": "cmd_company_xai", "title": "🏢 xAI", "description": "آخر أخبار xAI"},
-                    {"id": "cmd_company_nvidia", "title": "🏢 NVIDIA", "description": "آخر أخبار NVIDIA"},
+                    {"id": "cmd_company_openai", "title": "🏢 OpenAI", "description": "آخر أخبار OpenAI و ChatGPT"},
+                    {"id": "cmd_company_google", "title": "🏢 Google / DeepMind", "description": "آخر أخبار Google AI و Gemini"},
+                    {"id": "cmd_company_anthropic", "title": "🏢 Anthropic", "description": "آخر أخبار Anthropic و Claude"},
+                    {"id": "cmd_company_apple", "title": "🍎 Apple AI", "description": "آخر أخبار Apple Intelligence و Siri"},
+                    {"id": "cmd_company_meta", "title": "🏢 Meta", "description": "آخر أخبار Meta AI و Llama"},
+                    {"id": "cmd_company_microsoft", "title": "🏢 Microsoft", "description": "آخر أخبار Copilot و Azure AI"},
+                    {"id": "cmd_company_xai", "title": "🏢 xAI", "description": "آخر أخبار xAI و Grok"},
+                    {"id": "cmd_company_nvidia", "title": "🏢 NVIDIA", "description": "آخر أخبار NVIDIA و AI chips"},
+                ],
+            }, {
+                "title": "🚀 شركات AI ناشئة ومنافسة",
+                "rows": [
+                    {"id": "cmd_company_deepseek", "title": "🔬 DeepSeek", "description": "آخر أخبار DeepSeek"},
+                    {"id": "cmd_company_mistral", "title": "🇫🇷 Mistral AI", "description": "آخر أخبار Mistral و Codestral"},
+                    {"id": "cmd_company_minimax", "title": "🔬 MiniMax", "description": "آخر أخبار MiniMax"},
+                    {"id": "cmd_company_perplexity", "title": "🔍 Perplexity AI", "description": "آخر أخبار Perplexity"},
+                ],
+            }, {
+                "title": "🇨🇳 شركات AI صينية",
+                "rows": [
+                    {"id": "cmd_company_zhipu", "title": "🇨🇳 GLM/Zhipu", "description": "آخر أخبار Zhipu و ChatGLM"},
+                    {"id": "cmd_company_alibaba", "title": "🇨🇳 Alibaba/Qwen", "description": "آخر أخبار Alibaba Qwen"},
+                    {"id": "cmd_company_baidu", "title": "🇨🇳 Baidu/ERNIE", "description": "آخر أخبار Baidu ERNIE"},
+                    {"id": "cmd_company_tencent", "title": "🇨🇳 Tencent/Hunyuan", "description": "آخر أخبار Tencent Hunyuan"},
+                ],
+            }, {
+                "title": "💻 هاردوير وروبوتات AI",
+                "rows": [
+                    {"id": "cmd_company_amd", "title": "💻 AMD AI", "description": "آخر أخبار AMD AI chips"},
+                    {"id": "cmd_company_figure_ai", "title": "🤖 Figure AI", "description": "آخر أخبار Figure AI robots"},
                 ],
             }],
             header_text="🏢 شركات",
@@ -588,7 +828,8 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
                     f"👨‍💻 المطور: {CREATOR_INFO['name_ar']}\n"
                     f"🏢 الشركة: {CREATOR_INFO['company_ar']}\n"
                     f"📧 {CREATOR_INFO['email']}\n"
-                    f"🌐 {CREATOR_INFO['website']}\n\n"
+                    f"🌐 {CREATOR_INFO['website']}\n"
+                    f"📩 واتساب: {DEVELOPER_WHATSAPP_URL}\n\n"
                     f"المميزات:\n"
                     f"💬 محادثة ذكية بالعربي والإنجليزي\n"
                     f"🎤 تحويل الصوت لنص\n"
@@ -684,10 +925,10 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
             current_time = get_news_time(wa_user_id)
             if current_time == "09:00":
                 set_news_time(wa_user_id, "12:00")
-            # 🔴 BUG FIX: نتأكد إن الاشتراك اتحفظ فعلاً قبل ما نبعت رسالة نجاح
+            # 🔴 BUG FIX: نتأكد إن الاشتراك اتحفظ فعلًا قبل ما نبعت رسالة نجاح
             if is_subscribed(wa_user_id):
                 logger.info(f"✅ subscribe_confirm: user {wa_user_id} subscribed successfully")
-                await _send_whatsapp_message(wa_id, "✅ تم الاشتراك بنجاح! 🎉\n\n📬 هنبعتلك أخبار AI كل يوم الساعة 12 الظهر (توقيت القاهرة).\n\n⏰ لو عايز تغير الوقت ابعت بصيغة HH:MM\nمثال: 14:30\n\nلو عايز تلغي الاشتراك ابعت: إلغاء")
+                await _send_whatsapp_message(wa_id, "✅ تم الاشتراك بنجاح! 🎉\n\n📬 هنبعتلك أخبار AI كل يوم الساعة 12 الظهر (توقيت القاهرة).\n\n⏰ لو عايز تغير الوقت ابعت الوقت اللي يعجبك:\nمثال: 5 مساءً أو 5:00 pm أو 17:00\n\nلو عايز تلغي الاشتراك ابعت: إلغاء")
             else:
                 # 🔴 DIAGNOSTIC: لو الاشتراك محفوظش، نعمل check مباشر من الـ DB
                 ph = "%s" if _is_postgres() else "?"
@@ -698,19 +939,19 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
                     _execute(f"UPDATE user_profiles SET subscribed = 1 WHERE user_id = {ph}", (wa_user_id,))
                     if is_subscribed(wa_user_id):
                         logger.info(f"✅ subscribe_confirm: retry UPDATE worked for user {wa_user_id}")
-                        await _send_whatsapp_message(wa_id, "✅ تم الاشتراك بنجاح! 🎉\n\n📬 هنبعتلك أخبار AI كل يوم الساعة 12 الظهر (توقيت القاهرة).\n\n⏰ لو عايز تغير الوقت ابعت بصيغة HH:MM\nمثال: 14:30\n\nلو عايز تلغي الاشتراك ابعت: إلغاء")
+                        await _send_whatsapp_message(wa_id, "✅ تم الاشتراك بنجاح! 🎉\n\n📬 هنبعتلك أخبار AI كل يوم الساعة 12 الظهر (توقيت القاهرة).\n\n⏰ لو عايز تغير الوقت ابعت الوقت اللي يعجبك:\nمثال: 5 مساءً أو 5:00 pm أو 17:00\n\nلو عايز تلغي الاشتراك ابعت: إلغاء")
                     else:
-                        await _send_whatsapp_message(wa_id, "⚠️ حصل خطأ في الاشتراك. جرب تاني أو تواصل مع المطور.")
+                        await _send_whatsapp_message(wa_id, f"⚠️ حصل خطأ في الاشتراك. جرب تاني أو تواصل مع المطور:\n📱 {DEVELOPER_WHATSAPP_URL}")
                 except Exception as e3:
                     logger.error(f"❌ subscribe_confirm triple-fail for user {wa_user_id}: {e3}")
-                    await _send_whatsapp_message(wa_id, "⚠️ حصل خطأ في الاشتراك. جرب تاني أو تواصل مع المطور.")
+                    await _send_whatsapp_message(wa_id, f"⚠️ حصل خطأ في الاشتراك. جرب تاني أو تواصل مع المطور:\n📱 {DEVELOPER_WHATSAPP_URL}")
         except Exception as e:
             # 🔴 BUG FIX: قبل كده كان بيبعت رسالة نجاح حتى لو الاشتراك فشل
             logger.error(f"❌ subscribe_confirm failed for user {wa_user_id} (wa_id={wa_id}): {e}")
-            await _send_whatsapp_message(wa_id, "⚠️ حصل خطأ في الاشتراك. جرب تاني أو تواصل مع المطور.")
+            await _send_whatsapp_message(wa_id, f"⚠️ حصل خطأ في الاشتراك. جرب تاني أو تواصل مع المطور:\n📱 {DEVELOPER_WHATSAPP_URL}")
 
     elif command == "skip_subscribe":
-        # 🔴 FIX v3: المستخدم ضغط "لا شكراً" على سؤال الاشتراك — نحترم اختياره بس نقوله ممكن يشترك بعدين
+        # 🔴 FIX v3: المستخدم ضغط "لا شكرًا" على سؤال الاشتراك — نحترم اختياره بس نقوله ممكن يشترك بعدين
         from memory import get_language
         skip_lang = get_language(wa_user_id)
         if skip_lang == "en":
@@ -935,7 +1176,7 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
                 await _send_whatsapp_message(wa_id,
                     "👑 *أنت الأدمن*\n\n"
                     "⭐ كل حاجة مفتوحة — مفيش Limits!\n"
-                    "كل مزايا Premium متاحة ليك تلقائياً.")
+                    "كل مزايا Premium متاحة ليك تلقائيًا.")
                 return True
 
             plan = get_user_plan(wa_user_id)
@@ -1451,7 +1692,7 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
         else:
             msg = (
                 "🔑 *PO Token — مش متوفر*\n\n"
-                "❌ مفيش PO Token حالياً\n\n"
+                "❌ مفيش PO Token حاليًا\n\n"
                 "💡 إزاي تجيب PO Token:\n"
                 "1️⃣ افتح youtube.com في Chrome\n"
                 "2️⃣ افتح DevTools (F12) → Console\n"
@@ -1665,14 +1906,17 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
 
     # ── Dynamic AI-powered sub-commands ──
     elif command.startswith("search_") or command in ("cmd_search_ai", "cmd_search_code"):
-        from whatsapp_webhook import _send_ai_response
         search_queries = {
-            "cmd_search_ai": "أحدث تطورات الذكاء الاصطناعي",
+            "cmd_search_ai": "أحدث أخبار الذكاء الاصطناعي اليوم",
             "cmd_search_code": "أحدث تقنيات البرمجة وتطوير البرمجيات",
         }
         query = search_queries.get(command, "أحدث التطورات التقنية")
-        await _send_ai_response(wa_id, f"ابحث لي عن: {query}",
-            wa_user_id, contact_name, message_id, context_type="search", increment_feature="searches")
+        await _wa_search_and_format(wa_id, query, wa_user_id, contact_name, message_id)
+
+    elif command == "wa_search_query":
+        # 🔴 FIX: /search <query> بيمرر الاستعلام لدالة البحث الموحدة
+        # بدل ما يروح لـ _send_ai_response اللي مش بيعمل بحث حقيقي
+        pass  # بيتعامل معاه في _handle_command_with_arg
 
     elif command.startswith("ask_") or command in ("cmd_ask_ai", "cmd_ask_code"):
         from whatsapp_webhook import _send_ai_response
@@ -1720,9 +1964,21 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
             "cmd_company_openai": "OpenAI",
             "cmd_company_google": "Google AI",
             "cmd_company_anthropic": "Anthropic",
+            "cmd_company_apple": "Apple AI و Apple Intelligence و Siri",
             "cmd_company_meta": "Meta AI",
+            "cmd_company_microsoft": "Microsoft AI و Copilot",
             "cmd_company_xai": "xAI",
             "cmd_company_nvidia": "NVIDIA",
+            "cmd_company_deepseek": "DeepSeek",
+            "cmd_company_mistral": "Mistral AI",
+            "cmd_company_minimax": "MiniMax",
+            "cmd_company_perplexity": "Perplexity AI",
+            "cmd_company_zhipu": "Zhipu AI و GLM و ChatGLM",
+            "cmd_company_alibaba": "Alibaba AI و Qwen",
+            "cmd_company_baidu": "Baidu AI و ERNIE",
+            "cmd_company_tencent": "Tencent AI و Hunyuan",
+            "cmd_company_amd": "AMD AI و MI300",
+            "cmd_company_figure_ai": "Figure AI و Humanoid Robots",
         }
         company = company_map.get(command, "AI")
         await _send_ai_response(wa_id,
@@ -1870,7 +2126,7 @@ async def _handle_command_with_arg(wa_id: str, cmd_name: str, arg: str, wa_user_
                     await _send_whatsapp_message(wa_id, "✅ تم حذف ملف الكوكيز.")
                     logger.info(f"🍪 WA Cookies file deleted by admin {wa_id}")
                 else:
-                    await _send_whatsapp_message(wa_id, "❌ ملف الكوكيز مش موجود أصلاً.")
+                    await _send_whatsapp_message(wa_id, "❌ ملف الكوكيز مش موجود أصلًا.")
             except Exception as e:
                 await _send_whatsapp_message(wa_id, f"❌ فشل الحذف: {e}")
         elif not is_admin:
@@ -1966,10 +2222,9 @@ async def _handle_command_with_arg(wa_id: str, cmd_name: str, arg: str, wa_user_
             wa_user_id, contact_name, message_id, context_type="study")
 
     elif cmd_name == "search":
-        from whatsapp_webhook import _send_ai_response
-        await _send_ai_response(wa_id, f"ابحث لي عن: {arg}",
-            wa_user_id, contact_name, message_id, context_type="search",
-            increment_feature="searches")
+        # 🔴 FIX: /search <query> بيعمل بحث حقيقي في الويب زي تليجرام
+        # بدل ما كان بيروح لـ _send_ai_response اللي مش بيعمل بحث حقيقي
+        await _wa_search_and_format(wa_id, arg, wa_user_id, contact_name, message_id)
 
     # ══════════════════════════════════════
     # VIDEO SEARCH / AUDIO SEARCH / PHOTO SEARCH (with args)

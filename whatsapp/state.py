@@ -93,7 +93,8 @@ ADMIN_WA_ID = os.environ.get("ADMIN_WA_ID", "201203551789")  # Admin WhatsApp ID
 
 # Developer WhatsApp contact for premium/subscription messages
 DEVELOPER_WHATSAPP = os.environ.get("DEVELOPER_WHATSAPP", "01203551789")
-DEVELOPER_WHATSAPP_URL = f"https://wa.me/{DEVELOPER_WHATSAPP.lstrip('0')}"
+# 🔴 FIX: رابط التواصل مع المطور — wa.me/qr link مباشرة
+DEVELOPER_WHATSAPP_URL = os.environ.get("DEVELOPER_WHATSAPP_URL", "https://wa.me/qr/4UFP2G4E7KNAC1")
 
 
 def _wa_phone_to_user_id(phone: str) -> int:
@@ -171,7 +172,7 @@ _wa_user_yt_url = {}  # {wa_id: "youtube_url"} — 🍪 cache YouTube URL for do
 #   pdf_qa        → في انتظار سؤال عن PDF
 #   download      → في انتظار اختيار جودة التحميل
 _wa_user_state = {}  # {wa_id: {"flow": str, "data": dict, "expires": float}}
-_WA_STATE_TTL = 300  # 5 دقائق — بعد كده الحالة تنتهي تلقائياً
+_WA_STATE_TTL = 300  # 5 دقائق — بعد كده الحالة تنتهي تلقائيًا
 
 def _set_user_state(wa_id: str, flow: str, data: dict = None):
     """حفظ حالة المستخدم النشطة"""
@@ -287,16 +288,60 @@ def _strip_html_for_whatsapp(text: str) -> str:
     """
     Strip HTML tags from AI response for WhatsApp.
     WhatsApp doesn't support HTML — only plain text and *bold*, _italic_, ~strikethrough~, ```code```
+    
+    🔴 FIX v2: كمان بيشيل Markdown الغريب (**) اللي بيبان كرموز
     """
     if not text:
         return text
 
+    # 🔴 FIX: أولًا نشيل **bold** (Markdown من AI) — نحوله لـ *bold* (WhatsApp format)
+    # لازم نعمل ده قبل تحويل <b> عشان ميتعفسش
+    text = re.sub(r'\*\*(.+?)\*\*', r'*\1*', text)
+    
+    # شيل *italic* Markdown واحده — نحولها لـ _italic_ (WhatsApp)
+    text = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'_\1_', text)
+    
+    # شيل ### headings
+    text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
+    
+    # شيل روابط Markdown [text](url) → text (url)
+    text = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'\1 (\2)', text)
+    
+    # شيل أقواس مرجعية [1] [2]
+    text = re.sub(r'\[\d+\]\s*', '', text)
+    
+    # شيل ```code blocks``` — نحولها لـ WhatsApp format
+    text = re.sub(r'```\w*\n?(.*?)```', r'```\1```', text, flags=re.DOTALL)
+    text = re.sub(r'`([^`]+)`', r'```\1```', text)
+
+    # HTML → WhatsApp formatting
     text = re.sub(r'<b>(.*?)</b>', r'*\1*', text, flags=re.DOTALL)
     text = re.sub(r'<i>(.*?)</i>', r'_\1_', text, flags=re.DOTALL)
     text = re.sub(r'<code>(.*?)</code>', r'```\1```', text, flags=re.DOTALL)
     text = re.sub(r'<s>(.*?)</s>', r'~\1~', text, flags=re.DOTALL)
-    text = re.sub(r'<a\s+href="([^"]*)"[^>]*>(.*?)</a>', r'\2 (\1)', text, flags=re.DOTALL)
+    
+    # 🔴 FIX: روابط HTML — واتساب مش بيدعم clickable links
+    # لو الرابط نصه "اقرأ المزيد" أو "Read more" → نعرض الرابط الفعلي بس
+    # لو الرابط نصه أي حاجة تانية → نعرض النص + الرابط
+    def _wa_link_replacer(match):
+        url = match.group(1)
+        link_text = match.group(2).strip()
+        # لو النص هو "اقرأ المزيد" أو "Read more" أو مجرد 🔗 → نعرض الرابط بس
+        if link_text.lower() in ("اقرأ المزيد", "read more", "المزيد", "more", "🔗"):
+            return f"🔗 {url}"
+        # لو النص مختلف → نعرض النص + الرابط
+        return f"{link_text} ({url})"
+    
+    text = re.sub(r'<a\s+href="([^"]*)"[^>]*>(.*?)</a>', _wa_link_replacer, text, flags=re.DOTALL)
+    # كمان روابط بعلامات تنصيص مفردة
+    text = re.sub(r"<a\s+href='([^']*)'[^>]*>(.*?)</a>", _wa_link_replacer, text, flags=re.DOTALL)
+    
+    # شيل أي HTML tags متبقية
     text = re.sub(r'<[^>]+>', '', text)
+    
+    # شيل أي * متبقية لوحدها (مش جوا formatting)
+    # بس نحافظ على *text* و _text_ و ~text~ و ```text```
+    
     text = re.sub(r'\n{3,}', '\n\n', text)
     text = re.sub(r' {2,}', ' ', text)
 

@@ -16,6 +16,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict, Optional
 
 from config import REQUEST_TIMEOUT, DEVELOPER_USER_ID, DEVELOPER_USERNAME
+from formatters import _strip_non_telegram_html
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +48,7 @@ def _get_dev_context_if_needed(user_id: int = None, username: str = None, langua
 إنت بيكلم زياد عمرو (@ziadamr) — ده الشخص اللي عملك وبرمجك وبنى كل حاجة فيك.
 🔴 لو سألك "مين عملك؟" — جاوبه "إنت!" — لأنك بتكلمه هوا!
 🔴 عاملوه باحترام وتقدير طبيعي — من غير مجاملة زيادة
-🔴 ماتنساش أبداً إنه المطور — لو طلب حاجة نفذها فوراً
+🔴 ماتنساش أبدًا إنه المطور — لو طلب حاجة نفذها فورًا
 🔴 مفيش أي Limits عليه — كل حاجة مفتوحة ليه
 🔴 خليك طبيعي معاه — كأنك بتكلم اللي خلقك ب إيده
 """
@@ -66,7 +67,7 @@ You are talking to Ziad Amr (@ziadamr) — the person who created you, programme
 
 # ═══════════════════════════════════════
 # كاش نتائج البحث - Search Results Cache
-# ⚡ لو أكتر من شخص يسأل نفس السؤال خلال 5 دقائق، نرد من الكاش فوراً
+# ⚡ لو أكتر من شخص يسأل نفس السؤال خلال 5 دقائق، نرد من الكاش فورًا
 # ═══════════════════════════════════════
 
 _search_cache = OrderedDict()
@@ -83,7 +84,7 @@ def _get_search_cache_key(query: str, language: str) -> str:
 
 
 def _get_cached_search(query: str, language: str):
-    """البحث عن نتائج بحث مخزنة مؤقتاً"""
+    """البحث عن نتائج بحث مخزنة مؤقتًا"""
     key = _get_search_cache_key(query, language)
     entry = _search_cache.get(key)
     if entry and time.time() - entry["time"] < _SEARCH_CACHE_TTL:
@@ -95,7 +96,7 @@ def _get_cached_search(query: str, language: str):
 
 
 def _set_cached_search(query: str, language: str, results):
-    """تخزين نتائج بحث مؤقتاً"""
+    """تخزين نتائج بحث مؤقتًا"""
     key = _get_search_cache_key(query, language)
     _search_cache[key] = {"results": results, "time": time.time()}
     while len(_search_cache) > _MAX_SEARCH_CACHE_SIZE:
@@ -281,7 +282,7 @@ def _quick_translate_arabic_query(query: str) -> str:
     """
     import re
     
-    # لو الاستعلام أصلاً إنجليزي خالص
+    # لو الاستعلام أصلًا إنجليزي خالص
     if not re.search(r'[\u0600-\u06FF]', query):
         return query
     
@@ -328,8 +329,8 @@ def _get_ddgs():
 
 
 def _search_web_sync(query: str, max_results: int = 5, language: str = "ar") -> List[Dict]:
-    """البحث في الويب (متزامن) - Tavily أولاً ثم DuckDuckGo"""
-    # محاولة Tavily أولاً (أفضل جودة - بحث حقيقي)
+    """البحث في الويب (متزامن) - Tavily أولًا ثم DuckDuckGo"""
+    # محاولة Tavily أولًا (أفضل جودة - بحث حقيقي)
     if TAVILY_API_KEY:
         tavily_results = _search_tavily_sync(query, max_results, language=language)
         if tavily_results:
@@ -366,7 +367,7 @@ def _search_web_sync(query: str, max_results: int = 5, language: str = "ar") -> 
             # 🔴 FIX: لو اللغة عربي والنتائج قليلة، نجرب بحث بالإنجليزي كمان عشان نغطي أكتر
             # ⚡ بنستخدم قاموس محلي بدل AI call — أسرع بكتير
             if language == "ar" and len(results) < max_results and attempt == 0:
-                # ترجمة الاستعلام للإنجليزي باستخدام القاموس المحلي أولاً
+                # ترجمة الاستعلام للإنجليزي باستخدام القاموس المحلي أولًا
                 en_query = _quick_translate_arabic_query(query)
                 
                 # لو القاموس المحلي مش كفايه، نجرب AI (fallback بس)
@@ -450,7 +451,7 @@ async def search_web(query: str, max_results: int = 5, language: str = "ar") -> 
 
 
 def _search_news_sync(query: str, max_results: int = 5) -> List[Dict]:
-    """البحث عن أخبار (متزامن) - Tavily أولاً ثم DuckDuckGo"""
+    """البحث عن أخبار (متزامن) - Tavily أولًا ثم DuckDuckGo"""
     # محاولة Tavily للأخبار
     if TAVILY_API_KEY:
         try:
@@ -563,7 +564,7 @@ def _search_and_summarize_sync(query: str, language: str = "ar", memory_context:
 🔴 تاريخ اليوم الحقيقي: {today_str}. ماتقولش أي تاريخ أو سنة غلط! ماتخترعش أخبار ولا تواريخ!
 
 ⚠️ ماتستخدمش Markdown (لا *, **, #, |). استخدم HTML فقط: <b>عريض</b> <i>مائل</i> <code>كود</code>"""
-            system = f"أنت مساعد ذكي تجيب بالعربية الفصحى. كن دقيقاً واستخدم إيموجي مناسبة. ماتستخدمش Markdown أبداً. لو مش متأكد من معلومة، قول صراحة. تاريخ اليوم: {today_str}. ماتخترعش تواريخ."
+            system = f"أنت مساعد ذكي تجيب بالعربية الفصحى. كن دقيقًا واستخدم إيموجي مناسبة. ماتستخدمش Markdown أبدًا. لو مش متأكد من معلومة، قول صراحة. تاريخ اليوم: {today_str}. ماتخترعش تواريخ."
         else:
             prompt = f"""I searched the web for your question but couldn't find sufficient results. I'll answer from my knowledge, but this may not be up-to-date.
 
@@ -581,11 +582,21 @@ Question: {query}
         if dev_context:
             system += dev_context
 
-        response = call_ai_sync(prompt, system_prompt=system, task_type="chat", temperature=0.5, max_tokens=8192, user_id=user_id)
+        # 🔴 FIX: retry logic لما مفيش نتائج بحث كمان
+        response = None
+        for attempt in range(2):
+            response = call_ai_sync(prompt, system_prompt=system, task_type="chat", temperature=0.5, max_tokens=8192, user_id=user_id)
+            if response and response.strip():
+                break
+            logger.warning(f"⚠️ AI no-results response attempt {attempt+1}/2 failed for: {query}")
+            if attempt < 1:
+                import time as _time
+                _time.sleep(1)
+
         from formatters import clean_ai_response
         if response:
             response = clean_ai_response(response)
-        return response or ("لم أتمكن من العثور على معلومات. 🤖" if language == "ar" else "I couldn't find information. 🤖")
+        return response or ("⚠️ لم أتمكن من البحث حاليًا. حاول تاني بعد شوية. 🔄" if language == "ar" else "⚠️ Search temporarily unavailable. Please try again shortly. 🔄")
 
     # وجدنا نتائج بحث حقيقية! 🎉
     logger.info(f"✅ Found {len(results)} real search results, summarizing...")
@@ -611,9 +622,9 @@ Question: {query}
     if language == "ar":
         prompt = f"""🔬 بحثت في الويب وجبت لك نتائج حقيقية! بناءً على نتائج البحث التالية، أجب على سؤال المستخدم بالعربية بطريقة مفيدة وشاملة.
 {user_context_section}
-⚠️ مهم جداً: المعلومات دي من بحث حقيقي في الويب - استخدمها كلها واختار الأهم. ماتخترعش معلومات مش في النتائج.
+⚠️ مهم جدًا: المعلومات دي من بحث حقيقي في الويب - استخدمها كلها واختار الأهم. ماتخترعش معلومات مش في النتائج.
 
-🔴🔴🔴 مهم جداً - اللغة: لازم تجيب ردك كله بالعربي! لو نتائج البحث بالإنجليزي، ترجمها واعرضها بالعربي. ماتسيبش أي جزء بالإنجليزي غير أسماء العلم والروابط. المستخدم مصري وعربي ومحتاج يفهم كل حاجة بالعربي.
+🔴🔴🔴 مهم جدًا - اللغة: لازم تجيب ردك كله بالعربي! لو نتائج البحث بالإنجليزي، ترجمها واعرضها بالعربي. ماتسيبش أي جزء بالإنجليزي غير أسماء العلم والروابط. المستخدم مصري وعربي ومحتاج يفهم كل حاجة بالعربي.
 
 سؤال المستخدم: {query}
 
@@ -626,10 +637,10 @@ Question: {query}
 - ذكر المصادر والروابط
 - استخدم إيموجي مناسبة
 - الروابط: 🔗 <a href="الرابط">عنوان الرابط</a>
-- كن مفصلاً ومفيداً
+- كن مفصلًا ومفيدًا
 
-⚠️ ماتستخدمش Markdown أبداً (لا *, **, #, |, ---). استخدم HTML فقط: <b>عريض</b> <i>مائل</i> <code>كود</code> • نقاط"""
-        system = "أنت مساعد ذكي يجيب بناءً على نتائج بحث حقيقية من الويب. 🔴 مهم: لازم تجيب بالعربي دايماً — ترجم أي محتوى إنجليزي للعربي. ماتخترعش معلومات مش في النتائج. استخدم إيموجي وتنسيق HTML جميل. كن مفصلاً ومفيداً. ماتستخدمش Markdown أبداً."
+⚠️ ماتستخدمش Markdown أبدًا (لا *, **, #, |, ---). استخدم HTML فقط: <b>عريض</b> <i>مائل</i> <code>كود</code> • نقاط"""
+        system = "أنت مساعد ذكي يجيب بناءً على نتائج بحث حقيقية من الويب. 🔴 مهم: لازم تجيب بالعربي دايمًا — ترجم أي محتوى إنجليزي للعربي. ماتخترعش معلومات مش في النتائج. استخدم إيموجي وتنسيق HTML جميل. كن مفصلًا ومفيدًا. ماتستخدمش Markdown أبدًا."
     else:
         prompt = f"""🔬 I searched the web and found real results! Based on the following search results, answer the user's question comprehensively.
 {user_context_section}
@@ -655,11 +666,49 @@ Requirements:
     if dev_context:
         system += dev_context
 
-    response = call_ai_sync(prompt, system_prompt=system, task_type="chat", temperature=0.5, max_tokens=8192, user_id=user_id)
+    # 🔴 FIX: retry logic + raw results fallback
+    # لو AI فشل في التلخيص، نجرب تاني، ولو فشل تاني نعرض نتائج البحث الخام
+    response = None
+    for attempt in range(3):
+        response = call_ai_sync(prompt, system_prompt=system, task_type="chat", temperature=0.5, max_tokens=8192, user_id=user_id)
+        if response and response.strip():
+            break
+        logger.warning(f"⚠️ AI summarization attempt {attempt+1}/3 failed for search query: {query}")
+        if attempt < 2:
+            import time as _time
+            _time.sleep(1)  # انتظر ثانية قبل المحاولة التالية
+
     from formatters import clean_ai_response
     if response:
         response = clean_ai_response(response)
-    return response or ("لم أتمكن من معالجة نتائج البحث. 🤖" if language == "ar" else "I couldn't process search results. 🤖")
+
+    # 🔴 FIX: لو AI فشل في التلخيص، اعرض نتائج البحث الخام بدل رسالة خطأ
+    if not response or not response.strip():
+        logger.warning(f"⚠️ AI summarization failed completely, showing raw search results for: {query}")
+        if language == "ar":
+            raw_response = f"🔍 نتائج البحث عن: {query}\n━━━━━━━━━━━━━━━━━\n\n"
+            for i, r in enumerate(results, 1):
+                raw_response += f"{i}. {r['title']}\n"
+                if r.get('snippet'):
+                    raw_response += f"   {r['snippet'][:200]}\n"
+                if r.get('link'):
+                    raw_response += f"   🔗 {r['link']}\n"
+                raw_response += "\n"
+            raw_response += "⚠️ ملاحظة: محرك التلخيص مش متاح حاليًا، دي النتائج الخام من البحث."
+            return raw_response
+        else:
+            raw_response = f"🔍 Search results for: {query}\n━━━━━━━━━━━━━━━━━\n\n"
+            for i, r in enumerate(results, 1):
+                raw_response += f"{i}. {r['title']}\n"
+                if r.get('snippet'):
+                    raw_response += f"   {r['snippet'][:200]}\n"
+                if r.get('link'):
+                    raw_response += f"   🔗 {r['link']}\n"
+                raw_response += "\n"
+            raw_response += "⚠️ Note: Summarization engine unavailable, showing raw search results."
+            return raw_response
+
+    return response
 
 
 async def search_and_summarize_async(query: str, language: str = "ar", memory_context: str = "", user_id: int = None, username: str = None) -> str:
@@ -784,7 +833,7 @@ def _deep_search_and_summarize_sync(query: str, language: str = "ar", memory_con
 🔴 تاريخ اليوم: {today_str}. ماتخترعش تواريخ ولا أخبار!
 
 ⚠️ ماتستخدمش Markdown (لا *, **, #, |). استخدم HTML فقط: <b>عريض</b> <i>مائل</i> <code>كود</code> • نقاط"""
-            system = f"أنت باحث متخصص. تجيب بالعربية بشكل شامل. لو مش متأكد، قول صراحة. ماتستخدمش Markdown أبداً. تاريخ اليوم: {today_str}. ماتخترعش تواريخ."
+            system = f"أنت باحث متخصص. تجيب بالعربية بشكل شامل. لو مش متأكد، قول صراحة. ماتستخدمش Markdown أبدًا. تاريخ اليوم: {today_str}. ماتخترعش تواريخ."
         else:
             prompt = f"""I did a deep search but couldn't find sufficient results. I'll answer from my knowledge, but this may not be up-to-date.
 
@@ -877,16 +926,16 @@ Question: {query}
 
 بحثت بعمق في الويب وجبت لك نتائج حقيقية من مصادر متعددة! بناءً على النتائج دي، قدّم إجابة مفصلة ومنظمة.
 {user_context_section}
-⚠️ مهم جداً: المعلومات دي من بحث حقيقي — استخدمها كلها واختار الأهم. ماتخترعش أي معلومة مش موجودة في النتائج.
+⚠️ مهم جدًا: المعلومات دي من بحث حقيقي — استخدمها كلها واختار الأهم. ماتخترعش أي معلومة مش موجودة في النتائج.
 
-🔴🔴🔴 مهم جداً - اللغة: لازم تجيب ردك كله بالعربي! لو نتائج البحث بالإنجليزي، ترجمها واعرضها بالعربي. ماتسيبش أي جزء بالإنجليزي غير أسماء العلم والروابط. المستخدم عربي ومحتاج يفهم كل حاجة بالعربي.
+🔴🔴🔴 مهم جدًا - اللغة: لازم تجيب ردك كله بالعربي! لو نتائج البحث بالإنجليزي، ترجمها واعرضها بالعربي. ماتسيبش أي جزء بالإنجليزي غير أسماء العلم والروابط. المستخدم عربي ومحتاج يفهم كل حاجة بالعربي.
 
 سؤال المستخدم: {query}
 
 نتائج البحث الشاملة:{search_text}
 
 المطلوب:
-- إجابة شاملة ومفصلة جداً
+- إجابة شاملة ومفصلة جدًا
 - 🔴 كل الرد لازم يكون بالعربي — ترجم أي معلومة إنجليزي للعربي
 - تنظيم المعلومات بوضوح في أقسام
 - ذكر المصادر والروابط الحقيقية
@@ -894,11 +943,11 @@ Question: {query}
 - استنتاجات وتوقعات إن أمكن
 - الروابط: 🔗 <a href="الرابط">عنوان الرابط</a>
 
-⚠️ ماتستخدمش Markdown أبداً (لا *, **, #, |, ---). استخدم HTML فقط: <b>عريض</b> <i>مائل</i> <code>كود</code> • نقاط"""
+⚠️ ماتستخدمش Markdown أبدًا (لا *, **, #, |, ---). استخدم HTML فقط: <b>عريض</b> <i>مائل</i> <code>كود</code> • نقاط"""
         system = """أنت باحث متخصص في البحث العميق. تجيب بالعربية بشكل شامل ومفصل.
-🔴 مهم: لازم تجيب بالعربي دايماً — ترجم أي محتوى إنجليزي للعربي.
+🔴 مهم: لازم تجيب بالعربي دايمًا — ترجم أي محتوى إنجليزي للعربي.
 تنظم المعلومات بشكل واضح مع ذكر المصادر.
-ماتستخدمش Markdown أبداً. استخدم HTML فقط.
+ماتستخدمش Markdown أبدًا. استخدم HTML فقط.
 ماتخترعش معلومات مش في نتائج البحث - لو مش متأكد، قول صراحة."""
     else:
         prompt = f"""🔬 <b>Deep Search</b>
@@ -930,15 +979,50 @@ Do NOT fabricate information - if unsure, say so honestly."""
     if dev_context:
         system += dev_context
 
-    response = call_ai_sync(prompt, system_prompt=system, task_type="deep_search", temperature=0.4, max_tokens=8192, user_id=user_id)
+    # 🔴 FIX: retry logic + raw results fallback (زي search_and_summarize)
+    response = None
+    for attempt in range(3):
+        response = call_ai_sync(prompt, system_prompt=system, task_type="deep_search", temperature=0.4, max_tokens=8192, user_id=user_id)
+        if response and response.strip():
+            break
+        logger.warning(f"⚠️ Deep search AI summarization attempt {attempt+1}/3 failed for: {query}")
+        if attempt < 2:
+            import time as _time
+            _time.sleep(1)
+
     from formatters import clean_ai_response
     if response:
         response = clean_ai_response(response)
+
+    # 🔴 FIX: لو AI فشل، اعرض نتائج البحث الخام
+    if not response or not response.strip():
+        logger.warning(f"⚠️ Deep search AI summarization failed completely, showing raw results for: {query}")
+        if language == "ar":
+            raw_response = f"🔍 نتائج البحث العميق عن: {query}\n━━━━━━━━━━━━━━━━━\n\n"
+            for i, r in enumerate(results, 1):
+                raw_response += f"{i}. {r['title']}\n"
+                if r.get('snippet'):
+                    raw_response += f"   {r['snippet'][:200]}\n"
+                if r.get('link'):
+                    raw_response += f"   🔗 {r['link']}\n"
+                raw_response += "\n"
+            raw_response += "⚠️ ملاحظة: محرك التلخيص مش متاح حاليًا، دي النتائج الخام من البحث العميق."
+            return raw_response
+        else:
+            raw_response = f"🔍 Deep search results for: {query}\n━━━━━━━━━━━━━━━━━\n\n"
+            for i, r in enumerate(results, 1):
+                raw_response += f"{i}. {r['title']}\n"
+                if r.get('snippet'):
+                    raw_response += f"   {r['snippet'][:200]}\n"
+                if r.get('link'):
+                    raw_response += f"   🔗 {r['link']}\n"
+                raw_response += "\n"
+            raw_response += "⚠️ Note: Summarization engine unavailable, showing raw deep search results."
+            return raw_response
+
     # ⚡ كاش نتائج البحث
-    final = response or ("لم أتمكن من معالجة نتائج البحث العميق. 🤖" if language == "ar" else "I couldn't process deep search results. 🤖")
-    if final and response:
-        _set_cached_search(f"deep:{query}", language, final)
-    return final
+    _set_cached_search(f"deep:{query}", language, response)
+    return response
 
 
 async def deep_search_and_summarize_async(query: str, language: str = "ar", memory_context: str = "", user_id: int = None, username: str = None, progress_callback=None) -> str:
@@ -972,14 +1056,14 @@ def format_search_results(query: str, results: List[Dict], language: str = "ar")
 
     for i, r in enumerate(results[:5], 1):
         title = r.get("title", "بدون عنوان" if language == "ar" else "No title")
-        snippet = r.get("snippet", "")
+        snippet = _strip_non_telegram_html(r.get("snippet", ""))[:200]
         link = r.get("link", "")
         source = r.get("source", "")
 
         if language == "ar":
             message += f"{i}. 📄 <b>{title}</b>\n"
             if snippet:
-                message += f"   {snippet[:200]}\n"
+                message += f"   {snippet}\n"
             if source:
                 message += f"   📡 {source}\n"
             if link:
@@ -987,7 +1071,7 @@ def format_search_results(query: str, results: List[Dict], language: str = "ar")
         else:
             message += f"{i}. 📄 <b>{title}</b>\n"
             if snippet:
-                message += f"   {snippet[:200]}\n"
+                message += f"   {snippet}\n"
             if source:
                 message += f"   📡 {source}\n"
             if link:
