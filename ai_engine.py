@@ -365,7 +365,7 @@ def _is_greeting(text: str) -> bool:
         "السلام عليكم ورحمة الله وبركاته", "سلام عليكم ورحمة الله",
         "وعليكم السلام", "وعليكم السلام ورحمة الله",
         "اهلا", "أهلا", "اهلًا", "مرحبا", "مرحبًا", "هاي",
-        "سلام", "هلا", "اهلا وسهلا", "أهلًا وسهلًا", "أهلاً وسهلاً",
+        "سلام", "هلا", "اهلا وسهلا", "أهلًا وسهلًا", "أهلًا وسهلًا",
         "ازيك", "إزيك", "عامل ايه", "عايز ايه",
         "صباح الخير", "مساء الخير", "صباح النور", "مساء النور",
         "hello", "hi", "hey", "good morning", "good evening",
@@ -438,6 +438,8 @@ def _is_identity_question(text: str) -> bool:
         "عايز اتواصل مع مين عملك", "معلومات عن المطور",
         "مين صانعك يا بوت", "اعرف عن المطور", "مين عمل البوت ده",
         "مين صممك", "مين كتبك", "مين برمجك",
+        # صيغ "اللي" — زي "مين اللي عملك" / "اللي صنعك"
+        "اللي عملك", "اللي صنعك", "اللي برمجك", "اللي صممك", "اللي أنشأك", "اللي أسسك",
         # English
         "who are you", "what are you", "introduce yourself",
         "tell me about yourself", "what can you do", "your capabilities",
@@ -466,6 +468,8 @@ def _is_creator_question(text: str) -> bool:
         "مين المؤسس", "مين صاحب الفكرة", "معلومات عن المطور",
         "مين صانعك يا بوت", "اعرف عن المطور", "مين عمل البوت ده",
         "مين صممك", "مين كتبك", "مين برمجك",
+        # صيغ "اللي" — زي "مين اللي عملك"
+        "اللي عملك", "اللي صنعك", "اللي برمجك", "اللي صممك", "اللي أنشأك", "اللي أسسك",
         "who made you", "who created you", "who built you",
         "who is your creator", "who developed you", "who is the developer",
         "who founded", "who programmed you", "who is the founder",
@@ -801,7 +805,7 @@ Made with love in Egypt 🇪🇬"""
 - حط سطر فاضي بين الفقرات ومسافة حول الـ HTML tags
 
 ══️ إملاء ═══
-🔴 تنوين الفتح على الحرف قبل الألف: ✅ "مرتفعًا" مش ❌ "مرتفعاً"
+🔴 تنوين الفتح على الحرف قبل الألف: ✅ "مرتفعًا" مش ❌ "مرتفعًا"
 
 {{DATE_CONTEXT}}
 ماتقولش إن معلوماتك قديمة — إنت متصل بالإنترنت وبتقدر تبحث.
@@ -847,7 +851,7 @@ Ziad Amr (@ziadamr) — Egyptian web developer. Founder of Qudra Tech. Specializ
 - Blank line between paragraphs, space around HTML tags
 
 ═══ Arabic Orthography ═══
-🔴 Tanween fatha goes on the letter BEFORE alef: ✅ "مرتفعًا" not ❌ "مرتفعاً"
+🔴 Tanween fatha goes on the letter BEFORE alef: ✅ "مرتفعًا" not ❌ "مرتفعًا"
 
 {{DATE_CONTEXT}}
 NEVER say your knowledge is outdated — you're connected to the internet and can search.

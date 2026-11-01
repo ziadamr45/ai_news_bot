@@ -728,23 +728,46 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # ═══════════════════════════════════════════════════════════════
-    # 🥈 الأولوية 1.7: تغيير وقت الأخبار — كشف نمط HH:MM
+    # 🥈 الأولوية 1.7: تغيير وقت الأخبار — صيغة 12 ساعة و 24 ساعة (خطة زياد)
     # ═══════════════════════════════════════════════════════════════
-    # لو المستخدم كتب وقت بصيغة HH:MM (زي 14:30 أو 09:00)
-    # ده معناه إنه عايز يغير وقت الأخبار اليومية
+    # "8:30 م" أو "8:30 مساء" أو "8:30 PM" → 20:30 | "08:30" أو "20:30" → زي ما هي
     import re as _time_re
-    _time_match = _time_re.match(r'^([0-1]?[0-9]|2[0-3]):([0-5][0-9])$', user_text.strip())
-    if _time_match:
-        hour_str = _time_match.group(1).zfill(2)
-        minute_str = _time_match.group(2).zfill(2)
-        new_time = f"{hour_str}:{minute_str}"
+    _t_raw = user_text.strip()
+    # شيل التشكيل عشان نمسك ص/م/مساء/صباحا بأي شكل كتابة (مساءً/مساءًا/مساء)
+    _t = _time_re.sub(r'[\u064B-\u0652\u0670]', '', _t_raw)
+    _m24 = _time_re.match(r'^([0-1]?[0-9]|2[0-3]):([0-5][0-9])$', _t)
+    _m12 = _time_re.match(r'^(\d{1,2}):([0-5][0-9])\s*(صباحا|ص|مساء|م|am|pm)$', _t, _time_re.IGNORECASE)
+    new_time = None
+    if _m24:
+        new_time = f"{int(_m24.group(1)):02d}:{_m24.group(2)}"
+    elif _m12:
+        _h, _mnt = int(_m12.group(1)), int(_m12.group(2))
+        _period = _m12.group(3).lower()
+        if _h <= 23:
+            if _period in ("م", "مساء", "pm") and _h < 12:
+                _h += 12
+            elif _period in ("ص", "صباحا", "am") and _h == 12:
+                _h = 0
+            new_time = f"{_h:02d}:{_mnt:02d}"
+    if new_time:
+        # عرض ودود بصيغة 12 ساعة كمان
+        _h24, _mstr = new_time.split(":")
+        _h24 = int(_h24)
+        if _h24 == 0:
+            _disp = f"12:{_mstr} ص"
+        elif _h24 < 12:
+            _disp = f"{_h24}:{_mstr} ص"
+        elif _h24 == 12:
+            _disp = f"12:{_mstr} م"
+        else:
+            _disp = f"{_h24 - 12}:{_mstr} م"
         
         set_news_time(user_id, new_time)
         
         if lang == "ar":
             await update.message.reply_text(
                 f"✅ <b>تم تغيير وقت الأخبار!</b>\n\n"
-                f"⏰ الوقت الجديد: <code>{new_time}</code> (توقيت القاهرة)\n"
+                f"⏰ الوقت الجديد: <code>{_disp}</code> ({new_time} بتوقيت القاهرة)\n"
                 f"📬 هابعتلك الأخبار كل يوم في الوقت ده.\n\n"
                 f"💡 ممكن تغيره تاني من ⚙️ الإعدادات",
                 parse_mode="HTML"
@@ -752,7 +775,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await update.message.reply_text(
                 f"✅ <b>News time updated!</b>\n\n"
-                f"⏰ New time: <code>{new_time}</code> (Cairo time)\n"
+                f"⏰ New time: <code>{_disp}</code> ({new_time} Cairo time)\n"
                 f"📬 I'll send you news every day at this time.\n\n"
                 f"💡 You can change it again from ⚙️ Settings",
                 parse_mode="HTML"

@@ -817,21 +817,23 @@ def language_selection() -> str:
 
 
 def time_selection(current_time: str, language: str = "ar") -> str:
-    """رسالة اختيار الوقت"""
+    """رسالة اختيار الوقت — بتقبل 12 ساعة و 24 ساعة (خطة زياد)"""
     if language == "ar":
         return f"""⏰ <b>تغيير وقت الأخبار</b>
 
 الوقت الحالي: {current_time} (توقيت القاهرة)
 
-أرسل الوقت بالصيغة التالية:
-مثال: <code>12:00</code> أو <code>14:30</code>"""
+ابعت الوقت بأي صيغة تحبها:
+• بصيغة 12 ساعة: <code>8:30 ص</code> أو <code>8:30 م</code>
+• بصيغة 24 ساعة: <code>08:30</code> أو <code>20:30</code>"""
     else:
         return f"""⏰ <b>Change News Time</b>
 
 Current time: {current_time} (Cairo time)
 
-Send the time in this format:
-Example: <code>12:00</code> or <code>14:30</code>"""
+Send the time in either format:
+• 12-hour: <code>8:30 AM</code> or <code>8:30 PM</code>
+• 24-hour: <code>08:30</code> or <code>20:30</code>"""
 
 
 def sources_selection(language: str = "ar") -> str:
