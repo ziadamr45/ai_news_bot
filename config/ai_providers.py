@@ -78,59 +78,54 @@ OPENROUTER_BASE_URL = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.
 # ═══════════════════════════════════════
 
 # 🧠 Chat - المحادثة الذكية
-# FREE: Mistral Small → Mistral Nemo → Llama 3.3 70B → DeepSeek V4 Flash (heavy) → SambaNova
-# PREMIUM: Mistral Large → Mistral Medium → Kimi K2.6 → MiniMax M2.7 → GLM 5.1 → DeepSeek V4 Pro (heavy) → SambaNova
+# ✅ محدثة 2026-11-02 — النماذج القديمة اتسحبت من NVIDIA (410 Gone) والجديدة مختبرة لايف من السيرفر
+# الحية: nemotron-3.5-lightning (0.5s) → nemotron-3.5-super-vl (0.6s) → mistral-large-4 (7-27s)
 FREE_CHAT_MODELS = [
-    # ⭐ Mistral Small — أساسي للمجاني (سريع ومجاني دائم)
+    # ⭐ NVIDIA Nemotron 3.5 Lightning — أسرع نموذج حي (0.5 ثانية، مختبر ✅)
+    {"provider": "nvidia", "model": "nvidia/nemotron-3.5-lightning-30b-a3b", "api_key": NVIDIA_LLAMA_33_70B_KEY},
+    # ⭐ NVIDIA Nemotron 3.5 Super VL — قوي وسريع (0.6 ثانية، مختبر ✅)
+    {"provider": "nvidia", "model": "nvidia/nemotron-3.5-super-vl-120b-a12b", "api_key": NVIDIA_LLAMA_32_90B_VISION_KEY},
+    # ⭐ Mistral Small — fallback (لو الـ429 خلص)
     {"provider": "mistral", "model": "mistral-small-latest"},
-    # ⭐ Mistral Nemo — fallback سريع
-    {"provider": "mistral", "model": "open-mistral-nemo"},
-    # ⭐ NVIDIA Llama 3.3 70B — fallback قوي
-    {"provider": "nvidia", "model": "meta/llama-3.3-70b-instruct", "api_key": NVIDIA_LLAMA_33_70B_KEY},
-    # ⭐ NVIDIA DeepSeek V4 Flash — للحواج الثقيلة بس (تحليل عميق، محتوى معقد)
-    {"provider": "nvidia", "model": "deepseek-ai/deepseek-v4-flash", "api_key": NVIDIA_DEEPSEEK_V4_FLASH_KEY},
-    # ⭐ SambaNova fallback
-    {"provider": "sambanova", "model": "DeepSeek-V3.1"},
+    # ⭐ NVIDIA Mistral Large 4 — fallback قوي (مختبر ✅)
+    {"provider": "nvidia", "model": "mistralai/mistral-large-4-1t-a52b", "api_key": NVIDIA_GLM_51_KEY},
 ]
 
 PREMIUM_CHAT_MODELS = [
-    # ⭐ Mistral Large — أساسي للبريميوم (سريع وضمان الرد)
+    # ⭐ NVIDIA Nemotron 3.5 Lightning — أساسي (0.5 ثانية، مختبر ✅)
+    {"provider": "nvidia", "model": "nvidia/nemotron-3.5-lightning-30b-a3b", "api_key": NVIDIA_LLAMA_33_70B_KEY},
+    # ⭐ NVIDIA Nemotron 3.5 Super VL — موازي سريع (0.6 ثانية، مختبر ✅)
+    {"provider": "nvidia", "model": "nvidia/nemotron-3.5-super-vl-120b-a12b", "api_key": NVIDIA_LLAMA_32_90B_VISION_KEY},
+    # ⭐ NVIDIA Mistral Large 4 — قوي للردود العميقة (مختبر ✅)
+    {"provider": "nvidia", "model": "mistralai/mistral-large-4-1t-a52b", "api_key": NVIDIA_GLM_51_KEY},
+    # ⭐ Mistral Large — fallback (لو الـ429 خلص)
     {"provider": "mistral", "model": "mistral-large-latest"},
-    # ⭐ Mistral Medium — fallback سريع
-    {"provider": "mistral", "model": "mistral-medium-latest"},
-    # ⭐ NVIDIA Kimi K2.6 — نموذج ذكي جداً
-    {"provider": "nvidia", "model": "moonshotai/kimi-k2.6", "api_key": NVIDIA_KIMI_K26_KEY},
-    # ⭐ NVIDIA MiniMax M2.7 — نموذج متقدم
-    {"provider": "nvidia", "model": "minimaxai/minimax-m2.7", "api_key": NVIDIA_MINIMAX_M27_KEY},
-    # ⭐ NVIDIA GLM 5.1 — نموذج صيني قوي
-    {"provider": "nvidia", "model": "thudm/glm-5.1", "api_key": NVIDIA_GLM_51_KEY},
-    # ⭐ NVIDIA DeepSeek V4 Pro — للحواج الثقيلة بس (تحليل عميق، محتوى معقد)
-    {"provider": "nvidia", "model": "deepseek-ai/deepseek-v4-pro", "api_key": NVIDIA_DEEPSEEK_V4_PRO_KEY},
 ]
 
 # Default (backward compatibility)
 CHAT_MODELS = PREMIUM_CHAT_MODELS
 
 # ⚡ Simple - الرسائل البسيطة (تحيات، أسئلة قصيرة، أسئلة هوية)
-# FREE: Mistral Small → Llama 3.3 70B → Step 3.7 Flash → SambaNova
-# PREMIUM: Mistral Large → Step 3.7 Flash → Mistral Medium
+# ✅ محدثة 2026-11-02 — أول مسارين بيشتغلوا parallel والاتنين مختبرين ✅
 FREE_SIMPLE_MODELS = [
-    # ⚡ Mistral Small — أسرع رد فوري
+    # ⚡ NVIDIA Nemotron 3.5 Lightning — أسرع رد فوري (0.5 ثانية، مختبر ✅)
+    {"provider": "nvidia", "model": "nvidia/nemotron-3.5-lightning-30b-a3b", "api_key": NVIDIA_LLAMA_33_70B_KEY},
+    # ⚡ NVIDIA Nemotron 3.5 Super VL — موازي (0.6 ثانية، مختبر ✅)
+    {"provider": "nvidia", "model": "nvidia/nemotron-3.5-super-vl-120b-a12b", "api_key": NVIDIA_LLAMA_32_90B_VISION_KEY},
+    # ⚡ Mistral Small — fallback
     {"provider": "mistral", "model": "mistral-small-latest"},
-    # ⚡ NVIDIA Llama 3.3 70B
-    {"provider": "nvidia", "model": "meta/llama-3.3-70b-instruct", "api_key": NVIDIA_LLAMA_33_70B_KEY},
-    # ⚡ NVIDIA Step 3.7 Flash
-    {"provider": "nvidia", "model": "stepfun-ai/step-3.7-flash", "api_key": NVIDIA_STEP_37_FLASH_KEY},
-    # ⚡ SambaNova fallback
+    # ⚡ SambaNova fallback (المفتاح الحالي مرفوض — لو اتجدد هيرجع يشتغل)
     {"provider": "sambanova", "model": "Meta-Llama-3.3-70B-Instruct"},
 ]
 
 PREMIUM_SIMPLE_MODELS = [
-    # ⚡ Mistral Large — أساسي للبريميوم (حتى الرسائل البسيطة)
-    {"provider": "mistral", "model": "mistral-large-latest"},
-    # ⚡ NVIDIA Step 3.7 Flash — fallback سريع
-    {"provider": "nvidia", "model": "stepfun-ai/step-3.7-flash", "api_key": NVIDIA_STEP_37_FLASH_KEY},
-    # ⚡ Mistral Medium — fallback
+    # ⚡ NVIDIA Nemotron 3.5 Lightning — أساسي (0.5 ثانية، مختبر ✅)
+    {"provider": "nvidia", "model": "nvidia/nemotron-3.5-lightning-30b-a3b", "api_key": NVIDIA_LLAMA_33_70B_KEY},
+    # ⚡ NVIDIA Nemotron 3.5 Super VL — موازي سريع (0.6 ثانية، مختبر ✅)
+    {"provider": "nvidia", "model": "nvidia/nemotron-3.5-super-vl-120b-a12b", "api_key": NVIDIA_LLAMA_32_90B_VISION_KEY},
+    # ⚡ NVIDIA Mistral Large 4 — fallback قوي (مختبر ✅)
+    {"provider": "nvidia", "model": "mistralai/mistral-large-4-1t-a52b", "api_key": NVIDIA_GLM_51_KEY},
+    # ⚡ Mistral Medium — fallback أخير
     {"provider": "mistral", "model": "mistral-medium-latest"},
 ]
 
@@ -138,22 +133,22 @@ PREMIUM_SIMPLE_MODELS = [
 SIMPLE_MODELS = PREMIUM_SIMPLE_MODELS
 
 # 🔥 Deep Search - البحث العميق
-# FREE: DeepSeek V4 Flash → Mistral Small → SambaNova
-# PREMIUM: DeepSeek V4 Pro → Kimi K2.6 → MiniMax M2.7 → Mistral Large
+# ✅ محدثة 2026-11-02 — Mistral Large 4 هو الأقوى المتاح للمهام العميقة (مختبر ✅)
 FREE_DEEP_SEARCH_MODELS = [
-    # 🔴 البحث العميق محدود للمجاني
-    {"provider": "nvidia", "model": "deepseek-ai/deepseek-v4-flash", "api_key": NVIDIA_DEEPSEEK_V4_FLASH_KEY},
+    # 🔴 NVIDIA Mistral Large 4 — الأقوى المتاح (مختبر ✅)
+    {"provider": "nvidia", "model": "mistralai/mistral-large-4-1t-a52b", "api_key": NVIDIA_GLM_51_KEY},
+    {"provider": "nvidia", "model": "nvidia/nemotron-3.5-super-vl-120b-a12b", "api_key": NVIDIA_LLAMA_32_90B_VISION_KEY},
     {"provider": "mistral", "model": "mistral-small-latest"},
     {"provider": "sambanova", "model": "DeepSeek-V3.1"},
 ]
 
 PREMIUM_DEEP_SEARCH_MODELS = [
-    # ⭐ NVIDIA DeepSeek V4 Pro — أساسي للبحث العميق
-    {"provider": "nvidia", "model": "deepseek-ai/deepseek-v4-pro", "api_key": NVIDIA_DEEPSEEK_V4_PRO_KEY},
-    # ⭐ NVIDIA Kimi K2.6 — ذكي في البحث
-    {"provider": "nvidia", "model": "moonshotai/kimi-k2.6", "api_key": NVIDIA_KIMI_K26_KEY},
-    # ⭐ NVIDIA MiniMax M2.7 — تحليل متقدم
-    {"provider": "nvidia", "model": "minimaxai/minimax-m2.7", "api_key": NVIDIA_MINIMAX_M27_KEY},
+    # ⭐ NVIDIA Mistral Large 4 — أساسي للبحث العميق (مختبر ✅)
+    {"provider": "nvidia", "model": "mistralai/mistral-large-4-1t-a52b", "api_key": NVIDIA_DEEPSEEK_V4_PRO_KEY},
+    # ⭐ NVIDIA Nemotron 3.5 Super VL — تحليل سريع (مختبر ✅)
+    {"provider": "nvidia", "model": "nvidia/nemotron-3.5-super-vl-120b-a12b", "api_key": NVIDIA_LLAMA_32_90B_VISION_KEY},
+    # ⭐ NVIDIA Nemotron 3.5 Lightning — سريع (مختبر ✅)
+    {"provider": "nvidia", "model": "nvidia/nemotron-3.5-lightning-30b-a3b", "api_key": NVIDIA_LLAMA_33_70B_KEY},
     # ⭐ Mistral Large — fallback
     {"provider": "mistral", "model": "mistral-large-latest"},
 ]
@@ -162,26 +157,25 @@ PREMIUM_DEEP_SEARCH_MODELS = [
 DEEP_SEARCH_MODELS = PREMIUM_DEEP_SEARCH_MODELS
 
 # 👨‍💻 Coding - البرمجة
-# FREE: Step 3.7 Flash → Codestral → Mistral Small → SambaNova
-# PREMIUM: GLM 5.1 → DeepSeek V4 Pro → Kimi K2.6 → Codestral → Mistral Large
+# ✅ محدثة 2026-11-02 — Mistral Large 4 + Nemotron Super VL (مختبرين ✅)
 FREE_CODING_MODELS = [
-    # ⭐ NVIDIA Step 3.7 Flash — سريع في البرمجة
-    {"provider": "nvidia", "model": "stepfun-ai/step-3.7-flash", "api_key": NVIDIA_STEP_37_FLASH_KEY},
-    # ⭐ Mistral Codestral — متخصص برمجة
+    # ⭐ NVIDIA Mistral Large 4 — قوي في الكود (مختبر ✅)
+    {"provider": "nvidia", "model": "mistralai/mistral-large-4-1t-a52b", "api_key": NVIDIA_STEP_37_FLASH_KEY},
+    # ⭐ NVIDIA Nemotron 3.5 Super VL — سريع (مختبر ✅)
+    {"provider": "nvidia", "model": "nvidia/nemotron-3.5-super-vl-120b-a12b", "api_key": NVIDIA_LLAMA_32_90B_VISION_KEY},
+    # ⭐ Mistral Codestral — متخصص برمجة (لو الـ429 خلص)
     {"provider": "mistral", "model": "codestral-latest"},
-    # ⭐ Mistral Small
+    # ⭐ Mistral Small — fallback
     {"provider": "mistral", "model": "mistral-small-latest"},
-    # ⭐ SambaNova fallback
-    {"provider": "sambanova", "model": "DeepSeek-V3.1"},
 ]
 
 PREMIUM_CODING_MODELS = [
-    # ⭐ NVIDIA GLM 5.1 — أساسي للبرمجة في البريميوم
-    {"provider": "nvidia", "model": "thudm/glm-5.1", "api_key": NVIDIA_GLM_51_KEY},
-    # ⭐ NVIDIA DeepSeek V4 Pro — قوي في البرمجة
-    {"provider": "nvidia", "model": "deepseek-ai/deepseek-v4-pro", "api_key": NVIDIA_DEEPSEEK_V4_PRO_KEY},
-    # ⭐ NVIDIA Kimi K2.6 — كويس في الكود
-    {"provider": "nvidia", "model": "moonshotai/kimi-k2.6", "api_key": NVIDIA_KIMI_K26_KEY},
+    # ⭐ NVIDIA Mistral Large 4 — أساسي للبرمجة (مختبر ✅)
+    {"provider": "nvidia", "model": "mistralai/mistral-large-4-1t-a52b", "api_key": NVIDIA_GLM_51_KEY},
+    # ⭐ NVIDIA Nemotron 3.5 Super VL — موازي (مختبر ✅)
+    {"provider": "nvidia", "model": "nvidia/nemotron-3.5-super-vl-120b-a12b", "api_key": NVIDIA_LLAMA_32_90B_VISION_KEY},
+    # ⭐ NVIDIA Nemotron 3.5 Lightning — سريع (مختبر ✅)
+    {"provider": "nvidia", "model": "nvidia/nemotron-3.5-lightning-30b-a3b", "api_key": NVIDIA_LLAMA_33_70B_KEY},
     # ⭐ Mistral Codestral — متخصص برمجة
     {"provider": "mistral", "model": "codestral-latest"},
     # ⭐ Mistral Large — fallback
@@ -192,27 +186,28 @@ PREMIUM_CODING_MODELS = [
 CODING_MODELS = PREMIUM_CODING_MODELS
 
 # 📄 Summary - التلخيص
-# FREE: DeepSeek V4 Flash → Mistral Small → Nemo → SambaNova
-# PREMIUM: DeepSeek V4 Pro → MiniMax M2.7 → Mistral Large → Medium
+# ✅ محدثة 2026-11-02 — Nemotron Lightning سريع جدًا في التلخيص (مختبر ✅)
 FREE_SUMMARY_MODELS = [
-    # ⭐ NVIDIA DeepSeek V4 Flash — سريع في التلخيص
-    {"provider": "nvidia", "model": "deepseek-ai/deepseek-v4-flash", "api_key": NVIDIA_DEEPSEEK_V4_FLASH_KEY},
-    # ⭐ Mistral Small
+    # ⭐ NVIDIA Nemotron 3.5 Lightning — سريع في التلخيص (مختبر ✅)
+    {"provider": "nvidia", "model": "nvidia/nemotron-3.5-lightning-30b-a3b", "api_key": NVIDIA_LLAMA_33_70B_KEY},
+    # ⭐ NVIDIA Nemotron 3.5 Super VL — موازي (مختبر ✅)
+    {"provider": "nvidia", "model": "nvidia/nemotron-3.5-super-vl-120b-a12b", "api_key": NVIDIA_LLAMA_32_90B_VISION_KEY},
+    # ⭐ Mistral Small — fallback
     {"provider": "mistral", "model": "mistral-small-latest"},
-    # ⭐ Mistral Nemo
-    {"provider": "mistral", "model": "open-mistral-nemo"},
     # ⭐ SambaNova fallback
     {"provider": "sambanova", "model": "DeepSeek-V3.1"},
 ]
 
 PREMIUM_SUMMARY_MODELS = [
-    # ⭐ NVIDIA DeepSeek V4 Pro — أساسي للتلخيص
-    {"provider": "nvidia", "model": "deepseek-ai/deepseek-v4-pro", "api_key": NVIDIA_DEEPSEEK_V4_PRO_KEY},
-    # ⭐ NVIDIA MiniMax M2.7 — تلخيص متقدم
-    {"provider": "nvidia", "model": "minimaxai/minimax-m2.7", "api_key": NVIDIA_MINIMAX_M27_KEY},
-    # ⭐ Mistral Large
+    # ⭐ NVIDIA Mistral Large 4 — تلخيص عميق (مختبر ✅)
+    {"provider": "nvidia", "model": "mistralai/mistral-large-4-1t-a52b", "api_key": NVIDIA_DEEPSEEK_V4_PRO_KEY},
+    # ⭐ NVIDIA Nemotron 3.5 Lightning — سريع (مختبر ✅)
+    {"provider": "nvidia", "model": "nvidia/nemotron-3.5-lightning-30b-a3b", "api_key": NVIDIA_LLAMA_33_70B_KEY},
+    # ⭐ NVIDIA Nemotron 3.5 Super VL — موازي (مختبر ✅)
+    {"provider": "nvidia", "model": "nvidia/nemotron-3.5-super-vl-120b-a12b", "api_key": NVIDIA_LLAMA_32_90B_VISION_KEY},
+    # ⭐ Mistral Large — fallback
     {"provider": "mistral", "model": "mistral-large-latest"},
-    # ⭐ Mistral Medium
+    # ⭐ Mistral Medium — fallback أخير
     {"provider": "mistral", "model": "mistral-medium-latest"},
 ]
 
@@ -220,22 +215,21 @@ PREMIUM_SUMMARY_MODELS = [
 SUMMARY_MODELS = PREMIUM_SUMMARY_MODELS
 
 # 👁️ Vision - تحليل الصور
-# FREE: Llama 3.2 90B Vision → Nemotron Nano VL → Mistral Pixtral
-# PREMIUM: Llama 3.2 90B Vision → Nemotron Nano VL → Mistral Pixtral
+# ✅ محدثة 2026-11-02 — Nemotron 3.5 Super VL هو البديل الحي الأسرع (0.6s، مختبر ✅)
 FREE_VISION_MODELS = [
-    # ⭐ NVIDIA Llama 3.2 90B Vision — أساسي للرؤية
-    {"provider": "nvidia", "model": "meta/llama-3.2-90b-vision-instruct", "api_key": NVIDIA_LLAMA_32_90B_VISION_KEY},
-    # ⭐ NVIDIA Nemotron Nano VL — fallback خفيف
-    {"provider": "nvidia", "model": "nvidia/nemotron-nano-12b-v2-vl", "api_key": NVIDIA_NEMOTRON_NANO_VL_KEY},
+    # ⭐ NVIDIA Nemotron 3.5 Super VL — أساسي للرؤية (مختبر ✅)
+    {"provider": "nvidia", "model": "nvidia/nemotron-3.5-super-vl-120b-a12b", "api_key": NVIDIA_LLAMA_32_90B_VISION_KEY},
+    # ⭐ NVIDIA Llama 3.2 90B Vision — fallback (بطيء أحيانًا)
+    {"provider": "nvidia", "model": "meta/llama-3.2-90b-vision-instruct", "api_key": NVIDIA_NEMOTRON_NANO_VL_KEY},
     # ⭐ Mistral Pixtral — fallback
     {"provider": "mistral", "model": "pixtral-large-latest"},
 ]
 
 PREMIUM_VISION_MODELS = [
-    # ⭐ NVIDIA Llama 3.2 90B Vision — أساسي للرؤية
-    {"provider": "nvidia", "model": "meta/llama-3.2-90b-vision-instruct", "api_key": NVIDIA_LLAMA_32_90B_VISION_KEY},
-    # ⭐ NVIDIA Nemotron Nano VL — fallback خفيف
-    {"provider": "nvidia", "model": "nvidia/nemotron-nano-12b-v2-vl", "api_key": NVIDIA_NEMOTRON_NANO_VL_KEY},
+    # ⭐ NVIDIA Nemotron 3.5 Super VL — أساسي للرؤية (مختبر ✅)
+    {"provider": "nvidia", "model": "nvidia/nemotron-3.5-super-vl-120b-a12b", "api_key": NVIDIA_LLAMA_32_90B_VISION_KEY},
+    # ⭐ NVIDIA Llama 3.2 90B Vision — fallback (بطيء أحيانًا)
+    {"provider": "nvidia", "model": "meta/llama-3.2-90b-vision-instruct", "api_key": NVIDIA_NEMOTRON_NANO_VL_KEY},
     # ⭐ Mistral Pixtral — fallback
     {"provider": "mistral", "model": "pixtral-large-latest"},
 ]
