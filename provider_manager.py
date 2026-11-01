@@ -333,8 +333,13 @@ class ProviderManager:
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
-        
-        # ⚡ Mistral Prompt Caching — كاش الـ system prompt على مستوى API
+
+        # 🧠 نماذج nemotron-3.5 نماذج reasoning — افتراضيًا بتفكر في reasoning_content
+        # وبتستهلك ميزانية max_tokens في التفكير → الرد بيطلع فاضي (finish=length، مختبر 2026-11-02)
+        # أو بتعدي الـtimeout. عطّل التفكير → رد فوري صحيح (0.5s مختبر ✅)
+        # mistral-large-4 على NVIDIA بتقبل الحقل ده عادي (مختبر 200 OK)
+        if provider_name == "nvidia":
+            payload["chat_template_kwargs"] = {"thinking": False}
         # Mistral بيكاش الـ system prompt لو كبير بما فيه كفاية
         # ده بيقلل latency و cost بشكل كبير (1-4 ثواني أسرع بعد أول طلب)
         if provider_name == "mistral" and messages and len(messages) > 0:
@@ -465,6 +470,8 @@ class ProviderManager:
                 "max_tokens": continue_max_tokens,
                 "temperature": temperature,
             }
+            if provider_name == "nvidia":
+                payload["chat_template_kwargs"] = {"thinking": False}
 
             logger.info(f"🔄 Trying auto-continuation (depth={_depth+1}) with {provider_name}/{model}...")
             response = _http_session.post(url, json=payload, headers=headers, timeout=timeout)
