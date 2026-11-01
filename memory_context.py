@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 # ═══════════════════════════════════════
 
 MAX_SHORT_TERM_MESSAGES = 100  # أقصى عدد رسائل قصيرة المدى (كان 50)
-CONTEXT_MESSAGES_FOR_AI = 50   # عدد الرسائل المرسلة فعلياً للـ AI (default)
+CONTEXT_MESSAGES_FOR_AI = 50   # عدد الرسائل المرسلة فعليًا للـ AI (default)
 CONTEXT_CHAR_LIMIT = 1500     # أقصى عدد حروف لكل رسالة في السياق (كان 1000، اتزود عشان السياق أطول)
 CONTEXT_MESSAGES_PREMIUM = 80  # ⭐ Premium: 80 رسالة سياق (كان 50)
 CONTEXT_CHAR_LIMIT_PREMIUM = 2000  # ⭐ Premium: حروف أكتر لكل رسالة (كان 1000)
@@ -159,7 +159,7 @@ def load_short_term_memory(user_id: int, limit: int = CONTEXT_MESSAGES_FOR_AI, i
     
     Returns:
         List of {"role": "user"|"assistant", "content": str}
-        مرتبة زمنياً (الأقدم أولاً)
+        مرتبة زمنيًا (الأقدم أولًا)
     """
     try:
         conversations = get_recent_conversations(user_id, limit)
@@ -190,7 +190,7 @@ def load_long_term_memory(user_id: int, current_message: str = "", conversations
     - الاهتمامات المحفوظة
     - المواضيع المتعلمة ومستوياتها
     - الشركات المفضلة
-    - الذكريات المحفوظة يدوياً
+    - الذكريات المحفوظة يدويًا
     - استرجاع دلالي: ذكريات متعلقة بالرسالة الحالية
     ⚡ لو conversations متpassed، بيوفر DB query
     """
@@ -249,7 +249,7 @@ def _retrieve_relevant_memories(user_id: int, current_message: str,
     """استرجاع دلالي للذكريات المتعلقة بالرسالة الحالية
     
     يبحث عن تطابق كلمات مفتاحية بين الرسالة والذكريات المحفوظة
-    وليس مجرد تحميل كل شيء — فقط المتعلق فعلياً
+    وليس مجرد تحميل كل شيء — فقط المتعلق فعليًا
     """
     relevant = []
     current_lower = current_message.lower()
@@ -707,7 +707,7 @@ def _format_context_for_prompt(profile: Dict, long_term: Dict, language: str = "
 # ═══════════════════════════════════════
 
 def auto_save_conversation_memory(user_id: int, user_message: str, bot_response: str):
-    """حفظ ذكريات تلقائياً من المحادثة
+    """حفظ ذكريات تلقائيًا من المحادثة
     
     يستخرج معلومات مهمة من المحادثة ويحفظها كذكريات طويلة المدى:
     - تفضيلات صريحة (أنا بحب، أنا بكره، أنا مش عايز)

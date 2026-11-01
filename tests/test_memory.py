@@ -1437,7 +1437,7 @@ class TestFormatProgressDisplay(unittest.TestCase):
     def test_progress_with_all_levels_arabic(self, mock_get):
         result = format_progress_display(123, 'ar')
         self.assertIn('استكشفت', result)
-        self.assertIn('بتتعلم حالياً', result)
+        self.assertIn('بتتعلم حاليًا', result)
         self.assertIn('اتعلمت', result)
         self.assertIn('الإجمالي', result)
 
@@ -1521,14 +1521,14 @@ class TestPersonalizedGreeting(unittest.TestCase):
     @patch.object(memory, 'get_user', return_value={'name': 'Ahmed'})
     def test_arabic_greeting_with_name_and_interests(self, mock_get_user, mock_get_interests):
         result = get_personalized_greeting(123, 'ar')
-        self.assertIn('أهلاً Ahmed', result)
+        self.assertIn('أهلًا Ahmed', result)
         self.assertIn('مهتم بـ AI', result)
 
     @patch.object(memory, 'get_interests', return_value=[])
     @patch.object(memory, 'get_user', return_value={'name': ''})
     def test_arabic_greeting_no_name_no_interests(self, mock_get_user, mock_get_interests):
         result = get_personalized_greeting(123, 'ar')
-        self.assertIn('أهلاً!', result)
+        self.assertIn('أهلًا!', result)
 
     @patch.object(memory, 'get_interests', return_value=['AI'])
     @patch.object(memory, 'get_user', return_value={'name': 'John'})

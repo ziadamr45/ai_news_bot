@@ -265,7 +265,7 @@ async def _handle_incoming_message(message: dict, value: dict):
                     return
                 else:
                     # مش رقم — ممكن المستخدم كتب حاجة تانية
-                    await _send_whatsapp_message(wa_id, "📝 اكتب رقم (مثلاً: 3 أو 5 أو 10) أو اضغط إلغاء.")
+                    await _send_whatsapp_message(wa_id, "📝 اكتب رقم (مثلًا: 3 أو 5 أو 10) أو اضغط إلغاء.")
                     return
             
             elif flow == "image_edit":
@@ -847,7 +847,7 @@ async def _handle_incoming_message(message: dict, value: dict):
 
                             # ✅ للمستخدم العادي — رسالة بسيطة
                             if not is_admin:
-                                await _send_whatsapp_message(wa_id, "✅ تم رفع ملف الكوكيز بنجاح! شكراً لمساعدتنا 🎬")
+                                await _send_whatsapp_message(wa_id, "✅ تم رفع ملف الكوكيز بنجاح! شكرًا لمساعدتنا 🎬")
                             else:
                                 # 🔴 للأدمن — تفاصيل كاملة
                                 if new_added > 0:

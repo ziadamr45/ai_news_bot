@@ -638,7 +638,7 @@ async def search_images(query: str, count: int = 3) -> Optional[List[Dict]]:
 # ═══════════════════════════════════════
 
 async def download_image(url: str, output_dir: str = "/tmp") -> Optional[str]:
-    """تحميل صورة من رابط وحفظها محلياً
+    """تحميل صورة من رابط وحفظها محليًا
     
     Returns: مسار الملف المحلي أو None لو فشل التحميل
     """
@@ -658,7 +658,7 @@ async def download_image(url: str, output_dir: str = "/tmp") -> Optional[str]:
                     logger.warning(f"🖼️ Image download failed: HTTP {resp.status} for {url[:80]}")
                     return None
                 
-                # 🔴 تحقق إن الـ Content-Type فعلاً صورة
+                # 🔴 تحقق إن الـ Content-Type فعلًا صورة
                 content_type = resp.headers.get("Content-Type", "")
                 if content_type and "text/html" in content_type:
                     logger.warning(f"🖼️ Got HTML instead of image for {url[:80]}")
@@ -716,7 +716,7 @@ async def download_image_bytes(url: str) -> Optional[bytes]:
                 if resp.status != 200:
                     return None
                 
-                # تحقق إن الـ Content-Type فعلاً صورة
+                # تحقق إن الـ Content-Type فعلًا صورة
                 content_type = resp.headers.get("Content-Type", "")
                 if content_type and "text/html" in content_type:
                     return None

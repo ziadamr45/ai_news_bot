@@ -71,7 +71,7 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await progress.update_stage(0)
         articles = await fetch_news()
         if not articles:
-            await progress.error("لا توجد أخبار AI جديدة حالياً. 🤖" if lang == "ar" else "No new AI news right now. 🤖")
+            await progress.error("لا توجد أخبار AI جديدة حاليًا. 🤖" if lang == "ar" else "No new AI news right now. 🤖")
             return
 
         await progress.update_stage(1)
@@ -188,7 +188,7 @@ async def breaking_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         filtered = filter_news(articles)
 
         if not filtered:
-            await progress.error("لا توجد أخبار عاجلة حالياً. 🤖" if lang == "ar" else "No breaking news right now. 🤖")
+            await progress.error("لا توجد أخبار عاجلة حاليًا. 🤖" if lang == "ar" else "No breaking news right now. 🤖")
             return
 
         await progress.update_stage(2)
@@ -196,7 +196,7 @@ async def breaking_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         top = ranked[0] if ranked else None
 
         if not top:
-            await progress.error("لا توجد أخبار عاجلة حالياً. 🤖" if lang == "ar" else "No breaking news right now. 🤖")
+            await progress.error("لا توجد أخبار عاجلة حاليًا. 🤖" if lang == "ar" else "No breaking news right now. 🤖")
             return
 
         summarized = await summarize_articles([top])
@@ -362,7 +362,7 @@ async def trending_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         filtered = filter_news(articles)
 
         if not filtered:
-            await progress.error("لا توجد ترندات حالياً. 🤖" if lang == "ar" else "No trending topics right now. 🤖")
+            await progress.error("لا توجد ترندات حاليًا. 🤖" if lang == "ar" else "No trending topics right now. 🤖")
             return
 
         await progress.update_stage(2)
@@ -383,7 +383,7 @@ async def trending_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         top_trends = keyword_counter.most_common(10)
 
         if not top_trends:
-            await progress.error("لا توجد ترندات حالياً. 🤖" if lang == "ar" else "No trending topics right now. 🤖")
+            await progress.error("لا توجد ترندات حاليًا. 🤖" if lang == "ar" else "No trending topics right now. 🤖")
             return
 
         if lang == "ar":
@@ -675,7 +675,7 @@ async def _send_news_callback(query, context, lang):
     try:
         articles = await fetch_news()
         if not articles:
-            await loading_msg.edit_text("لا توجد أخبار AI جديدة حالياً. 🤖" if lang == "ar" else "No new AI news right now. 🤖")
+            await loading_msg.edit_text("لا توجد أخبار AI جديدة حاليًا. 🤖" if lang == "ar" else "No new AI news right now. 🤖")
             return
 
         await loading_msg.edit_text(
@@ -749,7 +749,7 @@ async def _send_trending_callback(query, context, lang):
         filtered = filter_news(articles)
 
         if not filtered:
-            await loading_msg.edit_text("لا توجد ترندات حالياً. 🤖" if lang == "ar" else "No trending topics right now. 🤖")
+            await loading_msg.edit_text("لا توجد ترندات حاليًا. 🤖" if lang == "ar" else "No trending topics right now. 🤖")
             return
 
         from collections import Counter
@@ -768,7 +768,7 @@ async def _send_trending_callback(query, context, lang):
         top_trends = keyword_counter.most_common(10)
 
         if not top_trends:
-            await loading_msg.edit_text("لا توجد ترندات حالياً. 🤖" if lang == "ar" else "No trending topics right now. 🤖")
+            await loading_msg.edit_text("لا توجد ترندات حاليًا. 🤖" if lang == "ar" else "No trending topics right now. 🤖")
             return
 
         if lang == "ar":

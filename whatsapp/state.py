@@ -171,7 +171,7 @@ _wa_user_yt_url = {}  # {wa_id: "youtube_url"} — 🍪 cache YouTube URL for do
 #   pdf_qa        → في انتظار سؤال عن PDF
 #   download      → في انتظار اختيار جودة التحميل
 _wa_user_state = {}  # {wa_id: {"flow": str, "data": dict, "expires": float}}
-_WA_STATE_TTL = 300  # 5 دقائق — بعد كده الحالة تنتهي تلقائياً
+_WA_STATE_TTL = 300  # 5 دقائق — بعد كده الحالة تنتهي تلقائيًا
 
 def _set_user_state(wa_id: str, flow: str, data: dict = None):
     """حفظ حالة المستخدم النشطة"""

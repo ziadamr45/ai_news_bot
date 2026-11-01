@@ -151,7 +151,7 @@ async def _safe_send_with_progress(update: Update, context: ContextTypes.DEFAULT
                 try:
                     await progress.complete(final_message=response, reply_markup=reply_markup, delete_progress=False)
                 except Exception as e:
-                    # لو progress.complete فشل (مثلاً الرسالة طويلة)، نبعت يدوي
+                    # لو progress.complete فشل (مثلًا الرسالة طويلة)، نبعت يدوي
                     logger.warning(f"⚠️ progress.complete failed, sending manually: {e}")
                     try:
                         await progress.complete(delete_progress=True)
@@ -836,7 +836,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if cmd == "/ask":
             if lang == "ar":
-                msg = "🤖 اكتب سؤالك وسأجيبك فوراً!"
+                msg = "🤖 اكتب سؤالك وسأجيبك فورًا!"
             else:
                 msg = "🤖 Type your question and I'll answer right away!"
             await update.message.reply_text(msg)

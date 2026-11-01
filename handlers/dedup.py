@@ -46,7 +46,7 @@ async def _is_duplicate_update(update_id: int) -> bool:
 
 
 async def _is_duplicate_user_message(user_id: int, text: str) -> bool:
-    """فحص هل المستخدم ده بعت نفس الرسالة مؤخراً (منع التكرار لكل مستخدم) — ASYNC SAFE"""
+    """فحص هل المستخدم ده بعت نفس الرسالة مؤخرًا (منع التكرار لكل مستخدم) — ASYNC SAFE"""
     async with _dedup_lock:
         now = _time.time()
 

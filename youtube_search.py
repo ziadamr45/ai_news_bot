@@ -268,11 +268,11 @@ async def search_youtube_scraping(query: str, max_results: int = 5) -> Optional[
 
 
 async def search_youtube(query: str, max_results: int = 5) -> Optional[List[Dict]]:
-    """بحث YouTube — API أولاً ثم scraping كبديل
+    """بحث YouTube — API أولًا ثم scraping كبديل
     
     Args:
         query: كلمة البحث
-        max_results: أقصى عدد نتائج (5 افتراضياً)
+        max_results: أقصى عدد نتائج (5 افتراضيًا)
     
     Returns:
         قائمة نتائج أو None لو فشل البحث كله

@@ -154,7 +154,7 @@ BLOCKED_PATTERNS = [
 
 
 def _check_keywords(text: str) -> tuple[bool, str]:
-    """فحص الكلمات المفتاحية — صارم جداً"""
+    """فحص الكلمات المفتاحية — صارم جدًا"""
     if not text:
         return False, ""
 
@@ -182,7 +182,7 @@ def _check_keywords(text: str) -> tuple[bool, str]:
 
 
 def check_content_safety(title: str = "", description: str = "", url: str = "") -> tuple[bool, str]:
-    """🛡️ فحص أمان المحتوى — صارم جداً على السيرفر
+    """🛡️ فحص أمان المحتوى — صارم جدًا على السيرفر
     
     بنفحص:
     - عنوان الفيديو

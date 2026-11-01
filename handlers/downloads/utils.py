@@ -47,7 +47,7 @@ def _ensure_audio_only(file_path: str, bitrate: int = 192) -> str:
     🔴 FIX v6: إضافة طريقة تانية لاستخراج الصوت لو الطريقة الأولى فشلت
     
     Returns:
-        مسار الملف الصوتي (ممكن نفس الملف لو كان صوت أصلاً، أو ملف جديد MP3)
+        مسار الملف الصوتي (ممكن نفس الملف لو كان صوت أصلًا، أو ملف جديد MP3)
     """
     if not os.path.exists(file_path):
         return file_path
@@ -155,7 +155,7 @@ def _ensure_audio_only(file_path: str, bitrate: int = 192) -> str:
 
 async def _send_telegram_audio(message, file_path: str, title: str, size_str: str, 
                                 lang: str, method_name: str = "", bitrate: int = 192):
-    """إرسال ملف صوتي للتليجرام — مع التأكد إن الملف فعلاً صوت مش فيديو
+    """إرسال ملف صوتي للتليجرام — مع التأكد إن الملف فعلًا صوت مش فيديو
     
     🔴 المشكلة: بعض طرق التحميل بترجع ملف فيديو حتى لو طلبنا صوت
     الدالة دي بتتأكد إن الملف صوت بس قبل الإرسال
@@ -364,11 +364,11 @@ def _retrieve_url(key: str) -> str:
 
 
 # ═══════════════════════════════════════
-# 🔴 الكوكيز الوهمية اتشالت نهائياً!
+# 🔴 الكوكيز الوهمية اتشالت نهائيًا!
 # الكوكيز الوهمية (visitor cookies) بتضر أكتر مما تنفع لأن:
 # 1. YouTube بيكتشف إنها random/generated وبيعتبرنا bot
 # 2. كل محاولة بتولد visitor_id مختلف = سلوك مش طبيعي
-# 3. yt-dlp بيدير كوكيز YouTube داخلياً حسب player_client
+# 3. yt-dlp بيدير كوكيز YouTube داخليًا حسب player_client
 # الحل الحقيقي: ملف cookies.txt حقيقي من المتصفح
 # ═══════════════════════════════════════
 
@@ -416,7 +416,7 @@ def _get_audio_quality_keyboard(url: str, lang: str = "ar") -> InlineKeyboardMar
     
     🔴 الفرق عن _get_quality_keyboard:
     - بيظهر خيارات جودة الصوت بس (320kbps, 192kbps, 128kbps, 64kbps)
-    - مفيش خيارات فيديو — المستخدم طلب صوت أصلاً
+    - مفيش خيارات فيديو — المستخدم طلب صوت أصلًا
     - callback data: dl_aq_{bitrate}_{url_key}
     """
     url_key = _store_url(url)

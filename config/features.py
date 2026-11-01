@@ -264,7 +264,7 @@ COBALT_JWT = os.environ.get("COBALT_JWT", "")
 # Apify — fallback رابع لتحميل فيديوهات اليوتيوب
 # 🔵 Apify هو منصة scraping قوية — بنستخدم actor لتحميل الفيديوهات
 # لما yt-dlp و Cobalt يفشلوا، Apify بيكون الحل الأضمن
-# 🔴 ميزة: مش بيتأثر بـ YouTube bot detection خالص — سيرفرات مختلفة تماماً
+# 🔴 ميزة: مش بيتأثر بـ YouTube bot detection خالص — سيرفرات مختلفة تمامًا
 APIFY_API_KEY = os.environ.get("APIFY_API_KEY", "")  # apify_api_...
 
 # Invidious API — واجهة بديلة لليوتيوب (fallback بين RapidAPI و yt-dlp)
@@ -283,7 +283,7 @@ CREATOR_INFO = {
     "title_en": "Egyptian Web Developer & AI Builder",
     "title_ar": "مطوّر ويب مصري وباني أدوات ذكاء اصطناعي",
     "bio_en": "Full-stack web developer specializing in Next.js, React, TypeScript, and modern web technologies. Building AI-powered tools and bots that make artificial intelligence accessible to everyone, especially Arabic speakers. Founder and CEO of Qudra Tech — an Egyptian tech startup focused on innovative web solutions and AI applications. Passionate about bridging the gap between cutting-edge AI technology and the Arabic-speaking world.",
-    "bio_ar": "مطوّر ويب متكامل متخصص في Next.js و React و TypeScript وتقنيات الويب الحديثة. بيبني أدوات وبوتات بتقنية الذكاء الاصطناعي بتخلي التكنولوجيا متاحة للجميع، خصوصاً الناطقين بالعربية. مؤسس ومدير تنفيذي لشركة Qudra Tech — شركة تقنية مصرية ناشئة متخصصة في حلول الويب المبتكرة وتطبيقات الذكاء الاصطناعي. شغوف إنه يعمل كوبري بين أحدث تقنيات الذكاء الاصطناعي والعالم العربي.",
+    "bio_ar": "مطوّر ويب متكامل متخصص في Next.js و React و TypeScript وتقنيات الويب الحديثة. بيبني أدوات وبوتات بتقنية الذكاء الاصطناعي بتخلي التكنولوجيا متاحة للجميع، خصوصًا الناطقين بالعربية. مؤسس ومدير تنفيذي لشركة Qudra Tech — شركة تقنية مصرية ناشئة متخصصة في حلول الويب المبتكرة وتطبيقات الذكاء الاصطناعي. شغوف إنه يعمل كوبري بين أحدث تقنيات الذكاء الاصطناعي والعالم العربي.",
     "company_en": "Qudra Tech",
     "company_ar": "Qudra Tech — قدرة تك",
     "company_desc_en": "An Egyptian tech startup specializing in web development, AI applications, and innovative digital solutions. Building tools that make AI accessible to Arabic speakers worldwide.",

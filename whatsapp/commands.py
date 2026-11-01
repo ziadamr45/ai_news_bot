@@ -311,7 +311,7 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
                 "I can help you with many things!\nChoose from the menu or just type anything")
         else:
             await _send_whatsapp_message(wa_id,
-                "أهلاً بيك! 🤖 أنا *My Bro* — مساعدك الذكي الشخصي\n\n"
+                "أهلًا بيك! 🤖 أنا *My Bro* — مساعدك الذكي الشخصي\n\n"
                 "ممكن أساعدك في حاجات كتير!\nاختار من القائمة أو ابعت أي رسالة")
 
         # Then send interactive list with all categories
@@ -389,11 +389,11 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
                               "هابعتلك أهم أخبار الذكاء الاصطناعي كل يوم الساعة 12 الظهر بتوقيت القاهرة 🌅\n\n"
                               "✅ آخر أخبار AI من مصادر عالمية\n"
                               "✅ ملخص بالعربية مفهوم وبسيط\n"
-                              "✅ مجاني تماماً\n\n"
+                              "✅ مجاني تمامًا\n\n"
                               "👇 اختار من تحت!",
                     buttons=[
                         {"id": "cmd_subscribe_confirm", "title": "✅ اشترك"},
-                        {"id": "cmd_skip_subscribe", "title": "لا شكراً"},
+                        {"id": "cmd_skip_subscribe", "title": "لا شكرًا"},
                     ],
                     header_text="📬 أخبار يومية",
                 )
@@ -455,7 +455,7 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
     elif command == "trending":
         from whatsapp_webhook import _send_ai_response
         await _send_ai_response(wa_id,
-            "ما هي أهم المواضيع الترند في مجال الذكاء الاصطناعي اليوم؟ اذكر أهم 5 مواضيع أو تقنيات يتكلم عنها الناس حالياً",
+            "ما هي أهم المواضيع الترند في مجال الذكاء الاصطناعي اليوم؟ اذكر أهم 5 مواضيع أو تقنيات يتكلم عنها الناس حاليًا",
             wa_user_id, contact_name, message_id, context_type="news")
 
     # ══════════════════════════════════════
@@ -684,7 +684,7 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
             current_time = get_news_time(wa_user_id)
             if current_time == "09:00":
                 set_news_time(wa_user_id, "12:00")
-            # 🔴 BUG FIX: نتأكد إن الاشتراك اتحفظ فعلاً قبل ما نبعت رسالة نجاح
+            # 🔴 BUG FIX: نتأكد إن الاشتراك اتحفظ فعلًا قبل ما نبعت رسالة نجاح
             if is_subscribed(wa_user_id):
                 logger.info(f"✅ subscribe_confirm: user {wa_user_id} subscribed successfully")
                 await _send_whatsapp_message(wa_id, "✅ تم الاشتراك بنجاح! 🎉\n\n📬 هنبعتلك أخبار AI كل يوم الساعة 12 الظهر (توقيت القاهرة).\n\n⏰ لو عايز تغير الوقت ابعت بصيغة HH:MM\nمثال: 14:30\n\nلو عايز تلغي الاشتراك ابعت: إلغاء")
@@ -710,7 +710,7 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
             await _send_whatsapp_message(wa_id, "⚠️ حصل خطأ في الاشتراك. جرب تاني أو تواصل مع المطور.")
 
     elif command == "skip_subscribe":
-        # 🔴 FIX v3: المستخدم ضغط "لا شكراً" على سؤال الاشتراك — نحترم اختياره بس نقوله ممكن يشترك بعدين
+        # 🔴 FIX v3: المستخدم ضغط "لا شكرًا" على سؤال الاشتراك — نحترم اختياره بس نقوله ممكن يشترك بعدين
         from memory import get_language
         skip_lang = get_language(wa_user_id)
         if skip_lang == "en":
@@ -935,7 +935,7 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
                 await _send_whatsapp_message(wa_id,
                     "👑 *أنت الأدمن*\n\n"
                     "⭐ كل حاجة مفتوحة — مفيش Limits!\n"
-                    "كل مزايا Premium متاحة ليك تلقائياً.")
+                    "كل مزايا Premium متاحة ليك تلقائيًا.")
                 return True
 
             plan = get_user_plan(wa_user_id)
@@ -1451,7 +1451,7 @@ async def _handle_command(wa_id: str, command: str, wa_user_id: int, contact_nam
         else:
             msg = (
                 "🔑 *PO Token — مش متوفر*\n\n"
-                "❌ مفيش PO Token حالياً\n\n"
+                "❌ مفيش PO Token حاليًا\n\n"
                 "💡 إزاي تجيب PO Token:\n"
                 "1️⃣ افتح youtube.com في Chrome\n"
                 "2️⃣ افتح DevTools (F12) → Console\n"
@@ -1870,7 +1870,7 @@ async def _handle_command_with_arg(wa_id: str, cmd_name: str, arg: str, wa_user_
                     await _send_whatsapp_message(wa_id, "✅ تم حذف ملف الكوكيز.")
                     logger.info(f"🍪 WA Cookies file deleted by admin {wa_id}")
                 else:
-                    await _send_whatsapp_message(wa_id, "❌ ملف الكوكيز مش موجود أصلاً.")
+                    await _send_whatsapp_message(wa_id, "❌ ملف الكوكيز مش موجود أصلًا.")
             except Exception as e:
                 await _send_whatsapp_message(wa_id, f"❌ فشل الحذف: {e}")
         elif not is_admin:
