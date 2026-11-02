@@ -586,7 +586,7 @@ Question: {query}
         if dev_context:
             system += dev_context
 
-        response = call_ai_sync(prompt, system_prompt=system, task_type="chat", temperature=0.5, max_tokens=8192, user_id=user_id)
+        response = call_ai_sync(prompt, system_prompt=system, task_type="chat", temperature=0.5, max_tokens=2500, user_id=user_id, deadline=time.time() + 90)
         from formatters import clean_ai_response
         if response:
             response = clean_ai_response(response)
@@ -660,7 +660,7 @@ Requirements:
     if dev_context:
         system += dev_context
 
-    response = call_ai_sync(prompt, system_prompt=system, task_type="chat", temperature=0.5, max_tokens=8192, user_id=user_id)
+    response = call_ai_sync(prompt, system_prompt=system, task_type="chat", temperature=0.5, max_tokens=2500, user_id=user_id, deadline=time.time() + 90)
     from formatters import clean_ai_response
     if response:
         response = clean_ai_response(response)
@@ -806,7 +806,7 @@ Question: {query}
         if dev_context:
             system += dev_context
 
-        response = call_ai_sync(prompt, system_prompt=system, task_type="deep_search", temperature=0.4, max_tokens=8192, user_id=user_id)
+        response = call_ai_sync(prompt, system_prompt=system, task_type="deep_search", temperature=0.4, max_tokens=2500, user_id=user_id, deadline=time.time() + 90)
         from formatters import clean_ai_response
         if response:
             response = clean_ai_response(response)
@@ -935,7 +935,7 @@ Do NOT fabricate information - if unsure, say so honestly."""
     if dev_context:
         system += dev_context
 
-    response = call_ai_sync(prompt, system_prompt=system, task_type="deep_search", temperature=0.4, max_tokens=8192, user_id=user_id)
+    response = call_ai_sync(prompt, system_prompt=system, task_type="deep_search", temperature=0.4, max_tokens=2500, user_id=user_id, deadline=time.time() + 90)
     from formatters import clean_ai_response
     if response:
         response = clean_ai_response(response)

@@ -984,6 +984,7 @@ class ProviderManager:
         timeout: int = None,
         user_id: int = None,
         user_plan: str = None,
+        deadline: float = None,
     ) -> Optional[str]:
         """استدعاء AI مع system prompt منفصل (متزامن)"""
         messages = []
@@ -1002,6 +1003,7 @@ class ProviderManager:
             timeout=timeout,
             user_id=user_id,
             user_plan=user_plan,
+            deadline=deadline,
         )
 
     async def call_with_system_prompt_async(
@@ -1656,6 +1658,7 @@ def call_ai_sync(
     prefer_arabic: bool = False,
     user_id: int = None,
     user_plan: str = None,
+    deadline: float = None,
 ) -> Optional[str]:
     """
     استدعاء AI عبر Provider Manager (متزامن)
@@ -1673,4 +1676,5 @@ def call_ai_sync(
         max_tokens=max_tokens,
         user_id=user_id,
         user_plan=user_plan,
+        deadline=deadline,
     )
