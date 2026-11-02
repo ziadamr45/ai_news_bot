@@ -24,6 +24,7 @@
 import asyncio
 import logging
 import re
+import json
 import time
 import base64
 from typing import Optional, List, Dict, Any
@@ -321,6 +322,119 @@ class ProviderManager:
     # استدعاء API - API Calls
     # ═══════════════════════════════════════
 
+    def _call_provider_stream(
+        self, url, headers, payload, provider_name, model,
+        timeout, actual_api_key, temperature, max_tokens, messages,
+    ) -> Optional[str]:
+        """🔴 استدعاء بالـ streaming (SSE) — الحل الحقيقي لازدحام NVIDIA:
+        - read-gap timeout قصير (25s) → لو النموذج في طابور ومش بيبعت حاجة، ننتقل لللي بعده بسرعة
+        - لو بيبعت توكنز → نقرأها كلها مهما طال (الـ cap هو الميزانية الكلية)
+        - لو الرد اتقص عند الميزانية → ناخد اللي اتجمع (أحسن من لا شيء) + نجرب continuation
+        """
+        payload = dict(payload)
+        payload["stream"] = True
+        start_t = time.time()
+        content_parts = []
+        finish_reason = ""
+
+        try:
+            response = _http_session.post(
+                url, headers=headers, json=payload,
+                timeout=(15, 25),  # connect 15s، فجوة بين التوكنز 25s
+                stream=True,
+            )
+            response.raise_for_status()
+
+            for line in response.iter_lines(decode_unicode=True):
+                # 🔴 الـ cap الكلي — مفيش نموذج ياخد أكتر من مهلته + 20s كحد أقصى
+                if time.time() - start_t > timeout + 20:
+                    logger.warning(f"⏰ Stream cap ({timeout}s+20) reached for {model} — using partial ({sum(len(p) for p in content_parts)} chars)")
+                    break
+                if not line:
+                    continue
+                if isinstance(line, bytes):
+                    line = line.decode("utf-8", errors="replace")
+                if not line.startswith("data:"):
+                    continue
+                data_str = line[5:].strip()
+                if data_str == "[DONE]":
+                    break
+                try:
+                    chunk = json.loads(data_str)
+                except Exception:
+                    continue
+                if chunk.get("error"):
+                    error_msg = str(chunk["error"])[:100]
+                    logger.warning(f"❌ Stream API error from {provider_name}/{model}: {error_msg}")
+                    if "429" in error_msg or "rate limit" in error_msg.lower():
+                        self._set_model_cooldown(model, f"Rate limited: {error_msg}", 60)
+                    else:
+                        self._set_model_cooldown(model, f"API error: {error_msg[:60]}", 20)
+                    return None
+                choices = chunk.get("choices") or []
+                if not choices:
+                    continue
+                choice = choices[0]
+                delta = choice.get("delta") or {}
+                piece = delta.get("content")
+                if piece:
+                    content_parts.append(piece)
+                if choice.get("finish_reason"):
+                    finish_reason = choice["finish_reason"]
+
+        except requests.exceptions.ReadTimeout:
+            # فجوة طويلة بدون توكنز = النموذج في طابور → فشل سريع للنموذج اللي بعده
+            elapsed = time.time() - start_t
+            got = sum(len(p) for p in content_parts)
+            if got > 30:
+                logger.warning(f"⏱️ Stream gap-timeout after {elapsed:.0f}s for {model} — but have {got} chars, using them")
+            else:
+                logger.warning(f"⏱️ Stream TTFT timeout ({elapsed:.0f}s, no tokens) for {provider_name}/{model} — next model")
+                self._set_model_cooldown(model, "Stream TTFT timeout", 20)
+                return None
+        except requests.exceptions.Timeout:
+            logger.warning(f"⏱️ Stream connect timeout for {provider_name}/{model}")
+            self._set_model_cooldown(model, "Timeout", 20)
+            return None
+        except requests.exceptions.RequestException as e:
+            error_str = str(e)
+            if "403" in error_str or "401" in error_str:
+                logger.error(f"🔒 Auth error (stream) for {provider_name}/{model}")
+                self._set_model_cooldown(model, f"Auth error: {error_str[:80]}", 120)
+            elif "429" in error_str:
+                self._set_model_cooldown(model, "Rate limit", 60)
+            else:
+                logger.warning(f"⚠️ Stream request error for {provider_name}/{model}: {error_str[:80]}")
+                self._set_model_cooldown(model, f"Request error: {error_str[:60]}", 20)
+            return None
+        except Exception as e:
+            logger.warning(f"⚠️ Stream unexpected error for {provider_name}/{model}: {str(e)[:80]}")
+            self._set_model_cooldown(model, f"Stream error: {str(e)[:60]}", 20)
+            return None
+        finally:
+            try:
+                response.close()
+            except Exception:
+                pass
+
+        content = "".join(content_parts)
+        # شيل thinking/reasoning tags من نماذج Qwen3 و DeepSeek R1
+        content = re.sub(r'<think\b[^>]*>.*?</think\s*>', '', content, flags=re.DOTALL)
+        content = content.strip()
+
+        if content:
+            self._clear_model_cooldown(model)
+            if finish_reason == "length":
+                logger.warning(f"⚠️ Stream TRUNCATED (finish=length) from {provider_name}/{model} ({len(content)} chars)")
+                continuation = self._try_continue(messages, provider_name, model, content, max_tokens, temperature, timeout, api_key=actual_api_key)
+                if continuation:
+                    content = content + "\n" + continuation
+            logger.info(f"✅ Stream response from {provider_name}/{model} ({len(content)} chars, finish={finish_reason or 'stream-end'}, {time.time()-start_t:.1f}s)")
+            return content
+
+        logger.warning(f"⚠️ Stream empty response from {provider_name}/{model} (finish={finish_reason})")
+        return None
+
     def _call_provider_sync(
         self,
         provider_name: str,
@@ -358,6 +472,12 @@ class ProviderManager:
             "max_tokens": max_tokens,
         }
 
+        # 🔴🔴 STREAMING (2026-11-03): NVIDIA بتعاني من ازدحام في الذروة —
+        # الطلب غير الـ streaming بيستنى الجسم كله (40-60s timeout مع مفيش داتا).
+        # بالـ streaming: أول توكن بيحكم (لو مفيش داتا خلال 25s → نجرب النموذج اللي بعده فورًا)
+        # ولو النموذج بيكتب، بنقرأ التوكنز وهي interpreted فورًا — مفيش timeout على الجسم كله.
+        use_stream = provider_name in ("nvidia", "mistral")
+
         # 🧠 وضع التفكير (reasoning) لنماذج NVIDIA — مختبر لايف 2026-11-02:
         # - nemotron-3-ultra-550b: نموذج reasoning حقيقي — التفكير شغال والرد بيرجع صح
         #   (مختبر: think=True → 200 OK بـ reasoning_content ✅) — ده اللي بيرجّع ميزة التفكير للبريميوم
@@ -387,6 +507,14 @@ class ProviderManager:
 
         try:
             logger.info(f"🤖 Calling {provider_name}/{model}")
+
+            if use_stream:
+                return self._call_provider_stream(
+                    url, headers, payload, provider_name, model,
+                    timeout=timeout, actual_api_key=actual_api_key,
+                    temperature=temperature, max_tokens=max_tokens, messages=messages,
+                )
+
             response = _http_session.post(url, headers=headers, json=payload, timeout=timeout)
             response.raise_for_status()
 
