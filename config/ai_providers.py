@@ -114,131 +114,127 @@ OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 OPENROUTER_BASE_URL = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 
 # ═══════════════════════════════════════════════════════════
-# الخطه الاحترافية — Model Routes (مختبرة لايف 2026-11-02 ✅)
-# كل نموذج NVIDIA ليه مفتاح api_key خاص
-# FREE = نماذج أساسية سريعة | PREMIUM = أقوى نماذج
-# ملاحظة: نماذج step-5 و minimax/deepseek-flash هي reasoning models
-#   → أول طلب بعد فترة صمت ممكن ياخد وقت (cold start) والفولباك بيغطي
+# الخطه الاحترافية v2 — Model Routes (2026-11-03 — بعد بحث كامل في قدرات كل نموذج)
+#
+# 🔴 قواعد زياد:
+#   1) FREE = نماذج ضعيفة/أساسية بس | PRO = أقوى نماذج
+#   2) المهام السريعة (شات/تحيات) = نماذج سريعة | المهام الثقيلة (بحث عميق/تلخيص/كود) = نماذج ضخمة
+#   3) كل ميزة تستخدم عائلتها: صور→vision, توليد صور→image, صوت→STT, ملفات→parse
+#
+# 🔴 جدول القدرات (من البحث):
+#   Bolt E4B:         8B/4B فعّالة — ضعيف وسريع جدًا (0.4s لايف) → المجاني
+#   Gemma 4 31B:      30.7B dense, 256K ctx, متعدد الوسائط (نص+صورة+فيديو) → متوسط (فري/فولباك برو)
+#   GLM 5.3 Flash:    320B-A18B, 1M ctx, قوي جدًا وسريع → البرو (شات تفاعلي)
+#   DeepSeek V4.1:    763B MoE, 1M ctx, elite coding/agents, 190 tok/s → البرو
+#   MiniMax M3.1:     428B-A23B, 1M ctx, thinking دايمًا شغال (بطيء البداية) → برو fallback
+#   Mistral Large 4:  1T-A52B, 1M ctx, flagship — بطيء نسبيًا → مهام برو الثقيلة فقط (timeout أطول)
+#   Step 5 Preview:   reasoning ضخم — أبطأ واحد → آخر حل للتحليل العميق فقط
+#   Super VL 120B:    120B-A12B رؤية (صور+فيديو) → تحليل الصور برو
+# 🔴 SambaNova (401) و Mistral-large API (403) اتشالوا — كانوا بيضيّعوا وقت في كل فشل
 # ═══════════════════════════════════════════════════════════
 
 # 🧠 Chat - المحادثة الذكية
-# FREE:   Nemotron Bolt → GLM 5.3 Flash → MiniMax M3.1 Flash → DeepSeek V4.1 Flash → Mistral Small → SambaNova
-# PRO:    Mistral Large 4 (1T MoE) → Step 5 Preview (600B) → DeepSeek V4.1 Flash → MiniMax M3.1 Flash → GLM 5.3 Flash → Mistral Large → SambaNova
+# FREE:  Bolt → Gemma 31B → Mistral Small (ضعيفين كلهم — زياد أمر)
+# PRO:   GLM Flash + DeepSeek V4.1 (توازي، سريعين وقويين) → MiniMax → Mistral Large 4 (مهلة أطول) → Gemma
 FREE_CHAT_MODELS = [
-    # ⚡ NVIDIA Nemotron 3.5 Bolt E4B — سريع وخفيف (أساسي للمجاني)
+    # ⚡ NVIDIA Nemotron 3.5 Bolt E4B (8B/4B) — ضعيف وسريع جدًا — أساسي المجاني
     {"provider": "nvidia", "model": "nvidia/nemotron-3.5-bolt-e4b", "api_key": NVIDIA_NEMOTRON_BOLT_KEY},
-    # ⚡ NVIDIA GLM 5.3 Flash — سريع
-    {"provider": "nvidia", "model": "z-ai/glm-5.3-flash", "api_key": NVIDIA_GLM_53_FLASH_KEY},
-    # ⚡ NVIDIA MiniMax M3.1 Flash — MoE متعدد الوسائط
-    {"provider": "nvidia", "model": "minimaxai/minimax-m3.1-flash", "api_key": NVIDIA_MINIMAX_M31_FLASH_KEY},
-    # ⚡ NVIDIA DeepSeek V4.1 Flash — قوي في التحليل
-    {"provider": "nvidia", "model": "deepseek-ai/deepseek-v4.1-flash", "api_key": NVIDIA_DEEPSEEK_V41_FLASH_KEY},
-    # 🛡️ Mistral Small — fallback دائم
+    # 📊 Gemma 4 31B — متوسط، fallback للمجاني
+    {"provider": "nvidia", "model": "google/gemma-4-31b-it", "api_key": NVIDIA_GEMMA_4_31B_KEY, "timeout": 45},
+    # 🛡️ Mistral Small — آخر حل (مجاني)
     {"provider": "mistral", "model": "mistral-small-latest"},
-    # 🛡️ SambaNova — آخر حل
-    {"provider": "sambanova", "model": "DeepSeek-V3.1"},
 ]
 
 PREMIUM_CHAT_MODELS = [
-    # 🔥 NVIDIA Mistral Large 4 (1T MoE) — أقوى نموذج عام (أساسي للبرو)
-    {"provider": "nvidia", "model": "mistralai/mistral-large-4-1t-a52b", "api_key": NVIDIA_MISTRAL_LARGE_4_KEY},
-    # 🔥 NVIDIA Step 5 Preview (600B MoE, 1M context) — نموذج علمي ضخم
-    {"provider": "nvidia", "model": "stepfun-ai/step-5-preview", "api_key": NVIDIA_STEP_5_KEY},
-    # ⚡ NVIDIA DeepSeek V4.1 Flash — سريع وقوي
-    {"provider": "nvidia", "model": "deepseek-ai/deepseek-v4.1-flash", "api_key": NVIDIA_DEEPSEEK_V41_FLASH_KEY},
-    # ⚡ NVIDIA MiniMax M3.1 Flash
-    {"provider": "nvidia", "model": "minimaxai/minimax-m3.1-flash", "api_key": NVIDIA_MINIMAX_M31_FLASH_KEY},
-    # ⚡ NVIDIA GLM 5.3 Flash
+    # ⚡ NVIDIA GLM 5.3 Flash (320B-A18B) — قوي وسريع — أولوية برو للشات التفاعلي
     {"provider": "nvidia", "model": "z-ai/glm-5.3-flash", "api_key": NVIDIA_GLM_53_FLASH_KEY},
-    # 🛡️ Mistral Large — fallback
-    {"provider": "mistral", "model": "mistral-large-latest"},
-    # 🛡️ SambaNova — آخر حل
-    {"provider": "sambanova", "model": "DeepSeek-V3.1"},
+    # ⚡ NVIDIA DeepSeek V4.1 Flash (763B) — قوي وسريع — توازي مع GLM
+    {"provider": "nvidia", "model": "deepseek-ai/deepseek-v4.1-flash", "api_key": NVIDIA_DEEPSEEK_V41_FLASH_KEY},
+    # 🔥 MiniMax M3.1 Flash (428B) — قوي لكن thinking دايمًا شغال → تالت
+    {"provider": "nvidia", "model": "minimaxai/minimax-m3.1-flash", "api_key": NVIDIA_MINIMAX_M31_FLASH_KEY, "timeout": 45},
+    # 🔥 NVIDIA Mistral Large 4 (1T-A52B) — أقوى عام لكن بطيء → مهلة 75s
+    {"provider": "nvidia", "model": "mistralai/mistral-large-4-1t-a52b", "api_key": NVIDIA_MISTRAL_LARGE_4_KEY, "timeout": 75},
+    # 📊 Gemma 4 31B — fallback
+    {"provider": "nvidia", "model": "google/gemma-4-31b-it", "api_key": NVIDIA_GEMMA_4_31B_KEY, "timeout": 45},
+    # 🛡️ Mistral Small API — آخر حل
+    {"provider": "mistral", "model": "mistral-small-latest"},
 ]
 
 # Default (backward compatibility)
 CHAT_MODELS = PREMIUM_CHAT_MODELS
 
 # ⚡ Simple - الرسائل البسيطة (تحيات، أسئلة قصيرة، أسئلة هوية) — السرعة أهم حاجة
-# FREE: GLM 5.3 Flash → Nemotron Bolt → MiniMax Flash
-# PRO:  Nemotron Bolt → GLM 5.3 Flash → MiniMax Flash → DeepSeek V4.1 Flash
+# FREE: Bolt → Gemma
+# PRO:  Bolt (0.4s لايف!) → GLM Flash → DeepSeek Flash
 FREE_SIMPLE_MODELS = [
-    # ⚡ GLM 5.3 Flash — أسرع رد فوري
-    {"provider": "nvidia", "model": "z-ai/glm-5.3-flash", "api_key": NVIDIA_GLM_53_FLASH_KEY},
-    # ⚡ Nemotron 3.5 Bolt — سريع
+    # ⚡ Bolt — أسرع نموذج (لايف: رد في 0.4 ثانية)
     {"provider": "nvidia", "model": "nvidia/nemotron-3.5-bolt-e4b", "api_key": NVIDIA_NEMOTRON_BOLT_KEY},
-    # ⚡ MiniMax M3.1 Flash
-    {"provider": "nvidia", "model": "minimaxai/minimax-m3.1-flash", "api_key": NVIDIA_MINIMAX_M31_FLASH_KEY},
-    # 🛡️ SambaNova — آخر حل
-    {"provider": "sambanova", "model": "Meta-Llama-3.3-70B-Instruct"},
+    # 📊 Gemma 4 31B — fallback
+    {"provider": "nvidia", "model": "google/gemma-4-31b-it", "api_key": NVIDIA_GEMMA_4_31B_KEY, "timeout": 30},
+    # 🛡️ Mistral Small — آخر حل
+    {"provider": "mistral", "model": "mistral-small-latest"},
 ]
 
 PREMIUM_SIMPLE_MODELS = [
-    # ⚡ Nemotron 3.5 Bolt — أسرع رد للبرو
+    # ⚡ Bolt — أسرع رد للتحيات/البسيط (حتى للبرو — السرعة هي الميزة هنا)
     {"provider": "nvidia", "model": "nvidia/nemotron-3.5-bolt-e4b", "api_key": NVIDIA_NEMOTRON_BOLT_KEY},
-    # ⚡ GLM 5.3 Flash
+    # ⚡ GLM 5.3 Flash — قوي وسريع
     {"provider": "nvidia", "model": "z-ai/glm-5.3-flash", "api_key": NVIDIA_GLM_53_FLASH_KEY},
-    # ⚡ MiniMax M3.1 Flash
-    {"provider": "nvidia", "model": "minimaxai/minimax-m3.1-flash", "api_key": NVIDIA_MINIMAX_M31_FLASH_KEY},
-    # ⚡ DeepSeek V4.1 Flash — fallback قوي
+    # ⚡ DeepSeek V4.1 Flash
     {"provider": "nvidia", "model": "deepseek-ai/deepseek-v4.1-flash", "api_key": NVIDIA_DEEPSEEK_V41_FLASH_KEY},
+    # 📊 Gemma 4 31B — fallback
+    {"provider": "nvidia", "model": "google/gemma-4-31b-it", "api_key": NVIDIA_GEMMA_4_31B_KEY, "timeout": 30},
 ]
 
 # Default
 SIMPLE_MODELS = PREMIUM_SIMPLE_MODELS
 
-# 🔥 Deep Search - البحث العميق
-# FREE: DeepSeek V4.1 Flash → MiniMax M3.1 Flash → Mistral Small
-# PRO:  Step 5 Preview → Mistral Large 4 → DeepSeek V4.1 Flash → MiniMax Flash
+# 🔥 Deep Search - البحث العميق (مهمة ثقيلة → نماذج قوية)
+# FREE:  Gemma 31B (متوسط) → Bolt → Mistral Small
+# PRO:   DeepSeek V4.1 + Mistral Large 4 (توازي) → Step 5 (تحليل أعمق، مهلة 90s) → GLM Flash
 FREE_DEEP_SEARCH_MODELS = [
-    # 🔍 DeepSeek V4.1 Flash — تحليل عميق سريع
-    {"provider": "nvidia", "model": "deepseek-ai/deepseek-v4.1-flash", "api_key": NVIDIA_DEEPSEEK_V41_FLASH_KEY},
-    # 🔍 MiniMax M3.1 Flash
-    {"provider": "nvidia", "model": "minimaxai/minimax-m3.1-flash", "api_key": NVIDIA_MINIMAX_M31_FLASH_KEY},
-    # 🛡️ Mistral Small — fallback
+    # 📊 Gemma 4 31B — أفضل متاح للمجاني في التحليل
+    {"provider": "nvidia", "model": "google/gemma-4-31b-it", "api_key": NVIDIA_GEMMA_4_31B_KEY, "timeout": 60},
+    # ⚡ Bolt — fallback سريع
+    {"provider": "nvidia", "model": "nvidia/nemotron-3.5-bolt-e4b", "api_key": NVIDIA_NEMOTRON_BOLT_KEY},
+    # 🛡️ Mistral Small — آخر حل
     {"provider": "mistral", "model": "mistral-small-latest"},
-    # 🛡️ SambaNova — آخر حل
-    {"provider": "sambanova", "model": "DeepSeek-V3.1"},
 ]
 
 PREMIUM_DEEP_SEARCH_MODELS = [
-    # 🔥 NVIDIA Step 5 Preview — تحليل أعمق (1M context)
-    {"provider": "nvidia", "model": "stepfun-ai/step-5-preview", "api_key": NVIDIA_STEP_5_KEY},
-    # 🔥 NVIDIA Mistral Large 4 — قوي في تركيب النتائج
-    {"provider": "nvidia", "model": "mistralai/mistral-large-4-1t-a52b", "api_key": NVIDIA_MISTRAL_LARGE_4_KEY},
-    # ⚡ DeepSeek V4.1 Flash — fallback سريع
+    # ⚡ DeepSeek V4.1 Flash — قوي وسريع (الملخص لازم يخلص في الميزانية)
     {"provider": "nvidia", "model": "deepseek-ai/deepseek-v4.1-flash", "api_key": NVIDIA_DEEPSEEK_V41_FLASH_KEY},
-    # ⚡ MiniMax M3.1 Flash — fallback
-    {"provider": "nvidia", "model": "minimaxai/minimax-m3.1-flash", "api_key": NVIDIA_MINIMAX_M31_FLASH_KEY},
-    # 🛡️ Mistral Large — آخر حل
-    {"provider": "mistral", "model": "mistral-large-latest"},
+    # 🔥 Mistral Large 4 — تركيب أقوى (توازي مع DeepSeek، مهلة 75s)
+    {"provider": "nvidia", "model": "mistralai/mistral-large-4-1t-a52b", "api_key": NVIDIA_MISTRAL_LARGE_4_KEY, "timeout": 75},
+    # 🔥 Step 5 Preview — أعمق تحليل (مهلة 90s — للمهام الثقيلة)
+    {"provider": "nvidia", "model": "stepfun-ai/step-5-preview", "api_key": NVIDIA_STEP_5_KEY, "timeout": 90},
+    # ⚡ GLM 5.3 Flash — fallback سريع
+    {"provider": "nvidia", "model": "z-ai/glm-5.3-flash", "api_key": NVIDIA_GLM_53_FLASH_KEY},
 ]
 
 # Default
 DEEP_SEARCH_MODELS = PREMIUM_DEEP_SEARCH_MODELS
 
-# 👨‍💻 Coding - البرمجة
-# FREE: DeepSeek V4.1 Flash → MiniMax M3.1 Flash (coding MoE) → GLM 5.3 Flash
-# PRO:  Step 5 Preview → DeepSeek V4.1 Flash → Mistral Large 4 → GLM 5.3 Flash
+# 👨‍💻 Coding - البرمجة (مهمة ثقيلة)
+# FREE:  Gemma 31B → Bolt → Mistral Small
+# PRO:   DeepSeek V4.1 (elite coding) + Mistral Large 4 (توازي) → Step 5 (معقد) → GLM Flash
 FREE_CODING_MODELS = [
-    # 💻 DeepSeek V4.1 Flash — أساسي في البرمجة
-    {"provider": "nvidia", "model": "deepseek-ai/deepseek-v4.1-flash", "api_key": NVIDIA_DEEPSEEK_V41_FLASH_KEY},
-    # 💻 MiniMax M3.1 Flash — MoE متخصص في coding
-    {"provider": "nvidia", "model": "minimaxai/minimax-m3.1-flash", "api_key": NVIDIA_MINIMAX_M31_FLASH_KEY},
-    # 💻 GLM 5.3 Flash
-    {"provider": "nvidia", "model": "z-ai/glm-5.3-flash", "api_key": NVIDIA_GLM_53_FLASH_KEY},
-    # 🛡️ SambaNova — آخر حل
-    {"provider": "sambanova", "model": "DeepSeek-V3.1"},
+    # 📊 Gemma 4 31B — كود متوسط للمجاني
+    {"provider": "nvidia", "model": "google/gemma-4-31b-it", "api_key": NVIDIA_GEMMA_4_31B_KEY, "timeout": 60},
+    # ⚡ Bolt — fallback
+    {"provider": "nvidia", "model": "nvidia/nemotron-3.5-bolt-e4b", "api_key": NVIDIA_NEMOTRON_BOLT_KEY},
+    # 🛡️ Mistral Small — آخر حل
+    {"provider": "mistral", "model": "mistral-small-latest"},
 ]
 
 PREMIUM_CODING_MODELS = [
-    # 💻 NVIDIA Step 5 Preview — أقوى نموذج للبرمجة المعقدة
-    {"provider": "nvidia", "model": "stepfun-ai/step-5-preview", "api_key": NVIDIA_STEP_5_KEY},
-    # 💻 DeepSeek V4.1 Flash — سريع ودقيق في الكود
+    # 💻 DeepSeek V4.1 Flash — elite في الكود والـ agents (763B, 190 tok/s)
     {"provider": "nvidia", "model": "deepseek-ai/deepseek-v4.1-flash", "api_key": NVIDIA_DEEPSEEK_V41_FLASH_KEY},
-    # 💻 Mistral Large 4 — fallback قوي
-    {"provider": "nvidia", "model": "mistralai/mistral-large-4-1t-a52b", "api_key": NVIDIA_MISTRAL_LARGE_4_KEY},
-    # 💻 GLM 5.3 Flash — fallback
+    # 💻 Mistral Large 4 — cybersecurity/coding flagship (توازي، مهلة 75s)
+    {"provider": "nvidia", "model": "mistralai/mistral-large-4-1t-a52b", "api_key": NVIDIA_MISTRAL_LARGE_4_KEY, "timeout": 75},
+    # 💻 Step 5 Preview — مسائل البرمجة المعقدة (مهلة 90s)
+    {"provider": "nvidia", "model": "stepfun-ai/step-5-preview", "api_key": NVIDIA_STEP_5_KEY, "timeout": 90},
+    # 💻 GLM 5.3 Flash — #5 Code Arena (توازي ممكن) fallback
     {"provider": "nvidia", "model": "z-ai/glm-5.3-flash", "api_key": NVIDIA_GLM_53_FLASH_KEY},
 ]
 
@@ -246,49 +242,50 @@ PREMIUM_CODING_MODELS = [
 CODING_MODELS = PREMIUM_CODING_MODELS
 
 # 📄 Summary - التلخيص
-# FREE: GLM 5.3 Flash → MiniMax Flash → Bolt
-# PRO:  Mistral Large 4 → DeepSeek V4.1 Flash → MiniMax Flash
+# FREE:  Bolt → Gemma → Mistral Small
+# PRO:   DeepSeek V4.1 + Mistral Large 4 (توازي) → GLM Flash → MiniMax
 FREE_SUMMARY_MODELS = [
-    # 📄 GLM 5.3 Flash — تلخيص سريع
-    {"provider": "nvidia", "model": "z-ai/glm-5.3-flash", "api_key": NVIDIA_GLM_53_FLASH_KEY},
-    # 📄 MiniMax M3.1 Flash
-    {"provider": "nvidia", "model": "minimaxai/minimax-m3.1-flash", "api_key": NVIDIA_MINIMAX_M31_FLASH_KEY},
-    # 📄 Nemotron Bolt
+    # 📄 Bolt — تلخيص سريع للمجاني
     {"provider": "nvidia", "model": "nvidia/nemotron-3.5-bolt-e4b", "api_key": NVIDIA_NEMOTRON_BOLT_KEY},
-    # 🛡️ SambaNova — آخر حل
-    {"provider": "sambanova", "model": "DeepSeek-V3.1"},
+    # 📄 Gemma 4 31B — fallback
+    {"provider": "nvidia", "model": "google/gemma-4-31b-it", "api_key": NVIDIA_GEMMA_4_31B_KEY, "timeout": 45},
+    # 🛡️ Mistral Small — آخر حل
+    {"provider": "mistral", "model": "mistral-small-latest"},
 ]
 
 PREMIUM_SUMMARY_MODELS = [
-    # 📄 Mistral Large 4 — تلخيص احترافي
-    {"provider": "nvidia", "model": "mistralai/mistral-large-4-1t-a52b", "api_key": NVIDIA_MISTRAL_LARGE_4_KEY},
-    # 📄 DeepSeek V4.1 Flash — fallback سريع
+    # 📄 DeepSeek V4.1 Flash — سريع وقوي
     {"provider": "nvidia", "model": "deepseek-ai/deepseek-v4.1-flash", "api_key": NVIDIA_DEEPSEEK_V41_FLASH_KEY},
-    # 📄 MiniMax M3.1 Flash — fallback
-    {"provider": "nvidia", "model": "minimaxai/minimax-m3.1-flash", "api_key": NVIDIA_MINIMAX_M31_FLASH_KEY},
-    # 🛡️ Mistral Large — آخر حل
-    {"provider": "mistral", "model": "mistral-large-latest"},
+    # 📄 Mistral Large 4 — تلخيص احترافي (توازي، مهلة 75s)
+    {"provider": "nvidia", "model": "mistralai/mistral-large-4-1t-a52b", "api_key": NVIDIA_MISTRAL_LARGE_4_KEY, "timeout": 75},
+    # 📄 GLM 5.3 Flash — fallback سريع
+    {"provider": "nvidia", "model": "z-ai/glm-5.3-flash", "api_key": NVIDIA_GLM_53_FLASH_KEY},
+    # 📄 MiniMax M3.1 Flash — آخر NVIDIA حل
+    {"provider": "nvidia", "model": "minimaxai/minimax-m3.1-flash", "api_key": NVIDIA_MINIMAX_M31_FLASH_KEY, "timeout": 45},
 ]
 
 # Default
 SUMMARY_MODELS = PREMIUM_SUMMARY_MODELS
 
-# 👁️ Vision - تحليل الصور
-# FREE + PRO: Nemotron 3.5 Super VL 120B (جديد — أقوى نموذج رؤية) → Llama 3.2 90B Vision (قديم شغال) → Pixtral
+# 👁️ Vision - تحليل الصور (عائلة الرؤية بس — زياد أمر)
+# FREE:  Gemma 4 31B (vision متوسط) → Llama 3.2 90B (قديم) → Pixtral
+# PRO:   Super VL 120B (أقوى رؤية) → Gemma 31B → Llama 90B → Pixtral
 FREE_VISION_MODELS = [
-    # 🔥 NVIDIA Nemotron 3.5 Super VL 120B — أساسي للرؤية (مختبر 200 OK ✅)
-    {"provider": "nvidia", "model": "nvidia/nemotron-3.5-super-vl-120b-a12b", "api_key": NVIDIA_NEMOTRON_SUPER_VL_KEY},
+    # 📊 Gemma 4 31B IT — vision متعدد الوسائط (نص+صورة+فيديو) — مناسب للمجاني
+    {"provider": "nvidia", "model": "google/gemma-4-31b-it", "api_key": NVIDIA_GEMMA_4_31B_KEY, "timeout": 60},
     # 🛡️ NVIDIA Llama 3.2 90B Vision — fallback (لسه شغال بمفتاحه القديم)
-    {"provider": "nvidia", "model": "meta/llama-3.2-90b-vision-instruct", "api_key": NVIDIA_LLAMA_32_90B_VISION_KEY},
+    {"provider": "nvidia", "model": "meta/llama-3.2-90b-vision-instruct", "api_key": NVIDIA_LLAMA_32_90B_VISION_KEY, "timeout": 60},
     # 🛡️ Mistral Pixtral — fallback أخير
     {"provider": "mistral", "model": "pixtral-large-latest"},
 ]
 
 PREMIUM_VISION_MODELS = [
-    # 🔥 NVIDIA Nemotron 3.5 Super VL 120B — أساسي للرؤية
-    {"provider": "nvidia", "model": "nvidia/nemotron-3.5-super-vl-120b-a12b", "api_key": NVIDIA_NEMOTRON_SUPER_VL_KEY},
+    # 🔥 NVIDIA Nemotron 3.5 Super VL 120B — أقوى نموذج رؤية (مختبر 200 OK ✅)
+    {"provider": "nvidia", "model": "nvidia/nemotron-3.5-super-vl-120b-a12b", "api_key": NVIDIA_NEMOTRON_SUPER_VL_KEY, "timeout": 60},
+    # 📊 Gemma 4 31B IT — vision fallback
+    {"provider": "nvidia", "model": "google/gemma-4-31b-it", "api_key": NVIDIA_GEMMA_4_31B_KEY, "timeout": 60},
     # 🛡️ NVIDIA Llama 3.2 90B Vision — fallback
-    {"provider": "nvidia", "model": "meta/llama-3.2-90b-vision-instruct", "api_key": NVIDIA_LLAMA_32_90B_VISION_KEY},
+    {"provider": "nvidia", "model": "meta/llama-3.2-90b-vision-instruct", "api_key": NVIDIA_LLAMA_32_90B_VISION_KEY, "timeout": 60},
     # 🛡️ Mistral Pixtral — fallback أخير
     {"provider": "mistral", "model": "pixtral-large-latest"},
 ]

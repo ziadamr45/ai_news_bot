@@ -74,6 +74,7 @@ class ModelRoute:
     model_id: str
     api_key: str = ""  # 🔴 per-model API key (للـ NVIDIA كل نموذج ليه مفتاح)
     priority: int = 0
+    timeout: int = 0  # 🔴 مهلة خاصة بالنموذج (0 = الافتراضي للمهمة) — للنماذج الضخمة
 
 
 # ═══════════════════════════════════════
@@ -276,6 +277,7 @@ class ProviderManager:
                     model_id=model_id,
                     api_key=model_api_key,
                     priority=i,
+                    timeout=model_config.get("timeout", 0),
                 ))
             else:
                 logger.debug(f"Skipping {provider_name}/{model_id} (unavailable or on cooldown)")
@@ -310,6 +312,7 @@ class ProviderManager:
                     model_id=model_id,
                     api_key=model_api_key,
                     priority=i,
+                    timeout=model_config.get("timeout", 0),
                 ))
 
         return routes
@@ -544,6 +547,7 @@ class ProviderManager:
         تجريب أول مسارين بالتوازي — يرجع أول نتيجة ناجحة
         ⚡ Parallel Fallback: بيشغل أول 2 models في نفس الوقت
         وياخد أول نتيجة ناجحة، ويلغي التاني
+        🔴 كل مسار بيستخدم مهلته الخاصة لو محددة (نماذج ضخمة = مهلة أطول)
         """
         if len(routes) < 2:
             # مسار واحد بس — نجربه عادي
@@ -555,7 +559,7 @@ class ProviderManager:
                     messages=messages,
                     temperature=temperature,
                     max_tokens=max_tokens,
-                    timeout=timeout,
+                    timeout=routes[0].timeout or timeout,
                     api_key=routes[0].api_key,
                 ), routes[0]
             return None, None
@@ -573,7 +577,7 @@ class ProviderManager:
                     messages=messages,
                     temperature=temperature,
                     max_tokens=max_tokens,
-                    timeout=timeout,
+                    timeout=route.timeout or timeout,  # 🔴 مهلة النموذج الخاصة أو الافتراضي
                     api_key=route.api_key,
                 )
                 return route, result
@@ -654,28 +658,38 @@ class ProviderManager:
                 else:
                     timeout = 20
 
+        # 🔴🔴 ميزانية زمنية كلية — عشان مفيش رد يوصل بعد 120 ثانية أبدًا
+        # (الـ handler بيقطع عند 120s — لازم الـ chain كلها تخلص في وقت أقل)
+        budget = 108 if task_type == "deep_search" else 95
+        start_t = time.time()
+
         # ⚡ حاول أول 2 مسارات بالتوازي
         parallel_routes = routes[:2]
         remaining_routes = routes[2:]
 
-        logger.info(f"⚡ Parallel fallback: trying first {len(parallel_routes)} of {len(routes)} routes in parallel for task={task_type}")
+        logger.info(f"⚡ Parallel fallback: trying first {len(parallel_routes)} of {len(routes)} routes in parallel for task={task_type} (budget={budget}s)")
         result, route_used = self._try_parallel_routes(
             parallel_routes, messages, temperature, max_tokens, timeout
         )
         if result:
             return result
 
-        # لو التوازي فشل — جرب الباقي بالترتيب
+        # لو التوازي فشل — جرب الباقي بالترتيب (ضمن الميزانية)
         if remaining_routes:
             logger.info(f"🔄 Parallel failed, trying {len(remaining_routes)} remaining routes sequentially for task={task_type}")
             for route in remaining_routes:
+                elapsed = time.time() - start_t
+                eff_timeout = min(route.timeout or timeout, max(int(budget - elapsed), 8))
+                if budget - elapsed < 8:
+                    logger.warning(f"⏰ Budget exhausted ({elapsed:.0f}s/{budget}s) — stopping fallback chain for task={task_type}")
+                    break
                 result = self._call_provider_sync(
                     provider_name=route.provider_name,
                     model=route.model_id,
                     messages=messages,
                     temperature=temperature,
                     max_tokens=max_tokens,
-                    timeout=timeout,
+                    timeout=eff_timeout,
                     api_key=route.api_key,  # 🔴 per-model API key
                 )
                 if result:
@@ -776,28 +790,37 @@ class ProviderManager:
                 else:
                     timeout = 20
 
+        # 🔴 ميزانية زمنية كلية (نفس منطق call_sync)
+        budget = 108 if task_type == "deep_search" else 95
+        start_t = time.time()
+
         # ⚡ حاول أول 2 مسارات بالتوازي
         parallel_routes = routes[:2]
         remaining_routes = routes[2:]
 
-        logger.info(f"⚡ Parallel fallback: trying first {len(parallel_routes)} of {len(routes)} routes in parallel for user={user_id}, task={task_type}")
+        logger.info(f"⚡ Parallel fallback: trying first {len(parallel_routes)} of {len(routes)} routes in parallel for user={user_id}, task={task_type} (budget={budget}s)")
         result, route_used = self._try_parallel_routes(
             parallel_routes, messages, temperature, max_tokens, timeout
         )
         if result:
             return result
 
-        # لو التوازي فشل — جرب الباقي بالترتيب
+        # لو التوازي فشل — جرب الباقي بالترتيب (ضمن الميزانية)
         if remaining_routes:
             logger.info(f"🔄 Parallel failed, trying {len(remaining_routes)} remaining routes sequentially for user={user_id}, task={task_type}")
             for route in remaining_routes:
+                elapsed = time.time() - start_t
+                eff_timeout = min(route.timeout or timeout, max(int(budget - elapsed), 8))
+                if budget - elapsed < 8:
+                    logger.warning(f"⏰ Budget exhausted ({elapsed:.0f}s/{budget}s) — stopping fallback chain for user={user_id}, task={task_type}")
+                    break
                 result = self._call_provider_sync(
                     provider_name=route.provider_name,
                     model=route.model_id,
                     messages=messages,
                     temperature=temperature,
                     max_tokens=max_tokens,
-                    timeout=timeout,
+                    timeout=eff_timeout,
                     api_key=route.api_key,  # 🔴 per-model API key
                 )
                 if result:

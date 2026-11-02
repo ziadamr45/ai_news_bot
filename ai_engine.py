@@ -111,6 +111,27 @@ _WEAK_SEARCH_EN = [
     "this year", "in 2025", "in 2026",
 ]
 
+# 🔴 إصدارات/موديلات — أي سؤال عن "أحدث/أخر موديل أو نموذج" لازم بحث (زياد: الإنترنت هو المصدر الأساسي)
+_MODEL_RELEASE_TRIGGERS_AR = [
+    "اخر موديل", "احدث موديل", "أخر موديل", "أحدث موديل", "موديل جديد", "موديل نزل",
+    "اخر نموذج", "احدث نموذج", "أخر نموذج", "أحدث نموذج", "نموذج جديد", "نموذج نزل",
+    "اخر نسخه", "اخر اصدار", "احدث اصدار", "جديد من", "نزلت من",
+]
+_MODEL_RELEASE_TRIGGERS_EN = [
+    "latest model", "newest model", "new model", "new release", "latest release",
+    "just launched", "just released", "just announced", "came out",
+]
+# 🔴 شركات بالعربي المكتوب (transliterations) — كانت مش بتتفعل مع البحث أبدًا
+_COMPANY_TRIGGERS_AR = [
+    "انثروبيك", "أنثروبيك", "انثروبك", "انتروبيك", "anthropic",
+    "اوبن اي اي", "أوبن إيه آي", "اوبن ايه اي", "openai",
+    "جوجل", "غوغل", "google", "ديب مايند", "deepmind",
+    "ميتا", "meta", "انفيديا", "إنفيديا", "nvidia",
+    "مايكروسوفت", "microsoft", "ابل", "أبل", "apple",
+    "اكسي اي اي", "xai", "جروك", "grok",
+    "ديب سيك", "deepseek", "مونشوت", "moonshot", "ميسترال", "mistral",
+]
+
 # Deep search triggers (always trigger deep search)
 DEEP_SEARCH_TRIGGERS_AR = [
     "ابحث بعمق", "بحث متقدم", "بحث شامل", "تحليل مفصل",
@@ -142,7 +163,7 @@ CURRENT_INFO_PATTERNS = [
     # أحداث حالية
     r'(ايه|اشن|اى|اي)\s*(اخبار|جديد|احدث|آخر|حصل|بيحصل)',
     r'(what|how|when|where)\s*(is|are|was|were)\s*(the\s*)?(latest|current|new|recent|price|status)',
-    r'(اليوم|حاليًا|الآن|دلوقتي|السنة دي|هالسنة)',
+    r'(اليوم|حاليًا|الآن|دلوقتي|السنة دي|هالسنة|النهارده|النهاردة|دلوقتي دي)',
     r'(today|currently|now|right now|this week|this month|this year|in 2025|in 2026)',
     # أسئلة عن أشياء ممكن تتغير (أسعار، ترتيبات، إحصائيات)
     r'(سعر|اسعار|تكلفة|كم|عدد|نسبة|ترتيب)',
@@ -262,11 +283,27 @@ def needs_web_search(text: str) -> bool:
     if re.search(url_pattern, text_lower):
         score += 3
 
+    # 5.5 🔴 إصدارات/موديلات جديدة — أقوى إشارة (زياد: الإنترنت هو المصدر الأساسي)
+    # "تعرف ايه اخر موديل نزل من شركه انثروبيك" لازم يبحث — كان بيروح شات ويهلك!
+    for trigger in _MODEL_RELEASE_TRIGGERS_AR:
+        if trigger in text_lower:
+            score += 4
+            break
+    for trigger in _MODEL_RELEASE_TRIGGERS_EN:
+        if trigger in text_lower:
+            score += 4
+            break
+    # شركة (لاتيني أو عربي مكتوب) + كلمة موديل/نموذج/model في نفس الجملة → بحث
+    _has_company_any = any(c in text_lower for c in _COMPANY_TRIGGERS_AR)
+    _mentions_model = any(k in text_lower for k in ["موديل", "نموذج", "model", "نسخة", "اصدار", "إصدار"])
+    if _has_company_any and _mentions_model:
+        score += 4
+
     # 7. Company name + question word (score: 2)
     company_names = ['openai', 'chatgpt', 'anthropic', 'claude', 'deepmind', 'gemini',
                     'nvidia', 'xai', 'grok', 'meta ai', 'mistral', 'perplexity',
                     'google', 'جوجل', 'apple', 'ابل', 'microsoft', 'مايكروسوفت',
-                    'tesla', 'تسلا', 'meta', 'فيسبوك', 'facebook']
+                    'tesla', 'تسلا', 'meta', 'فيسبوك', 'facebook'] + _COMPANY_TRIGGERS_AR
     question_words = ['who', 'what', 'when', 'where', 'how', 'why', 'is', 'are', 'was', 'مين', 'ايه', 'ازاي', 'ليه', 'هل', 'فين', 'امتى']
     has_company = any(c in text_lower for c in company_names)
     has_question = any(q in text_lower for q in question_words)
@@ -451,6 +488,11 @@ def _is_identity_question(text: str) -> bool:
         "who designed you", "how to contact creator", "how to contact developer",
         "tell me about your creator", "who owns you", "who is the owner",
         "creator info", "developer info", "about the developer",
+        # 🔴 صيغ "تعرف مين انا" — سؤال هوية/ذاكرة (كان بيروح شات عادي وياخد دقيقتين!)
+        "عارف انا مين", "عارف مين انا", "انت عارف انا مين", "انت عارف مين انا",
+        "انت تعرف انا مين", "تعرف انا مين", "تعرف مين انا", "فاكرك مين انا",
+        "فاكر انا مين", "انت فاكر انا مين", "عارفيني", "فاكر اسمي",
+        "do you know who i am", "know who i am", "do you know me",
     ]
     for trigger in identity_triggers:
         if trigger in text_lower:
@@ -814,6 +856,12 @@ Made with love in Egypt 🇪🇬"""
 - "صباح الخير" → "صباح النور" | "مساء الخير" → "مساء النور"
 - 🔴 ماتبحثش عن التحية! ماتشرحش معناها!
 
+═══ 🔴 قاعدة المصدر الأساسي — الإنترنت الأول ═══
+🔴 الإنترنت هو مصدر معلوماتك الأساسي — هو الأحدث والأصح.
+🔴 أي معلومة عن: أخبار، إصدارات جديدة، موديلات، أسعار، تواريخ، مناطق حصلت فيها حاجة مؤخرًا، نتايج مباريات، أو أي حاجة ممكن تكون اتغيرت بعد تدريبك — لو مش متأكد منها 100% إنت **لازم تدور على الإنترنت** قبل ما تجاوب.
+🔴 ممنوع نهائيًا تخترع (hallucination) معلومة مش متأكد منها! لو مش عارف — قول بصراحة واعرض إنك تدور: "ممكن أدور لك على النت عشان أجيب لك المعلومة الأحدث؟"
+🔴 لو المستخدم بيسأل عن حاجة جديدة/أحدث/آخر — اعتمد على نتايج البحث اللي بتيجيك في السياق، ماتعتمدش على معلوماتك الداخلية.
+
 ═══ قواعد صارمة ═══
 🔴 ماتكشفش أسماء النماذج! لو سألوك "ايه النموذج؟" قول: "أنا My Bro — خليط من نماذج مدربة خصيصًا للعربية. مش نموذج واحد — أنا نظام ذكي بيختار أنسب نموذج حسب سؤالك." ❌ ممنوع تذكر: Llama, Qwen, DeepSeek, GPT, Claude, Gemma, أو أحجام زي 8B, 70B
 🔴 ماتطلبش "كمّل" — لازم تخلص الإجابة كاملة في رسالة واحدة! لو طويلة اختصر وخلصها.
@@ -834,7 +882,7 @@ Made with love in Egypt 🇪🇬"""
 - حط سطر فاضي بين الفقرات ومسافة حول الـ HTML tags
 
 ══️ إملاء ═══
-🔴 تنوين الفتح على الحرف قبل الألف: ✅ "مرتفعًا" مش ❌ "مرتفعًا"
+🔴 تنوين الفتح على الحرف قبل الألف: ✅ "مرتفعًا" (تنوين قبل الألف) مش ❌ "مرتفعاً" (تنوين على الألف)
 
 {{DATE_CONTEXT}}
 ماتقولش إن معلوماتك قديمة — إنت متصل بالإنترنت وبتقدر تبحث.
@@ -860,6 +908,12 @@ Made with love in Egypt 🇪🇬"""
 - "Hi" / "Hello" / "Hey" → "Hey! How's it going?" (NOT a salaam response!)
 - NEVER search the web for greetings! NEVER explain the meaning of a greeting!
 
+═══ 🔴 Primary Source Rule — INTERNET FIRST ═══
+🔴 The internet is your PRIMARY source of information — it's the most current.
+🔴 For anything about: news, new releases, models, prices, dates, results, or anything that may have changed after your training — if you're not 100% sure, you MUST search the web before answering.
+🔴 NEVER invent (hallucinate) facts! If you don't know, say so honestly and offer to search: "I can search the web for the latest info on that?"
+🔴 If the user asks about anything new/latest — rely on the search results provided in context, not your internal knowledge.
+
 ═══ Strict Rules ═══
 🔴 NEVER reveal model names! If asked "what model?" say: "I'm My Bro — a mix of specially trained models for Arabic. I'm not one model — I'm a smart system that picks the best model for your question." ❌ NEVER mention: Llama, Qwen, DeepSeek, GPT, Claude, Gemma, or sizes like 8B, 70B
 🔴 NEVER ask the user to "continue" — finish your answer completely in ONE message! If long, summarize and finish.
@@ -880,7 +934,7 @@ Ziad Amr (@ziadamr) — Egyptian web developer. Founder of Qudra Tech. Specializ
 - Blank line between paragraphs, space around HTML tags
 
 ═══ Arabic Orthography ═══
-🔴 Tanween fatha goes on the letter BEFORE alef: ✅ "مرتفعًا" not ❌ "مرتفعًا"
+🔴 Tanween fatha goes on the letter BEFORE alef: ✅ "مرتفعًا" (tanween before alef) not ❌ "مرتفعاً" (tanween on alef)
 
 {{DATE_CONTEXT}}
 NEVER say your knowledge is outdated — you're connected to the internet and can search.
@@ -978,13 +1032,13 @@ Examples:
 🔴 Don't explain yourself, don't list capabilities, don't make lists, don't summarize — just SHORT reply!
 🔴 Don't use deep thinking — this is a simple question that needs a quick response!"""
     else:
-        # 🔴 Premium بيحصل على max_tokens أعلى — ردود أطول وأشمل
-        # المجاني max_tokens أقل — ردود مختصرة أكتر
-        # ⚡ بنستخدم is_premium_user من build_context_for_ai() عشان م نعملش DB query تاني
+        # 🔴 Premium بيحصل على max_tokens أعلى — بس مش أوي!
+        # (كام 16384 كان بيخلي الرد ياخد دقايق — الطلبات غير الـ streaming بتستنى الجسم كله)
+        # 4096 كفاية لأي رد شات كامل — وبيقلل زمن الرد رهيبًا
         if is_premium_user:
-            max_tokens = 16384  # ⭐ Premium: ردود شاملة (⚡提速: 32768→16384)
+            max_tokens = 4096  # ⭐ Premium: ردود شاملة (16384→4096: السرعة الأول)
         else:
-            max_tokens = 4096  # 🆓 Free: ردود كاملة (⚡提速: 8192→4096)
+            max_tokens = 2048  # 🆓 Free: ردود كاملة (4096→2048: أسرع)
 
     # بناء رسائل المحادثة الكاملة مع السياق
     messages_for_ai = []
@@ -1032,7 +1086,7 @@ Examples:
             system_prompt=system,
             task_type="chat",  # نجرب chat كـ آخر فرصة
             temperature=0.7,
-            max_tokens=max_tokens,
+            max_tokens=min(max_tokens, 1500),  # 🔴 آخر فرصة = رد مختصر سريع (عشان الميزانية)
             user_id=user_id,
             user_plan=_user_plan,  # ⚡ Speed: avoid redundant DB query
         )
