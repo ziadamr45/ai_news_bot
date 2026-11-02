@@ -1,10 +1,13 @@
 """
 وكيل الصوت - Voice Agent
 تحويل الرسائل الصوتية إلى نص ثم معالجتها
-يدعم: NVIDIA NIM Omni (أساسي — REST بدون ffmpeg) → Groq Whisper → Google Speech (محتاج ffmpeg) → OpenRouter → OpenAI
+يدعم: Mistral Voxtral (أساسي) → NVIDIA NIM Omni (REST) → Google Speech (محتاج ffmpeg) → OpenRouter → OpenAI
 
+🔴 v4 (2026-11-03): Groq حظرت الحساب (organization_restricted) — كل الفويس كانت بتقع على Omni
+اللي بيلفّ العربي إنجليزي (شكوى زياد). المباراة اللايف على فويس عربي حقيقي:
+  Voxtral-mini: 200 في 0.5s — نص عربي كامل صحيح ✅ | HF whisper: 402 خلص كريدت ❌
+→ Voxtral-mini هو الأساسي الجديد.
 🔴 v3 (2026-11-03): NVIDIA nemotron-3-nano-omni-30b بياخد صوت عبر REST مباشرة
-   (مختبر لايف: 200 OK — بيسمع حتى النغمة) — عربي مدعوم — مفيش Groq ولا ffmpeg مطلوب
 """
 
 import asyncio
@@ -31,6 +34,7 @@ class VoiceAgent:
         # تحميل مفاتيح API من config
         self.groq_api_key = ""
         self.groq_base_url = "https://api.groq.com/openai/v1"
+        self.mistral_api_key = ""
         self.openai_api_key = ""
         self.openrouter_api_key = ""
         # 🔴 NVIDIA NIM Omni — STT عبر REST (المفاتيح عالمية — أي مفتاح ينادي أي نموذج)
@@ -49,6 +53,20 @@ class VoiceAgent:
             except Exception:
                 pass
 
+        # 🔴 Mistral Voxtral — الأساسي الجديد (مختبر لايف: عربي ممتاز 0.5s)
+        try:
+            from config import MISTRAL_API_KEY
+            self.mistral_api_key = MISTRAL_API_KEY or ""
+        except (ImportError, Exception):
+            self.mistral_api_key = os.environ.get("MISTRAL_API_KEY", "")
+
+        # بناء قائمة المزودين المتاحين
+        providers = []
+        if self.mistral_api_key:
+            providers.append("Mistral Voxtral (primary)")
+        if self.nim_omni_key:
+            providers.append("NVIDIA NIM Omni (REST)")
+
         try:
             from config import OPENAI_API_KEY
             self.openai_api_key = OPENAI_API_KEY or ""
@@ -63,12 +81,7 @@ class VoiceAgent:
             self.openrouter_api_key = os.environ.get("OPENROUTER_API_KEY", "")
             self.openrouter_base_url = os.environ.get("OPENROUTER_BASE_URL", self.openrouter_base_url)
 
-        # بناء قائمة المزودين المتاحين
-        providers = []
-        if self.nim_omni_key:
-            providers.append("NVIDIA NIM Omni (fallback — REST)")
-        if self.groq_api_key:
-            providers.append("Groq Whisper")
+        # باقي المزودين الاحتياطيين
         if _FFMPEG_AVAILABLE:
             providers.append("Google Speech (free)")
         else:
@@ -98,22 +111,22 @@ class VoiceAgent:
 
     def transcribe(self, audio_bytes: bytes, file_path: str = None, language: str = "ar") -> dict:
         """
-        تحويل الصوت إلى نص — 4 طبقات fallback
-        1. Groq Whisper (سريع ومجاني، بيقبل OGG مباشرة — الأساسي)
-        2. Google Speech Recognition (مجاني، محتاج ffmpeg)
-        3. OpenRouter Whisper
-        4. OpenAI Whisper
+        تحويل الصوت إلى نص — طبقات fallback
+        1. Mistral Voxtral-mini (🔴 الأساسي — عربي ممتاز، مختبر لايف 2026-11-03)
+        2. NVIDIA NIM Omni (REST)
+        3. Google Speech Recognition (مجاني، محتاج ffmpeg)
+        4. OpenRouter Whisper / OpenAI Whisper
         """
         if not audio_bytes and not file_path:
             return {"text": "", "success": False, "error": "No audio data provided", "provider": "none"}
 
-        # Layer 0: Groq Whisper-large-v3 (🔴 رجع بأمر زياد 2026-11-03 — أعلى دقة للعربي؛ Omni كان وحش)
-        if self.groq_api_key:
-            result = self._transcribe_groq(audio_bytes, file_path, language)
+        # Layer 0: Mistral Voxtral-mini (🔴 رجع أساسي — عربي مظبوط، 0.5s — Groq حظرت الحساب)
+        if self.mistral_api_key:
+            result = self._transcribe_mistral_voxtral(audio_bytes, file_path, language)
             if result["success"]:
                 return result
         else:
-            logger.debug("Groq API key not configured, skipping")
+            logger.debug("Mistral API key not configured, skipping Voxtral")
 
         # Layer 1: NVIDIA NIM Omni (REST — بيقبل OGG مباشرة — منقذ لو Groq وقع)
         if self.nim_omni_key:
@@ -149,6 +162,42 @@ class VoiceAgent:
 
         logger.warning("❌ All voice transcription methods failed")
         return {"text": "", "success": False, "error": "All voice transcription methods failed", "provider": "none"}
+
+    def _transcribe_mistral_voxtral(self, audio_bytes: bytes, file_path: str = None, language: str = "ar") -> dict:
+        """🔴 الأساسي: Mistral Voxtral-mini عبر /v1/audio/transcriptions
+        مختبر لايف 2026-11-03 على فويس نوت عربي حقيقي: 200 في 0.5s ونص عربي كامل صحيح
+        (Omni كان بيرجع 'أيوا انا زر' وGroq حظرت الحساب organization_restricted)"""
+        import requests
+
+        try:
+            ext = "ogg"
+            if file_path and "." in file_path:
+                ext = file_path.rsplit(".", 1)[-1].lower().replace("oga", "ogg")
+                if ext not in ("wav", "mp3", "ogg", "flac", "m4a", "aac", "opus", "oga"):
+                    ext = "ogg"
+
+            r = requests.post(
+                "https://api.mistral.ai/v1/audio/transcriptions",
+                headers={"Authorization": f"Bearer {self.mistral_api_key}"},
+                files={"file": (f"audio.{ext}", audio_bytes, f"audio/{'ogg' if ext == 'oga' else ext}")},
+                data={"model": "voxtral-mini-latest"},
+                timeout=45,
+            )
+            if r.status_code == 200:
+                j = r.json()
+                text = (j.get("text") or "").strip()
+                detected = j.get("language", "")
+                if text:
+                    logger.info(f"✅ Voxtral transcription (lang={detected}): {text[:80]}")
+                    return {"text": text, "success": True, "provider": "mistral_voxtral"}
+                logger.warning("Voxtral returned empty text")
+                return {"text": "", "success": False, "error": "Voxtral empty text", "provider": "mistral_voxtral"}
+            error_msg = f"Voxtral error: {r.status_code} - {r.text[:150]}"
+            logger.warning(error_msg)
+            return {"text": "", "success": False, "error": error_msg, "provider": "mistral_voxtral"}
+        except Exception as e:
+            logger.warning(f"Voxtral transcription error: {e}")
+            return {"text": "", "success": False, "error": str(e), "provider": "mistral_voxtral"}
 
     def _transcribe_nim_omni(self, audio_bytes: bytes, file_path: str = None, language: str = "ar") -> dict:
         """🔴 STT عبر NVIDIA NIM omni (REST chat/completions مع input_audio)

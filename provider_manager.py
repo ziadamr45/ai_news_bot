@@ -336,6 +336,7 @@ class ProviderManager:
         start_t = time.time()
         content_parts = []
         finish_reason = ""
+        capped = False  # 🔴 الـ cap وقف النموذج في نص الكلام؟
 
         try:
             response = _http_session.post(
@@ -353,6 +354,7 @@ class ProviderManager:
                 # 🔴 الـ cap الكلي — مفيش نموذج ياخد أكتر من مهلته + 20s كحد أقصى
                 if time.time() - start_t > timeout + 20:
                     logger.warning(f"⏰ Stream cap ({timeout}s+20) reached for {model} — using partial ({sum(len(p) for p in content_parts)} chars)")
+                    capped = True  # 🔴 اتقص في النص — نكمله بـ continuation بدل ما نسلّمه ناقص
                     break
                 if not line:
                     continue
@@ -394,7 +396,9 @@ class ProviderManager:
                 logger.warning(f"⏱️ Stream gap-timeout after {elapsed:.0f}s for {model} — but have {got} chars, using them")
             else:
                 logger.warning(f"⏱️ Stream TTFT timeout ({elapsed:.0f}s, no tokens) for {provider_name}/{model} — next model")
-                self._set_model_cooldown(model, "Stream TTFT timeout", 15)
+                # 🔴 إصلاح البطء: كان 15s — النموذج الواقف في الطابور كان بيتجرب تاني في كل رسالة
+                # وياكل 35s من وقت كل رد. دلوقتي يعتزل 90s — الباقي في السلسلة بيرد فورًا
+                self._set_model_cooldown(model, "Stream TTFT timeout", 90)
                 return None
         except requests.exceptions.Timeout:
             logger.warning(f"⏱️ Stream connect timeout for {provider_name}/{model}")
@@ -428,11 +432,12 @@ class ProviderManager:
 
         if content:
             self._clear_model_cooldown(model)
-            if finish_reason == "length":
-                logger.warning(f"⚠️ Stream TRUNCATED (finish=length) from {provider_name}/{model} ({len(content)} chars)")
+            # 🔴 إصلاح "الكلام مقصوص": الـ cap أو finish=length = نكمل الرد مش نسلّمه ناقص
+            if finish_reason == "length" or capped:
+                logger.warning(f"⚠️ Stream TRUNCATED ({'cap' if capped else 'finish=length'}) from {provider_name}/{model} ({len(content)} chars) — continuing")
                 continuation = self._try_continue(messages, provider_name, model, content, max_tokens, temperature, timeout, api_key=actual_api_key)
                 if continuation:
-                    content = content + "\n" + continuation
+                    content = content + " " + continuation
             logger.info(f"✅ Stream response from {provider_name}/{model} ({len(content)} chars, finish={finish_reason or 'stream-end'}, {time.time()-start_t:.1f}s)")
             return content
 

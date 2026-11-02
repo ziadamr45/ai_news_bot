@@ -1028,6 +1028,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await _check_premium_limit(update, user_id, "ai_messages_per_day", lang):
         return
 
+    # 🔴 تكامل الموديلات (أمر زياد 2026-11-03): "ارسم/اعمل صورة..." في الشات العادي
+    # بتتولد الصورة على طول — من غير /image ولا تغيير مود. الفري يكمل شات عادي.
+    try:
+        from handlers.image_handlers import maybe_handle_inline_image
+        if await maybe_handle_inline_image(update, context, user_text, lang, user_id):
+            return
+    except Exception as _inline_img_err:
+        logger.debug(f"Inline image check skipped: {_inline_img_err}")
+
     increment_usage(user_id, "ai_messages")
     try:
         track_event("ai_requests")

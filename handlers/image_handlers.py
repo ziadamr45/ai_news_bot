@@ -215,6 +215,109 @@ Type your description after the command and I'll create an image!
 
 
 # ═══════════════════════════════════════
+# 🔴 تكامل الموديلات — طلب صورة من الشات العادي (أمر زياد 2026-11-03)
+# "ليه الموديلات كلها ما تكونش متكاملة على بعض؟" — دلوقتي أي رسالة عادية فيها
+# طلب رسم/إنشاء صورة بتتولد صورة على طول من غير /image ولا تغيير مود
+# ═══════════════════════════════════════
+
+# أفعال إنشاء/رسم صريحة (مش بحث صور ولا إرسال صورة)
+_IMAGE_GEN_AR = (
+    "ارسم", "ارسملي", "ارسم لي", "رسملي", "اترسم",
+    "اعمل صورة", "اعمل لي صورة", "اعمللي صورة", "اعملي صورة",
+    "عمل لي صورة", "ولد صورة", "ولد لي صورة", "ولّد صورة",
+    "انشئ صورة", "أنشئ صورة", "انشئ لي صورة", "تصميم صورة", "صمم صورة", "صمملي صورة",
+    "generate image", "imgGen",
+)
+_IMAGE_GEN_EN = (
+    "draw me", "draw a", "draw an", "draw the", "draw my",
+    "generate an image", "generate a picture", "generate a photo", "generate image",
+    "create an image", "create a picture", "create a photo",
+    "make an image", "make a picture", "make a photo", "make me a picture",
+    "paint a", "paint me", "sketch a", "sketch me",
+)
+
+
+def _is_image_gen_intent(text: str) -> bool:
+    """كشف طلب إنشاء صورة صريح في الشات العادي — بدون اختطاف طلبات البحث/التحميل"""
+    t = (text or "").strip().lower()
+    if not t or len(t) > 220:
+        return False
+    # مفيش روابط — دي طلبات تحميل مش رسم
+    if "http" in t or "www." in t:
+        return False
+    # مفيش طلب بحث/إرسال صورة موجودة
+    if any(w in t for w in ("ابحث عن صورة", "دور على صورة", "ابعت صورة", "ابعتلي صورة", "search for a photo", "search for an image", "find a picture")):
+        return False
+    return any(k in t for k in _IMAGE_GEN_AR) or any(k in t for k in _IMAGE_GEN_EN)
+
+
+async def maybe_handle_inline_image(update: Update, context: ContextTypes.DEFAULT_TYPE,
+                                    user_text: str, lang: str, user_id: int) -> bool:
+    """لو الرسالة طلب إنشاء صورة في الشات العادي → نولّدها ونرد True (المسار اتخدم).
+    🔴 الفري بيكمل شات عادي عادي — الاختصاص للبريميوم زي /image بالظبط.
+    فشل التوليد → False عشان الشات الذكي يرد برضه (مفيش رد ضايع)."""
+    text = (user_text or "").strip()
+    if not _is_image_gen_intent(text):
+        return False
+    if not can_use_image_gen(user_id):
+        return False  # مفيش اختطاف — الرد العادي يكمل
+
+    logger.info(f"🎨 Inline image-gen intent (تكامل الموديلات) from {user_id}: {text[:60]}")
+    increment_usage(user_id, "image_generations")
+    try:
+        track_event("image_generations")
+    except Exception:
+        pass
+
+    feedback = TelegramThinkingFeedback(update, context)
+    await feedback.start()
+
+    try:
+        # نفس مسار /image: ترجمة الوصف العربي → Flux
+        image_prompt = await _translate_prompt_to_english(text, user_id=user_id)
+        manager = get_provider_manager()
+        result = await manager.generate_image_async(
+            prompt=image_prompt,
+            size="1024x1024",
+            user_id=user_id,
+        )
+        if not result:
+            await feedback.error()
+            return False
+
+        caption = (f"🎨 <b>{'صورتك جاهزة!' if lang == 'ar' else 'Your image is ready!'}</b>\n\n"
+                   f"📝 <i>{text[:200]}</i>")
+        await feedback.success()
+        if result.get("base64"):
+            image_bytes = base64.b64decode(result["base64"])
+            await update.message.reply_photo(
+                photo=io.BytesIO(image_bytes),
+                caption=caption,
+                parse_mode="HTML",
+            )
+        elif result.get("url"):
+            await update.message.reply_photo(photo=result["url"], caption=caption, parse_mode="HTML")
+        else:
+            return False
+
+        try:
+            from memory import save_conversation
+            save_conversation(user_id, "user", f"[طلب صورة في الشات] {text[:500]}")
+            save_conversation(user_id, "bot", "[🎨 صورتك جاهزة]")
+        except Exception:
+            pass
+        return True
+
+    except Exception as e:
+        logger.warning(f"Inline image generation failed (falling back to chat): {e}")
+        try:
+            await feedback.error()
+        except Exception:
+            pass
+        return False
+
+
+# ═══════════════════════════════════════
 # تعديل الصور - Image Editing 🖌️
 # ═══════════════════════════════════════
 
