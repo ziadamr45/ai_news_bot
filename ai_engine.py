@@ -557,7 +557,7 @@ def _get_cached_response(user_message: str, language: str, task_type: str) -> Op
     key = _make_cache_key(user_message, language, task_type)
     entry = _response_cache.get(key)
 
-    if entry and time.time() - entry["time"] < _CACHE_TTL:
+    if entry and time.time() - entry["time"] < entry.get("ttl", _CACHE_TTL):
         logger.info(f"💾 Cache HIT for: {user_message[:50]} (age={time.time() - entry['time']:.0f}s)")
         return entry["response"]
 
@@ -574,7 +574,10 @@ def _set_cached_response(user_message: str, language: str, task_type: str, respo
         return
 
     key = _make_cache_key(user_message, language, task_type)
-    _response_cache[key] = {"response": response, "time": time.time()}
+    # 🔴 الردود القصيرة (ترحيب/هوية) — TTL أقصر (60s) عشان لو موديل إنقاذ زقّ
+    # كلمة بالغلط، الغلط مايتنشرش 5 دقايق على كل المنصات
+    ttl = 60 if len(response) < 250 else _CACHE_TTL
+    _response_cache[key] = {"response": response, "time": time.time(), "ttl": ttl}
 
     # تنظيف الكاش لو حجمه أكبر من الحد
     while len(_response_cache) > _MAX_CACHE_SIZE:
