@@ -662,7 +662,7 @@ async def handle_search_callback(update: Update, context: ContextTypes.DEFAULT_T
     # 🔴 HOTFIX 2026-11-02: عناوين Dailymotion/YouTube فيها * و [ و _ بتكسر Markdown
     # → BadRequest "can't parse entities" والنتيجة: مفيش حاجة بتظهر للمستخدم خالص
     # الحل: HTML + html.escape + fallback لـ plain text لو حصل خطأ تاني
-    import html as _html_esc
+    from html import escape as _html_esc
     safe_title = _html_esc(str(title)[:100])
 
     async def _edit_safe(text_html, keyboard=None):
