@@ -210,7 +210,7 @@ def init_sentry() -> bool:
 
         # Set useful global tags
         sentry_sdk.set_tag("bot_platform", "telegram+whatsapp")
-        sentry_sdk.set_tag("runtime", "railway")
+        sentry_sdk.set_tag("runtime", "serv00")
 
         _sentry_initialized = True
         logger.info(
