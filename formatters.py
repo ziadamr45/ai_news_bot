@@ -86,7 +86,10 @@ def _strip_non_telegram_html(text: str) -> str:
     
     # 🔴 نشيل style, class, id, وكل event attributes من أي tag متبقي
     # مثال: <b style="..."> ← <b>
-    text = re.sub(r'<(b|i|u|s|code|pre|a|spoiler|blockquote|tg-spoiler)\s+[^>]*?>', r'<\1>', text, flags=re.IGNORECASE)
+    # 🔴 HOTFIX 2026-11-02: استبعنا 'a' من القائمة دي — الريجكس ده كان بيشيل href
+    # من روابط <a href="..."> حقيقية وبيسيب <a> عريانة → تليجرام يفشل بـ
+    # "Can't parse entities: can't find end tag corresponding to start tag a"
+    text = re.sub(r'<(b|i|u|s|code|pre|spoiler|blockquote|tg-spoiler)\s+[^>]*?>', r'<\1>', text, flags=re.IGNORECASE)
     
     # 🔴 نشيل أي tag متبقي مش في القائمة المدعومة (catch-all)
     # القائمة المسموحة: b, i, u, s, code, pre, a, spoiler, blockquote, tg-spoiler
@@ -95,9 +98,16 @@ def _strip_non_telegram_html(text: str) -> str:
     # نشيل أي tag مش في القائمة
     def _clean_unknown_tag(match):
         tag_content = match.group(1)
-        tag_name = tag_content.strip().split()[0].rstrip('/')
+        tag_name = tag_content.strip().split()[0]
+        # 🔴 HOTFIX 2026-11-02: تعامل مع closing tags — "/a" مش "a"
+        # قبل كده "</a>" كان بيتشال لأن tag_name كان بيفضل "/a" — فكل وسوم
+        # الإغلاق (</a> </b> </i>...) كانت بتتشال وكل <a href> بيبقى مفتوح بدون
+        # إغلاق → تليجرام يرفض الرسالة: "Can't parse entities: can't find end tag a"
+        if tag_name.startswith('/'):
+            tag_name = tag_name[1:]
+        tag_name = tag_name.rstrip('/').lower()
         allowed_names = {'b', 'i', 'u', 's', 'code', 'pre', 'a', 'spoiler', 'blockquote', 'tg-spoiler'}
-        if tag_name.lower() in allowed_names:
+        if tag_name in allowed_names:
             return match.group(0)  # نسيبه زي ما هو
         return ''  # نشيله
     
@@ -278,6 +288,31 @@ def clean_ai_response(text: str) -> str:
     # 24. شيل أي أقواس [ ] متبقية لوحدها (من markdown refs)
     # بس لو جواها كلام مفيد (أكتر من 2 حرف) نسيبها
     text = re.sub(r'\[([^\]]{0,2})\](?!\()', '', text)
+
+    # ═══ مرحلة 5: 🔴 HOTFIX 2026-11-02 — ضمان سلامة روابط <a> قبل الإرسال ═══
+    # دي اللي كانت بتبعت أخطاء Sentry: "Can't parse entities: can't find end
+    # of the entity starting at byte offset 68" — وسم <a> مفتوح من غير إغلاق
+    # (أو <a> عريان بدون href) بيوصل لتليجرام → الرسالة كلها بتترفض.
+    # أولًا: أي <a> عريانة بدون href — بتتشال دايمًا (تليجرام بيرفضها في كل الأحوال)
+    text = re.sub(r'<a\s*>', '', text, flags=re.IGNORECASE)
+    # ثانيًا: توازن الروابط السليمة
+    a_opens = re.findall(r'<a\s+href="[^"]*"\s*>', text, flags=re.IGNORECASE)
+    a_closes = re.findall(r'</a>', text, flags=re.IGNORECASE)
+    if len(a_opens) != len(a_closes):
+        # مفيش توازن → نشيل كل وسوم الروابط ونسيب النص جواها (الرسالة توصل ضروري)
+        text = re.sub(r'<a\s+href="[^"]*"\s*>', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'</a>', '', text, flags=re.IGNORECASE)
+    elif not a_opens:
+        # مفيش روابط خالص — نشيل أي </a> متبقية
+        text = re.sub(r'</a>', '', text, flags=re.IGNORECASE)
+
+    # 25. أخريات: escape لأي < أو > عوانة مش جزء من وسم مسموح
+    # (الـ AI ساعات بيرجع "5 < 10" أو "<unk>" — تليجرام بيفهمها وسم مكسور)
+    # أولًا: أزواج <...> الغريبة (مش وسوم معروفة) → escape كاملة
+    text = re.sub(r'<(?!/?(?:b|i|u|s|code|pre|a|spoiler|blockquote|tg-spoiler)\s*(?:href="[^"]*")?>)[^>]{0,60}>',
+                  lambda m: m.group(0).replace('<', '&lt;').replace('>', '&gt;'), text)
+    # ثانيًا: أي < واقفة لوحدها (من غير > ليها) → escape — تليجرام بيرفض الرسالة كلها بسببها
+    text = re.sub(r'<(?![a-zA-Z/])', '&lt;', text)
 
     return text.strip()
 

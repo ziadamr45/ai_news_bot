@@ -98,7 +98,28 @@ def _sanitize_filename(filename: str) -> str:
 
 def _is_configured() -> bool:
     """Return True if the minimum Supabase configuration is present."""
-    return bool(SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY)
+    if not (SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY):
+        return False
+    # 🔴 HOTFIX 2026-11-02: المشروع القديم اتحذ (DNS بيرجع NXDOMAIN) — كل محاولة
+    # كانت بتعلّق 30-60 ثانية قبل ما تفشل → التحميلات والأخبار كلها بتتأخر.
+    # أول فشل DNS → نعتبر الخدمة نازلة لمدة 30 دقيقة ومنجرّش تاني خالص.
+    return not _supabase_is_down()
+
+
+_SUPABASE_DOWN_UNTIL = 0.0
+
+def _supabase_is_down() -> bool:
+    """True لو عرفنا إن السيرفر/الDNS بتاع Supabase ميت (cache لمدة 30 دقيقة)."""
+    import time as _time
+    return _time.time() < _SUPABASE_DOWN_UNTIL
+
+
+def mark_supabase_down(minutes: int = 30):
+    """ناديها أول ما يحدث DNS/connect failure عشان نتخطى المحاولات الجاية فورًا."""
+    global _SUPABASE_DOWN_UNTIL
+    import time as _time
+    _SUPABASE_DOWN_UNTIL = _time.time() + minutes * 60
+    logger.warning(f"☁️ Supabase marked DOWN for {minutes} minutes (DNS/connect failure)")
 
 
 def _log_config_status():
@@ -460,7 +481,10 @@ async def _do_upload(
     except asyncio.TimeoutError:
         logger.error(f"☁️ Upload timed out → {storage_path} (timeout={UPLOAD_TIMEOUT}s)")
         return None
-    except Exception:
+    except Exception as _up_err:
+        # 🔴 HOTFIX: DNS failure (مشروع محذوف) → علّم الخدمة كنازلة — ماتعلّقش التحميلات تاني
+        if "Name does not resolve" in str(_up_err) or "DNSError" in type(_up_err).__name__ or "Cannot connect" in str(_up_err):
+            mark_supabase_down()
         logger.exception(f"☁️ Upload exception → {storage_path}")
         return None
 
@@ -718,7 +742,10 @@ async def cleanup_expired_files(max_age_hours: int = 24) -> int:
 
         logger.info(f"☁️ Cleanup complete: {deleted} file(s) deleted")
 
-    except Exception:
+    except Exception as _cleanup_err:
+        # 🔴 HOTFIX: DNS failure (مشروع محذوف) → علّم الخدمة كنازلة لمدة 30 دقيقة
+        if "Name does not resolve" in str(_cleanup_err) or "DNSError" in type(_cleanup_err).__name__ or "Cannot connect" in str(_cleanup_err):
+            mark_supabase_down()
         logger.exception("☁️ Cleanup exception")
 
     return deleted

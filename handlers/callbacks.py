@@ -596,30 +596,33 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         
                         for i, r in enumerate(web_results[:5], 1):
                             title_text = html_module.escape(str(r.get("title", "")))
-                            snippet = html_module.escape(str(r.get("snippet", "")[:200]))
-                            link = r.get("link", "")
+                            snippet = html_module.escape(str(r.get("snippet", ""))[:260])
+                            link = str(r.get("link", "") or "").strip()
                             result_message += f"{i}. 📄 <b>{title_text}</b>\n"
                             if snippet:
                                 result_message += f"   {snippet}\n"
-                            if link:
+                            # 🔴 FIX: الرابط لازم يبقى URL سليم — غير كده الوسم بيتكسر والرسالة مش بتتبعت
+                            if link.startswith("http://") or link.startswith("https://"):
                                 read_more = "اقرأ المزيد" if lang == "ar" else "Read more"
-                                result_message += f'   🔗 <a href="{link}">{read_more}</a>\n'
+                                result_message += f'   🔗 <a href="{html_module.escape(link, quote=True)}">{read_more}</a>\n'
                             result_message += "\n"
-                        
+
                         if lang == "ar":
                             result_message += "━━━━━━━━━━━━━━━━━\n🤖 <i>My Bro — تتبع الترندات</i>"
                         else:
                             result_message += "━━━━━━━━━━━━━━━━━\n🤖 <i>My Bro — Trending Tracker</i>"
-                        
+
                         try:
                             await loading_msg.edit_text(result_message, parse_mode="HTML", disable_web_page_preview=True)
-                        except Exception:
-                            # fallback: إرسال رسالة جديدة بدون HTML معقد
+                        except Exception as _search_html_err:
+                            # 🔴 FIX: fallback مضمون — plain text بدون أي parse mode (مفيش crash تاني)
+                            logger.warning(f"⚠️ search results HTML failed: {_search_html_err} — plain fallback")
+                            import re as _re_plain
+                            plain = _re_plain.sub(r"<[^>]+>", "", result_message)
                             try:
-                                await loading_msg.delete()
+                                await loading_msg.edit_text(plain[:4000], disable_web_page_preview=True)
                             except Exception:
-                                pass
-                            await query.message.reply_text(result_message, parse_mode="HTML", disable_web_page_preview=True)
+                                await query.message.reply_text(plain[:4000], disable_web_page_preview=True)
                     else:
                         # مفيش نتائج ويب كمان
                         if lang == "ar":

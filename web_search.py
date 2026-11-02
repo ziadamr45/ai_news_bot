@@ -442,11 +442,16 @@ def _search_web_sync(query: str, max_results: int = 5, language: str = "ar") -> 
 
 
 async def search_web(query: str, max_results: int = 5, language: str = "ar") -> List[Dict]:
-    """البحث في الويب (غير متزامن)"""
+    """البحث في الويب (غير متزامن) — 🔴 FIX: كل المستهلكين بيستلموا نتايج نضيفة"""
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(
+    raw = await loop.run_in_executor(
         None, lambda: _search_web_sync(query, max_results, language=language)
     )
+    try:
+        return clean_web_results(raw, language)
+    except Exception as e:
+        logger.debug(f"clean_web_results skipped: {e}")
+        return raw
 
 
 def _search_news_sync(query: str, max_results: int = 5) -> List[Dict]:
@@ -958,6 +963,84 @@ async def deep_search_and_summarize_async(query: str, language: str = "ar", memo
     )
 
 
+_ARABIC_CHAR_RE = None  # compiled lazily
+
+
+def clean_web_results(results: List[Dict], language: str = "ar") -> List[Dict]:
+    """🔴 FIX 2026-11-02 — تنظيف نتائج البحث من رموز Markdown/HTML + فلترة العناوين الفاضية
+    + إزالة المكرر + ترتيب العربي الأول + قص المقتطف عند حدود الكلمة.
+
+    بتحل شكاوى زياد:
+    - نتايج فيها رموز برمجية (# و * و <a>) → بتتنضف من المصدر
+    - نتايج بالإنجليزي في البحث العربي → العربي يطلع الأول (الإنجليزي يتضاف بعده)
+    - نتايج مش كاملة/مش مترتبة/غلط → فلترة + ديدبلكيت + ترتيب
+    """
+    import re as _re
+    global _ARABIC_CHAR_RE
+    if _ARABIC_CHAR_RE is None:
+        _ARABIC_CHAR_RE = _re.compile(r'[\u0600-\u06FF]')
+
+    def _clean_text(t: str) -> str:
+        if not t:
+            return ""
+        t = str(t)
+        # شيل وسوم/fragments الـ HTML المكسورة (<a href=..>, </a>, <b>...)
+        t = _re.sub(r'</?\w+[^>]*>', ' ', t)
+        # شيل رموز Markdown من المصدر (# هيدنجز، * بولد، باتيك)
+        t = _re.sub(r'#{1,6}\s*', '', t)
+        t = t.replace('**', '').replace('`', '')
+        # في نتايج البحث الـ * جايكة من صفحات مسحوبة — دايمًا زبالة
+        t = t.replace('*', '')
+        # فراغات متكررة والنيولاينات
+        t = _re.sub(r'[ \t]+', ' ', t)
+        t = _re.sub(r'\s*\n\s*', ' ', t)
+        return t.strip()
+
+    def _has_alpha(t: str) -> bool:
+        alpha = _re.sub(r'[^a-zA-Z\u0600-\u06FF]', '', t or '')
+        return len(alpha) >= 3
+
+    cleaned, seen = [], set()
+    for r in results or []:
+        title = _clean_text(r.get("title", ""))
+        snippet = _clean_text(r.get("snippet", ""))
+        link = str(r.get("link", "") or "").strip()
+        source = str(r.get("source", "") or "").strip()
+
+        # 1) Tavily AI Answer الفاضي — نتخطاه
+        if title == "Tavily AI Answer" and not snippet:
+            continue
+        # 2) عنوان فاضي/رموز بس → أول 60 حرف من المقتطف، ولو المقتطف برضه فاضي — تخطى
+        if not _has_alpha(title):
+            if not _has_alpha(snippet):
+                continue
+            title = snippet[:60].strip()
+        # 3) ديدبلكيت (بالرابط أو العنوان)
+        key = (link.lower().rstrip('/')) or title.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        # 4) قص المقتطف عند حدود كلمة (مش كلام مقطوع في النص)
+        if len(snippet) > 260:
+            cut = snippet[:260]
+            sp = cut.rfind(' ')
+            snippet = (cut[:sp] if sp > 140 else cut).rstrip(' ,.;:') + '…'
+        cleaned.append({
+            "title": title,
+            "link": link,
+            "snippet": snippet,
+            "source": source,
+        })
+
+    # 5) ترتيب: في البحث العربي — النتايج العربية الأول (مع الحفاظ على ترتيب المصدر جوه كل مجموعة)
+    if language == "ar":
+        arabic_first = [r for r in cleaned if _ARABIC_CHAR_RE.search(r["title"] + " " + r["snippet"])]
+        rest = [r for r in cleaned if not _ARABIC_CHAR_RE.search(r["title"] + " " + r["snippet"])]
+        cleaned = arabic_first + rest
+
+    return cleaned
+
+
 def format_search_results(query: str, results: List[Dict], language: str = "ar") -> str:
     """تنسيق نتائج البحث كرسالة تيليجرام جميلة"""
     if not results:
@@ -965,21 +1048,29 @@ def format_search_results(query: str, results: List[Dict], language: str = "ar")
             return f"🔍 لم أجد نتائج لـ '{query}'"
         return f"🔍 No results found for '{query}'"
 
+    results = clean_web_results(results, language)
+    if not results:
+        if language == "ar":
+            return f"🔍 لم أجد نتائج صالحة لـ '{query}'"
+        return f"🔍 No valid results found for '{query}'"
+
+    import html as _html
+    safe_query = _html.escape(str(query))
     if language == "ar":
-        message = f"🔍 <b>نتائج البحث: {query}</b>\n━━━━━━━━━━━━━━━━━\n\n"
+        message = f"🔍 <b>نتائج البحث: {safe_query}</b>\n━━━━━━━━━━━━━━━━━\n\n"
     else:
-        message = f"🔍 <b>Search Results: {query}</b>\n━━━━━━━━━━━━━━━━━\n\n"
+        message = f"🔍 <b>Search Results: {safe_query}</b>\n━━━━━━━━━━━━━━━━━\n\n"
 
     for i, r in enumerate(results[:5], 1):
-        title = r.get("title", "بدون عنوان" if language == "ar" else "No title")
-        snippet = r.get("snippet", "")
+        title = _html.escape(r.get("title", "بدون عنوان" if language == "ar" else "No title"))
+        snippet = _html.escape(r.get("snippet", ""))
         link = r.get("link", "")
-        source = r.get("source", "")
+        source = _html.escape(r.get("source", ""))
 
         if language == "ar":
             message += f"{i}. 📄 <b>{title}</b>\n"
             if snippet:
-                message += f"   {snippet[:200]}\n"
+                message += f"   {snippet}\n"
             if source:
                 message += f"   📡 {source}\n"
             if link:
@@ -987,7 +1078,7 @@ def format_search_results(query: str, results: List[Dict], language: str = "ar")
         else:
             message += f"{i}. 📄 <b>{title}</b>\n"
             if snippet:
-                message += f"   {snippet[:200]}\n"
+                message += f"   {snippet}\n"
             if source:
                 message += f"   📡 {source}\n"
             if link:

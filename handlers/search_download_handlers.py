@@ -659,26 +659,47 @@ async def handle_search_callback(update: Update, context: ContextTypes.DEFAULT_T
         return
     
     # تحميل الفيديو أو الصوت — 🔴 FIX: عرض اختيار الجودة للمستخدم بدل التحميل المباشر
+    # 🔴 HOTFIX 2026-11-02: عناوين Dailymotion/YouTube فيها * و [ و _ بتكسر Markdown
+    # → BadRequest "can't parse entities" والنتيجة: مفيش حاجة بتظهر للمستخدم خالص
+    # الحل: HTML + html.escape + fallback لـ plain text لو حصل خطأ تاني
+    import html as _html_esc
+    safe_title = _html_esc(str(title)[:100])
+
+    async def _edit_safe(text_html, keyboard=None):
+        try:
+            await query.edit_message_text(text_html, parse_mode="HTML", reply_markup=keyboard)
+        except Exception as edit_err:
+            logger.warning(f"⚠️ edit HTML failed ({edit_err}) — plain text fallback")
+            try:
+                import re as _re
+                plain = _re.sub(r"<[^>]+>", "", text_html)
+                await query.edit_message_text(plain, reply_markup=keyboard)
+            except Exception:
+                try:
+                    await query.answer("⚠️ العنوان فيه رموز غريبة — جرب نتيجة تانية", show_alert=False)
+                except Exception:
+                    pass
+
     if action == "sv":
         # فيديو — نعرض أزرار اختيار الجودة (زي /download بالظبط)
         from handlers.download_handlers import _get_quality_keyboard
-        
+
         if lang == "ar":
-            msg = f"📥 *اختر جودة التحميل*\n\n📺 {title[:100]}"
+            msg = f"📥 <b>اختر جودة التحميل</b>\n\n📺 {safe_title}"
         else:
-            msg = f"📥 *Choose download quality*\n\n📺 {title[:100]}"
-        
+            msg = f"📥 <b>Choose download quality</b>\n\n📺 {safe_title}"
+
         keyboard = _get_quality_keyboard(url, lang)
-        await query.edit_message_text(msg, parse_mode="Markdown", reply_markup=keyboard)
-        
+        await _edit_safe(msg, keyboard)
+
     elif action == "sa":
         # صوت — 🔴 FIX: نعرض خيارات جودة الصوت بس (مفيش فيديو — المستخدم طلب صوت)
         from handlers.download_handlers import _get_audio_quality_keyboard
-        
+
         if lang == "ar":
-            msg = f"🎵 *اختر جودة الصوت*\n\n🎵 {title[:100]}"
+            msg = f"🎵 <b>اختر جودة الصوت</b>\n\n🎵 {safe_title}"
         else:
-            msg = f"🎵 *Choose audio quality*\n\n🎵 {title[:100]}"
-        
+            msg = f"🎵 <b>Choose audio quality</b>\n\n🎵 {safe_title}"
+
         keyboard = _get_audio_quality_keyboard(url, lang)
-        await query.edit_message_text(msg, parse_mode="Markdown", reply_markup=keyboard)
+        await _edit_safe(msg, keyboard)
