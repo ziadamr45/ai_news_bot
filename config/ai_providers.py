@@ -152,12 +152,12 @@ PREMIUM_CHAT_MODELS = [
     {"provider": "nvidia", "model": "deepseek-ai/deepseek-v4.1-flash", "api_key": NVIDIA_DEEPSEEK_V41_FLASH_KEY},
     # 🔥 MiniMax M3.1 Flash (428B) — قوي لكن thinking دايمًا شغال → تالت
     {"provider": "nvidia", "model": "minimaxai/minimax-m3.1-flash", "api_key": NVIDIA_MINIMAX_M31_FLASH_KEY, "timeout": 45},
-    # 🔥 NVIDIA Mistral Large 4 (1T-A52B) — أقوى عام لكن بطيء → مهلة 75s
-    {"provider": "nvidia", "model": "mistralai/mistral-large-4-1t-a52b", "api_key": NVIDIA_MISTRAL_LARGE_4_KEY, "timeout": 75},
-    # 📊 Gemma 4 31B — fallback
-    {"provider": "nvidia", "model": "google/gemma-4-31b-it", "api_key": NVIDIA_GEMMA_4_31B_KEY, "timeout": 45},
-    # 🛡️ Mistral Small API — آخر حل
+    # 🛡️ Mistral Small API — دايمًا حي (ينقذ وقت ازدحام NVIDIA الذروة)
     {"provider": "mistral", "model": "mistral-small-latest"},
+    # 🔥 NVIDIA Mistral Large 4 (1T-A52B) — أقوى عام لكن بطيء → مهلة 60s
+    {"provider": "nvidia", "model": "mistralai/mistral-large-4-1t-a52b", "api_key": NVIDIA_MISTRAL_LARGE_4_KEY, "timeout": 60},
+    # 📊 Gemma 4 31B — fallback
+    {"provider": "nvidia", "model": "google/gemma-4-31b-it", "api_key": NVIDIA_GEMMA_4_31B_KEY, "timeout": 40},
 ]
 
 # Default (backward compatibility)
@@ -204,10 +204,12 @@ FREE_DEEP_SEARCH_MODELS = [
 PREMIUM_DEEP_SEARCH_MODELS = [
     # ⚡ DeepSeek V4.1 Flash — قوي وسريع (الملخص لازم يخلص في الميزانية)
     {"provider": "nvidia", "model": "deepseek-ai/deepseek-v4.1-flash", "api_key": NVIDIA_DEEPSEEK_V41_FLASH_KEY},
-    # 🔥 Mistral Large 4 — تركيب أقوى (توازي مع DeepSeek، مهلة 75s)
-    {"provider": "nvidia", "model": "mistralai/mistral-large-4-1t-a52b", "api_key": NVIDIA_MISTRAL_LARGE_4_KEY, "timeout": 75},
-    # 🔥 Step 5 Preview — أعمق تحليل (مهلة 90s — للمهام الثقيلة)
-    {"provider": "nvidia", "model": "stepfun-ai/step-5-preview", "api_key": NVIDIA_STEP_5_KEY, "timeout": 90},
+    # 🛡️ Mistral Small API — دايمًا حي (ينقذ وقت ازدحام NVIDIA)
+    {"provider": "mistral", "model": "mistral-small-latest"},
+    # 🔥 Mistral Large 4 — تركيب أقوى (مهلة 60s)
+    {"provider": "nvidia", "model": "mistralai/mistral-large-4-1t-a52b", "api_key": NVIDIA_MISTRAL_LARGE_4_KEY, "timeout": 60},
+    # 🔥 Step 5 Preview — أعمق تحليل (مهلة 75s — للمهام الثقيلة)
+    {"provider": "nvidia", "model": "stepfun-ai/step-5-preview", "api_key": NVIDIA_STEP_5_KEY, "timeout": 75},
     # ⚡ GLM 5.3 Flash — fallback سريع
     {"provider": "nvidia", "model": "z-ai/glm-5.3-flash", "api_key": NVIDIA_GLM_53_FLASH_KEY},
 ]
@@ -230,11 +232,13 @@ FREE_CODING_MODELS = [
 PREMIUM_CODING_MODELS = [
     # 💻 DeepSeek V4.1 Flash — elite في الكود والـ agents (763B, 190 tok/s)
     {"provider": "nvidia", "model": "deepseek-ai/deepseek-v4.1-flash", "api_key": NVIDIA_DEEPSEEK_V41_FLASH_KEY},
-    # 💻 Mistral Large 4 — cybersecurity/coding flagship (توازي، مهلة 75s)
-    {"provider": "nvidia", "model": "mistralai/mistral-large-4-1t-a52b", "api_key": NVIDIA_MISTRAL_LARGE_4_KEY, "timeout": 75},
-    # 💻 Step 5 Preview — مسائل البرمجة المعقدة (مهلة 90s)
-    {"provider": "nvidia", "model": "stepfun-ai/step-5-preview", "api_key": NVIDIA_STEP_5_KEY, "timeout": 90},
-    # 💻 GLM 5.3 Flash — #5 Code Arena (توازي ممكن) fallback
+    # 🛡️ Mistral Small API — دايمًا حي
+    {"provider": "mistral", "model": "mistral-small-latest"},
+    # 💻 Mistral Large 4 — cybersecurity/coding flagship (مهلة 60s)
+    {"provider": "nvidia", "model": "mistralai/mistral-large-4-1t-a52b", "api_key": NVIDIA_MISTRAL_LARGE_4_KEY, "timeout": 60},
+    # 💻 Step 5 Preview — مسائل البرمجة المعقدة (مهلة 75s)
+    {"provider": "nvidia", "model": "stepfun-ai/step-5-preview", "api_key": NVIDIA_STEP_5_KEY, "timeout": 75},
+    # 💻 GLM 5.3 Flash — #5 Code Arena fallback
     {"provider": "nvidia", "model": "z-ai/glm-5.3-flash", "api_key": NVIDIA_GLM_53_FLASH_KEY},
 ]
 
@@ -256,8 +260,10 @@ FREE_SUMMARY_MODELS = [
 PREMIUM_SUMMARY_MODELS = [
     # 📄 DeepSeek V4.1 Flash — سريع وقوي
     {"provider": "nvidia", "model": "deepseek-ai/deepseek-v4.1-flash", "api_key": NVIDIA_DEEPSEEK_V41_FLASH_KEY},
-    # 📄 Mistral Large 4 — تلخيص احترافي (توازي، مهلة 75s)
-    {"provider": "nvidia", "model": "mistralai/mistral-large-4-1t-a52b", "api_key": NVIDIA_MISTRAL_LARGE_4_KEY, "timeout": 75},
+    # 🛡️ Mistral Small API — دايمًا حي
+    {"provider": "mistral", "model": "mistral-small-latest"},
+    # 📄 Mistral Large 4 — تلخيص احترافي (مهلة 60s)
+    {"provider": "nvidia", "model": "mistralai/mistral-large-4-1t-a52b", "api_key": NVIDIA_MISTRAL_LARGE_4_KEY, "timeout": 60},
     # 📄 GLM 5.3 Flash — fallback سريع
     {"provider": "nvidia", "model": "z-ai/glm-5.3-flash", "api_key": NVIDIA_GLM_53_FLASH_KEY},
     # 📄 MiniMax M3.1 Flash — آخر NVIDIA حل
