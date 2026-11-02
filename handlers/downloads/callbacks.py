@@ -11,6 +11,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from memory import get_language
+from user_facing import safe_answer_callback
 from premium import (
     check_limit, premium_required_message,
     get_premium_keyboard,
@@ -35,7 +36,7 @@ def _get_download_with_ytdlp():
 async def handle_download_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """معالجة أزرار اختيار الجودة"""
     query = update.callback_query
-    await query.answer()
+    await safe_answer_callback(query)
     
     user_id = query.from_user.id
     data = query.data

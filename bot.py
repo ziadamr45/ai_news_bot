@@ -145,6 +145,23 @@ async def broadcast_daily_news(context: ContextTypes.DEFAULT_TYPE):
         if not wa_subscribers and current_minute != 0:
             wa_subscribers = get_subscribers_for_time(current_hour, 0, platform="whatsapp")
 
+        # ═══ 🔴 catch-up v4 (شكوى زياد: الأخبار مش بتوصل في ميعادها) ═══
+        # لو البوت كان واقف/فاشل في ميعاد المستخدم — يوصله أول تشغيل بعده نفس اليوم
+        try:
+            from memory import get_due_news_subscribers
+            due_tg = get_due_news_subscribers(now, platform="telegram")
+            due_wa = get_due_news_subscribers(now, platform="whatsapp")
+            seen_tg = {s["user_id"] for s in tg_subscribers}
+            seen_wa = {s["user_id"] for s in wa_subscribers}
+            added_tg = [s for s in due_tg if s["user_id"] not in seen_tg]
+            added_wa = [s for s in due_wa if s["user_id"] not in seen_wa]
+            if added_tg or added_wa:
+                logger.info(f"⏰ News catch-up: {len(added_tg)} Telegram + {len(added_wa)} WhatsApp user(s) missed their time — sending now")
+            tg_subscribers = tg_subscribers + added_tg
+            wa_subscribers = wa_subscribers + added_wa
+        except Exception as catchup_err:
+            logger.warning(f"⚠️ News catch-up query failed (non-fatal): {catchup_err}")
+
         total_subscribers = len(tg_subscribers) + len(wa_subscribers)
 
         if not total_subscribers:
@@ -514,7 +531,7 @@ def main():
         minute="0",
         id="daily_news_broadcast",
         name="Daily AI News Broadcast (per-user time)",
-        jitter=60,
+        jitter=0,  # 🔴 FIX v4: بدون jitter — الدقيقة 0 بالظبط عشان مطابقة الوقت تضرب
     )
 
     # ═══ Supabase Storage Cleanup — حذف الملفات المنتهية (أكتر من 24 ساعة) ═══

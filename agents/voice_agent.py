@@ -1,10 +1,10 @@
 """
 وكيل الصوت - Voice Agent
 تحويل الرسائل الصوتية إلى نص ثم معالجتها
-يدعم: Groq Whisper (أساسي - سريع ومجاني) → Google Speech (مجاني بس محتاج ffmpeg) → OpenRouter Whisper → OpenAI Whisper
-4 fallback layers عشان يشتغل في كل الأحوال
+يدعم: NVIDIA NIM Omni (أساسي — REST بدون ffmpeg) → Groq Whisper → Google Speech (محتاج ffmpeg) → OpenRouter → OpenAI
 
-🔴 v2: Groq Whisper بقت الأساسية لأنها مش محتاجة ffmpeg وبتقبل OGG مباشرة
+🔴 v3 (2026-11-03): NVIDIA nemotron-3-nano-omni-30b بياخد صوت عبر REST مباشرة
+   (مختبر لايف: 200 OK — بيسمع حتى النغمة) — عربي مدعوم — مفيش Groq ولا ffmpeg مطلوب
 """
 
 import asyncio
@@ -33,6 +33,9 @@ class VoiceAgent:
         self.groq_base_url = "https://api.groq.com/openai/v1"
         self.openai_api_key = ""
         self.openrouter_api_key = ""
+        # 🔴 NVIDIA NIM Omni — STT عبر REST (المفاتيح عالمية — أي مفتاح ينادي أي نموذج)
+        self.nim_omni_key = (os.environ.get("NVIDIA_OMNI_30B_KEY", "")
+                             or os.environ.get("NVIDIA_NEMOTRON_BOLT_KEY", "") or "")
         self.openrouter_base_url = "https://openrouter.ai/api/v1"
 
         try:
@@ -62,8 +65,10 @@ class VoiceAgent:
 
         # بناء قائمة المزودين المتاحين
         providers = []
+        if self.nim_omni_key:
+            providers.append("NVIDIA NIM Omni (primary — REST)")
         if self.groq_api_key:
-            providers.append("Groq Whisper (primary)")
+            providers.append("Groq Whisper")
         if _FFMPEG_AVAILABLE:
             providers.append("Google Speech (free)")
         else:
@@ -102,7 +107,15 @@ class VoiceAgent:
         if not audio_bytes and not file_path:
             return {"text": "", "success": False, "error": "No audio data provided", "provider": "none"}
 
-        # Layer 1: Groq Whisper (الأساسي — بيقبل OGG مباشرة ومش محتاج ffmpeg)
+        # Layer 0: NVIDIA NIM Omni (REST — بيقبل OGG مباشرة، عربي ممتاز — مختبر)
+        if self.nim_omni_key:
+            result = self._transcribe_nim_omni(audio_bytes, file_path, language)
+            if result["success"]:
+                return result
+        else:
+            logger.debug("NVIDIA NIM Omni key not configured, skipping")
+
+        # Layer 1: Groq Whisper (بيقبل OGG مباشرة ومش محتاج ffmpeg)
         if self.groq_api_key:
             result = self._transcribe_groq(audio_bytes, file_path, language)
             if result["success"]:
@@ -136,6 +149,66 @@ class VoiceAgent:
 
         logger.warning("❌ All voice transcription methods failed")
         return {"text": "", "success": False, "error": "All voice transcription methods failed", "provider": "none"}
+
+    def _transcribe_nim_omni(self, audio_bytes: bytes, file_path: str = None, language: str = "ar") -> dict:
+        """🔴 STT عبر NVIDIA NIM omni (REST chat/completions مع input_audio)
+        مختبر لايف 2026-11-03: بياخد wav base64 وبيوصف حتى نغمة اختبار — 1.5s
+        بيقبل صيغ متعددة (wav/ogg/mp3) — بنجرب الصيغة الأصلية الأول ثم WAV لو فشلت"""
+        import requests, base64
+
+        try:
+            ext = "ogg"
+            if file_path and "." in file_path:
+                ext = file_path.rsplit(".", 1)[-1].lower().replace("oga", "ogg")
+                if ext not in ("wav", "mp3", "ogg", "flac", "m4a", "aac", "opus"):
+                    ext = "ogg"
+
+            attempts = [ext]
+            payloads = [audio_bytes]
+            # لو الصيغة الأصلية اترفض — نحول WAV (لو ffmpeg متاح)
+            if _FFMPEG_AVAILABLE and ext != "wav":
+                try:
+                    payloads.append(self._convert_ogg_to_wav(audio_bytes))
+                    attempts.append("wav")
+                except Exception:
+                    pass
+
+            last_err = ""
+            for fmt, data in zip(attempts, payloads):
+                try:
+                    b64 = base64.b64encode(data).decode()
+                    r = requests.post(
+                        "https://integrate.api.nvidia.com/v1/chat/completions",
+                        headers={"Authorization": f"Bearer {self.nim_omni_key}", "Content-Type": "application/json"},
+                        json={
+                            "model": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+                            "max_tokens": 1024,
+                            "temperature": 0,
+                            "chat_template_kwargs": {"thinking": False},
+                            "messages": [{"role": "user", "content": [
+                                {"type": "input_audio", "input_audio": {"data": b64, "format": fmt}},
+                                {"type": "text", "text": "انسخ كل الكلام المسموع في الملف الصوتي ده كتابةً كما هو بالظبط، من غير أي تعليق أو شرح. لو مفيش كلام بشري قول: (مفيش كلام)."},
+                            ]}],
+                        },
+                        timeout=60,
+                    )
+                    if r.status_code == 200:
+                        text = (r.json()["choices"][0]["message"].get("content") or "").strip()
+                        text = text.strip("()").strip()
+                        if text and "مفيش كلام" not in text:
+                            logger.info(f"✅ NIM Omni transcription ({fmt}): {text[:80]}")
+                            return {"text": text, "success": True, "provider": "nvidia_nim_omni"}
+                        last_err = "empty/no-speech"
+                    else:
+                        last_err = f"{r.status_code} {r.text[:100]}"
+                        logger.debug(f"NIM Omni {fmt}: {last_err}")
+                except Exception as e:
+                    last_err = str(e)[:100]
+            logger.warning(f"⚠️ NIM Omni transcription failed: {last_err}")
+            return {"text": "", "success": False, "error": f"NIM Omni: {last_err}", "provider": "nvidia_nim_omni"}
+        except Exception as e:
+            logger.warning(f"⚠️ NIM Omni error: {str(e)[:100]}")
+            return {"text": "", "success": False, "error": str(e)[:100], "provider": "nvidia_nim_omni"}
 
     def _transcribe_groq(self, audio_bytes: bytes, file_path: str = None, language: str = "ar") -> dict:
         """تحويل الصوت لنص باستخدام Groq Whisper API — الأساسي (بيقبل OGG مباشرة)"""

@@ -10,6 +10,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from ai_engine import generate_company_report, generate_roadmap
+from user_facing import safe_answer_callback
 from memory import (
     get_language, set_language, get_news_time, set_news_time,
     subscribe_user, unsubscribe_user, is_subscribed,
@@ -174,7 +175,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     yt_agent = YouTubeAgent()
 
     query = update.callback_query
-    await query.answer()
+    await safe_answer_callback(query)
 
     user_id = query.from_user.id
     data = query.data

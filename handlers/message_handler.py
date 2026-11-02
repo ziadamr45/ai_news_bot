@@ -341,7 +341,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         # 🔴 FIX: إضافة timeout للـ AI call
                         explanation = await asyncio.wait_for(
                             study_agent.explain_lesson(topic, language=lang, user_id=user_id),
-                            timeout=120  # أقصى وقت 2 دقيقة
+                            timeout=180  # أقصى وقت 3 دقايق (زياد)
                         )
                         explanation = clean_ai_response(explanation)
                         
@@ -431,7 +431,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     # 🔴 FIX: إضافة timeout
                     response = await asyncio.wait_for(
                         smart_chat(contextual_message, lang, user_id=user_id, username=update.effective_user.username),
-                        timeout=120
+                        timeout=180
                     )
                     response = clean_ai_response(response)
                     
@@ -491,7 +491,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     
                     result = await asyncio.wait_for(
                         pdf_agent.answer_question(ctx["text"], user_text, lang, user_id=user_id),
-                        timeout=120
+                        timeout=180
                     )
                     result = clean_ai_response(result)
                     
@@ -574,7 +574,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         image_base64=image_base64,
                         user_id=user_id,
                     ),
-                    timeout=120
+                    timeout=180
                 )
                 
                 await progress.update_stage(2)
@@ -636,7 +636,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 
                 result = await asyncio.wait_for(
                     pdf_agent.answer_question(ctx["text"], user_text, lang, user_id=user_id),
-                    timeout=120
+                    timeout=180
                 )
                 result = clean_ai_response(result)
                 
@@ -694,7 +694,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             manager = get_provider_manager()
             result = await asyncio.wait_for(
                 manager.edit_image_async(prompt=edit_prompt, image_base64=image_base64, user_id=user_id),
-                timeout=120
+                timeout=180
             )
             await progress.update_stage(2)
             
@@ -1050,7 +1050,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             response = await asyncio.wait_for(
                 smart_chat(user_text, lang, user_id=user_id, username=update.effective_user.username),
-                timeout=120  # أقصى وقت 2 دقيقة للـ AI
+                timeout=180  # أقصى وقت 3 دقايق (زياد) للـ AI
             )
         except asyncio.TimeoutError:
             logger.error(f"⏰ AI chat timed out after 120s for user {user_id}: {user_text[:50]}")

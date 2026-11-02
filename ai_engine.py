@@ -1051,9 +1051,9 @@ Examples:
     # ⚡ Speed: تحديد user_plan مرة واحدة — avoid redundant DB query في Provider Manager
     _user_plan = "premium" if is_premium_user else "free"
 
-    # 🔴🔴 موحد زمني مشترك — كل المحاولات لازم تخلص قبل 105 ثانية (الـ handler بيقطع عند 120s)
+    # 🔴🔴 موحد زمني مشترك — زياد أمر: سقف الرد 3 دقايق (الـ handler بيقطع عند 180s)
     _t0 = time.time()
-    _deadline = _t0 + 105
+    _deadline = _t0 + 170
 
     # محاولة 1: النوع العادي
     # 🔴 FIX: دايمًا نبعت messages_for_ai (list) — مش string!

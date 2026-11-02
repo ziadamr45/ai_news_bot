@@ -344,6 +344,10 @@ class ProviderManager:
                 stream=True,
             )
             response.raise_for_status()
+            # 🔴🔴 إصلاح mojibake (2026-11-03): SSE بيرجع text/event-stream من غير charset
+            # فـ requests بيفكّ UTF-8 العربي بـ ISO-8859-1 → "Ø£ÙØ§" بدل "أنا".
+            # نثبّت الترميز UTF-8 قبل أي قراءة.
+            response.encoding = "utf-8"
 
             for line in response.iter_lines(decode_unicode=True):
                 # 🔴 الـ cap الكلي — مفيش نموذج ياخد أكتر من مهلته + 20s كحد أقصى
@@ -478,13 +482,11 @@ class ProviderManager:
         # ولو النموذج بيكتب، بنقرأ التوكنز وهي interpreted فورًا — مفيش timeout على الجسم كله.
         use_stream = provider_name in ("nvidia", "mistral")
 
-        # 🧠 وضع التفكير (reasoning) لنماذج NVIDIA — مختبر لايف 2026-11-02:
-        # - nemotron-3-ultra-550b: نموذج reasoning حقيقي — التفكير شغال والرد بيرجع صح
-        #   (مختبر: think=True → 200 OK بـ reasoning_content ✅) — ده اللي بيرجّع ميزة التفكير للبريميوم
-        #   لكن التفكير بياكل من ميزانية max_tokens → بنرفعها لـ 4096 على الأقل
-        # - nemotron-3.5-lightning/super-vl و mistral-large-4: التفكير بيخلي الرد فاضي (finish=length)
-        #   → التفكير مقفول ليهم (رد فوري 0.5s مختبر ✅)
-        # - mistral-large-4 على NVIDIA بتقبل الحقل ده عادي (مختبر 200 OK)
+        # 🧠 وضع التفكير (reasoning) — مختبر لايف 2026-11-03:
+        # - GLM 5.3 Flash: الريزونينج شغال دايمًا حتى مع thinking:false (مختبر) — موديل المهام الثقيلة
+        # - Omni 30B / Lightning 30B: تفكير افتراضي خفيف (240-1000 حرف) وبيرد طبيعي ✅
+        # - DeepSeek V4.1: thinking:true بيأكل الميزانية ومحتاج 4096+ توكن — مقفول للرسائل العادية (سرعة)
+        # - nemotron-3-ultra-550b: reasoning حقيقي بيتفعل بالحقل ده (لو رجع للخطة يومًا)
         thinking_enabled = provider_name == "nvidia" and "ultra" in model and not _no_thinking
         if provider_name == "nvidia":
             payload["chat_template_kwargs"] = {"thinking": thinking_enabled}
@@ -787,9 +789,9 @@ class ProviderManager:
                 else:
                     timeout = 20
 
-        # 🔴🔴 ميزانية زمنية كلية — عشان مفيش رد يوصل بعد 120 ثانية أبدًا
-        # (الـ handler بيقطع عند 120s — لازم الـ chain كلها تخلص في وقت أقل)
-        base_budget = 108 if task_type == "deep_search" else 95
+        # 🔴🔴 ميزانية زمنية كلية — زياد أمر: سقف الرد 3 دقايق (كان 2)
+        # (الـ handler بيقطع عند 180s — الـ chain لازم تخلص قبله بهامش)
+        base_budget = 170 if task_type == "deep_search" else 160
         budget = base_budget
         if deadline is not None:
             budget = min(budget, int(deadline - time.time()))
@@ -930,7 +932,8 @@ class ProviderManager:
                     timeout = 20
 
         # 🔴 ميزانية زمنية كلية (نفس منطق call_sync)
-        base_budget = 108 if task_type == "deep_search" else 95
+        # 🔴 زياد: سقف الرد 3 دقايق — الميزانية تتبع الـ deadline الموحد
+        base_budget = 170 if task_type == "deep_search" else 160
         budget = base_budget
         if deadline is not None:
             budget = min(budget, int(deadline - time.time()))

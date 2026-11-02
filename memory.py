@@ -1892,6 +1892,31 @@ def get_subscribers_for_time(hour: int, minute: int, platform: str = None) -> Li
     return subscribers
 
 
+def get_due_news_subscribers(now, platform: str = None) -> List[Dict]:
+    """🔴 catch-up v4 (2026-11-03 — شكوى زياد: الأخبار مش بتوصل في ميعادها):
+    المشتركين اللي ميعادهم عدّى النهارده وماوصلهمش حاجة (البوت كان واقف/الفail)
+    — يوصلهم أول تشغيل بعده بدل ما اليوم كله يفوت. last_news_delivery ISO
+    فأول 10 حروف = التاريخ (شغال في PostgreSQL و SQLite)."""
+    time_str = now.strftime("%H:%M")
+    today_str = now.strftime("%Y-%m-%d")
+    ph = "%s" if _is_postgres() else "?"
+    sql = (
+        f"SELECT user_id, language, news_time, name, last_news_delivery, platform, wa_phone "
+        f"FROM user_profiles WHERE subscribed = {ph} AND news_time <= {ph} "
+        f"AND (last_news_delivery IS NULL OR substr(last_news_delivery, 1, 10) < {ph})"
+    )
+    params = [1, time_str, today_str]
+    if platform:
+        sql += f" AND platform = {ph}"
+        params.append(platform)
+    rows = _execute(sql, tuple(params), fetch=True)
+    if rows:
+        if _is_postgres():
+            return [{"user_id": r[0], "language": r[1], "news_time": r[2], "name": r[3], "last_news_delivery": r[4], "platform": r[5] if len(r) > 5 else "telegram", "wa_phone": r[6] if len(r) > 6 else ""} for r in rows]
+        return [{"user_id": dict(r)["user_id"], "language": dict(r).get("language", "ar"), "news_time": dict(r).get("news_time", "12:00"), "name": dict(r).get("name", ""), "last_news_delivery": dict(r).get("last_news_delivery", None), "platform": dict(r).get("platform", "telegram"), "wa_phone": dict(r).get("wa_phone", "")} for r in rows]
+    return []
+
+
 # ═══════════════════════════════════════
 # تهيئة عند الاستيراد - Init on Import
 # ═══════════════════════════════════════

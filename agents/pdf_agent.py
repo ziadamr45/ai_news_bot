@@ -50,6 +50,29 @@ def _rejoin_broken_arabic_in_pdf(text: str) -> str:
     return '\n'.join(joined)
 
 
+# 🔴 إصلاح العربي المقلوب في PDF (2026-11-03 — شكوى زياد من ملف "الفرق بين الشات بوت والوكيل الذكي")
+# مستخرجات PDF (PyPDF2 وغيره) بتطلع العربي بترتيب بصري:
+#   - "الأولى" بتطلع "األوىل" (لام-ألف مقلوبة)
+#   - "على" بتطلع "عىل" ( swapped)
+#   - "٢٠٢٥" بتطلع "٥٢٠٢" (أرقام عربية-هندية معكوسة)
+_ARABIC_INDIC = "٠١٢٣٤٥٦٧٨٩"
+
+def fix_arabic_pdf_text(text: str) -> str:
+    """تصحيح النص العربي المستخرج من PDF (ترتيب بصري → منطقي)"""
+    if not text or not re.search(r'[\u0600-\u06FF]', text):
+        return text
+
+    t = text
+    # 1) لام-ألف المقلوبة: "األ" → "الأ" / "اإل" → "الإ" / "اآل" → "الآ" / "اال" → "الا"
+    #    (مفيش كلمة عربية سليمة فيها "األ"/"اال" جوه — حتى لو الكلمات متلزقة نصلحها)
+    t = t.replace('األ', 'الأ').replace('اإل', 'الإ').replace('اآل', 'الآ').replace('اال', 'الا')
+    # 2) "ىل" المقلوبة داخل الكلمة: "عىل" → "على"
+    t = re.sub(r'(?<=[\u0600-\u06FF])ىل(?![\u0600-\u06FF])', 'لى', t)
+    # 3) الأرقام العربية-الهندية المعكوسة (runs من رقمين أو أكتر — بتطلع معكوسة من الترتيب البصري)
+    t = re.sub(r'[٠-٩]{2,}', lambda m: m.group(0)[::-1], t)
+    return t
+
+
 class PDFAgent:
     """وكيل PDF - تحليل المستندات"""
 
@@ -168,6 +191,7 @@ class PDFAgent:
             doc.close()
             if text.strip():
                 text = PDFAgent._fix_broken_lines(text)
+                text = fix_arabic_pdf_text(text)
                 logger.info(f"✅ Extracted {len(text)} chars from PDF (PyMuPDF)")
                 return text.strip()
         except ImportError:
@@ -185,6 +209,7 @@ class PDFAgent:
                         text += page_text + "\n\n"
             if text.strip():
                 text = PDFAgent._fix_broken_lines(text)
+                text = fix_arabic_pdf_text(text)
                 logger.info(f"✅ Extracted {len(text)} chars from PDF (pdfplumber)")
                 return text.strip()
         except ImportError:
@@ -202,6 +227,7 @@ class PDFAgent:
                     text += page_text + "\n\n"
             if text.strip():
                 text = PDFAgent._fix_broken_lines(text)
+                text = fix_arabic_pdf_text(text)
                 logger.info(f"✅ Extracted {len(text)} chars from PDF (PyPDF2)")
                 return text.strip()
         except ImportError:

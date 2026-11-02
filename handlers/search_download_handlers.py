@@ -30,6 +30,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
 from memory import get_language, increment_command_count
+from user_facing import safe_answer_callback
 from premium import check_limit, increment_usage, premium_required_message, get_premium_keyboard
 from dashboard import track_event
 
@@ -581,7 +582,7 @@ async def handle_search_callback(update: Update, context: ContextTypes.DEFAULT_T
     - sp_{cache_key}_{count} → صور (عدد الصور المطلوب)
     """
     query = update.callback_query
-    await query.answer()
+    await safe_answer_callback(query)
     
     data = query.data
     user_id = query.from_user.id
@@ -676,7 +677,7 @@ async def handle_search_callback(update: Update, context: ContextTypes.DEFAULT_T
                 await query.edit_message_text(plain, reply_markup=keyboard)
             except Exception:
                 try:
-                    await query.answer("⚠️ العنوان فيه رموز غريبة — جرب نتيجة تانية", show_alert=False)
+                    await safe_answer_callback(query, text="⚠️ العنوان فيه رموز غريبة — جرب نتيجة تانية", show_alert=False)
                 except Exception:
                     pass
 

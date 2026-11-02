@@ -220,10 +220,15 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
         if platform == "dailymotion":
             logger.info(f"🟦 Dailymotion: trying Apify download for {url[:80]}")
             try:
+                # 🔴 (شكوى زياد: بحث صوت بيظهر "جاري تحميل الفيديو" وهو أصلاً صوت)
+                if _is_audio_quality(quality):
+                    _plain_ar, _plain_en = "🎵 جاري تحميل الصوت...", "🎵 Downloading audio..."
+                else:
+                    _plain_ar, _plain_en = "⏳ جاري تحميل الفيديو...", "⏳ Downloading video..."
                 await status_msg.edit_text(dl_progress(
                     "telegram", user_id, lang,
                     "🟦 جاري التحميل من Dailymotion...", "🟦 Downloading from Dailymotion...",
-                    "⏳ جاري تحميل الفيديو...", "⏳ Downloading video..."
+                    _plain_ar, _plain_en
                 ))
             except Exception:
                 pass

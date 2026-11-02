@@ -52,3 +52,17 @@ def dl_error_hint(platform: str, user_id, lang: str,
                 if lang == "ar" else
                 f"\n🔧 Technical details (dev): {tech}")
     return friendly_ar if lang == "ar" else friendly_en
+
+
+async def safe_answer_callback(query, text: str = None, show_alert: bool = False):
+    """🔴 إصلاح 'Query is too old and response timeout expired' (Sentry 2026-11-03):
+    الضغطة القديمة (بعد معالجة طويلة أو إعادة تشغيل) بترفض لما نجاوب عليها
+    وبرفع استثناء بيروح Sentry — ده غلاف آمن: بيجرب يرد ولو الضغطة قديمة
+    بيتجاهل الرد بصمت والمعالجة نفسها بتكمل عادي."""
+    try:
+        if text:
+            await query.answer(text=text, show_alert=show_alert)
+        else:
+            await query.answer()
+    except Exception as e:
+        logger.debug(f"callback answer skipped (stale/expired): {type(e).__name__}: {str(e)[:80]}")
