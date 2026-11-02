@@ -340,7 +340,7 @@ class ProviderManager:
         try:
             response = _http_session.post(
                 url, headers=headers, json=payload,
-                timeout=(15, 25),  # connect 15s، فجوة بين التوكنز 25s
+                timeout=(15, 35),  # connect 15s، فجوة أول توكن/بين التوكنز 35s (GLM thinking بياخد 26s)
                 stream=True,
             )
             response.raise_for_status()
@@ -390,7 +390,7 @@ class ProviderManager:
                 logger.warning(f"⏱️ Stream gap-timeout after {elapsed:.0f}s for {model} — but have {got} chars, using them")
             else:
                 logger.warning(f"⏱️ Stream TTFT timeout ({elapsed:.0f}s, no tokens) for {provider_name}/{model} — next model")
-                self._set_model_cooldown(model, "Stream TTFT timeout", 20)
+                self._set_model_cooldown(model, "Stream TTFT timeout", 15)
                 return None
         except requests.exceptions.Timeout:
             logger.warning(f"⏱️ Stream connect timeout for {provider_name}/{model}")
