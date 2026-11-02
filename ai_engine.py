@@ -1051,6 +1051,10 @@ Examples:
     # ⚡ Speed: تحديد user_plan مرة واحدة — avoid redundant DB query في Provider Manager
     _user_plan = "premium" if is_premium_user else "free"
 
+    # 🔴🔴 موحد زمني مشترك — كل المحاولات لازم تخلص قبل 105 ثانية (الـ handler بيقطع عند 120s)
+    _t0 = time.time()
+    _deadline = _t0 + 105
+
     # محاولة 1: النوع العادي
     # 🔴 FIX: دايمًا نبعت messages_for_ai (list) — مش string!
     # عشان user_id يوصل للـ Provider Manager صح
@@ -1062,23 +1066,25 @@ Examples:
         max_tokens=max_tokens,
         user_id=user_id,  # Pass user_id for model selection based on plan
         user_plan=_user_plan,  # ⚡ Speed: avoid redundant DB query
+        deadline=_deadline,
     )
 
-    # محاولة 2: Fallback لو simple فشلت
-    if response is None and task_type == "simple":
+    # محاولة 2: Fallback لو simple فشلت — بس لو فاضل وقت كفاية
+    if response is None and task_type == "simple" and (time.time() - _t0) < 45:
         logger.warning("⚠️ Simple models failed, falling back to chat models")
         response = await call_ai(
             messages_for_ai,  # دايمًا list
             system_prompt=system,
             task_type="chat",
             temperature=0.5,
-            max_tokens=300,  # برضو رد قصير في الـ fallback
+            max_tokens=400,  # برضو رد قصير في الـ fallback
             user_id=user_id,
             user_plan=_user_plan,  # ⚡ Speed: avoid redundant DB query
+            deadline=_deadline,
         )
 
-    # محاولة 3: Retry بعد 3 ثواني (الـ cooldownات 30 ثانية فهتخلص بسرعة لو فشل model واحد)
-    if response is None:
+    # محاولة 3: Retry بعد 3 ثواني — بس لو فاضل وقت كفاية
+    if response is None and (time.time() - _t0) < 60:
         logger.warning("⚠️ First attempt failed, waiting 3s and retrying...")
         await asyncio.sleep(3)
         response = await call_ai(
@@ -1089,6 +1095,7 @@ Examples:
             max_tokens=min(max_tokens, 1500),  # 🔴 آخر فرصة = رد مختصر سريع (عشان الميزانية)
             user_id=user_id,
             user_plan=_user_plan,  # ⚡ Speed: avoid redundant DB query
+            deadline=_deadline,
         )
 
     if response is None:

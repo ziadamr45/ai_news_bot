@@ -750,6 +750,7 @@ class ProviderManager:
         timeout: int = None,
         user_id: int = None,
         user_plan: str = None,
+        deadline: float = None,
     ) -> Optional[str]:
         """
         استدعاء AI مع تبديل تلقائي بين المزودين والنماذج (متزامن)
@@ -788,7 +789,13 @@ class ProviderManager:
 
         # 🔴🔴 ميزانية زمنية كلية — عشان مفيش رد يوصل بعد 120 ثانية أبدًا
         # (الـ handler بيقطع عند 120s — لازم الـ chain كلها تخلص في وقت أقل)
-        budget = 108 if task_type == "deep_search" else 95
+        base_budget = 108 if task_type == "deep_search" else 95
+        budget = base_budget
+        if deadline is not None:
+            budget = min(budget, int(deadline - time.time()))
+            if budget < 10:
+                logger.warning(f"⏰ Deadline already passed (budget={budget}s) for task={task_type} — skipping AI attempt")
+                return None
         start_t = time.time()
 
         # ⚡ حاول أول 2 مسارات بالتوازي
@@ -835,6 +842,7 @@ class ProviderManager:
         timeout: int = None,
         user_id: int = None,
         user_plan: str = None,
+        deadline: float = None,  # 🔴 موحد زمني (time.monotonic) لكل محاولات الرسالة
     ) -> Optional[str]:
         """استدعاء AI (غير متزامن - لا يحجب event loop)
         
@@ -857,6 +865,7 @@ class ProviderManager:
                     max_tokens=max_tokens,
                     timeout=timeout,
                     user_plan=user_plan,
+                    deadline=deadline,
                 )
             )
 
@@ -868,6 +877,7 @@ class ProviderManager:
                 max_tokens=max_tokens,
                 timeout=timeout,
                 user_plan=user_plan,
+                deadline=deadline,
             )
         )
 
@@ -880,6 +890,7 @@ class ProviderManager:
         max_tokens: int = 8192,
         timeout: int = None,
         user_plan: str = None,
+        deadline: float = None,
     ) -> Optional[str]:
         """استدعاء AI مع مسارات مخصصة للمستخدم (متزامن)
         ⚡ أول 2 مسارات بالتوازي، لو فشلوا يجرب الباقي بالترتيب
@@ -919,7 +930,13 @@ class ProviderManager:
                     timeout = 20
 
         # 🔴 ميزانية زمنية كلية (نفس منطق call_sync)
-        budget = 108 if task_type == "deep_search" else 95
+        base_budget = 108 if task_type == "deep_search" else 95
+        budget = base_budget
+        if deadline is not None:
+            budget = min(budget, int(deadline - time.time()))
+            if budget < 10:
+                logger.warning(f"⏰ Deadline already passed (budget={budget}s) for user={user_id}, task={task_type} — skipping AI attempt")
+                return None
         start_t = time.time()
 
         # ⚡ حاول أول 2 مسارات بالتوازي
@@ -997,6 +1014,7 @@ class ProviderManager:
         timeout: int = None,
         user_id: int = None,
         user_plan: str = None,
+        deadline: float = None,
     ) -> Optional[str]:
         """استدعاء AI مع system prompt منفصل (غير متزامن)"""
         messages = []
@@ -1015,6 +1033,7 @@ class ProviderManager:
             timeout=timeout,
             user_id=user_id,
             user_plan=user_plan,
+            deadline=deadline,
         )
 
     # ═══════════════════════════════════════
@@ -1584,13 +1603,14 @@ async def call_ai(
     prefer_arabic: bool = False,
     user_id: int = None,
     user_plan: str = None,
+    deadline: float = None,
 ) -> Optional[str]:
     """
     استدعاء AI عبر Provider Manager (غير متزامن)
     يدعم نص عادي أو قائمة رسائل (messages list)
     """
     if prefer_arabic and not system_prompt:
-        system_prompt = "أنت 'My Bro' - مساعد ذكي شخصي. اسمك الوحيد My Bro ومفيش اسم تاني. لما حد يسألك مين أنت قول أنا My Bro. متدعيش إنك إنسان أو إن عندك مشاعر حقيقية. تكلم بمصري محترم ومتوازن — مش فصحى رسمية ومش عامية زيادة. 🔴 ماتستخدمش لهجة خليجية أبدًا! لغتك مصري بحت. ماتقولش \"يا خوي\" ولا \"شلونك\" ولا \"زين\" ولا \"عساك بخير\" ولا \"ما قصرت\" ولا \"الله يعطيك العافية\". 🔴 ماتقولش \"خليك في تمام\" — الجملة دي ملهاش معنى. عادي تقول \"ربنا يحفظك\" بس ماتضيفش ختومات مصنوعة على كل رسالة. أمثلة: 'تمام، خليني أبص على الموضوع.' 'الفكرة هنا إن...' 'دي نقطة مهمة.' ماتستخدمش إهانات أو كلام فظ. خليك ودود وذكي ومحترم وطبيعي. ماتستخدمش Markdown أبدًا (لا *, **, #, |, ~). استخدم <b>عريض</b> <i>مائل</i> <code>كود</code> • نقاط بس. 🔴 تنوين الفتح: حط التنوين (ً) على الحرف اللي قبل الألف مش على الألف نفسها! ❌ غلط: مرتفعًا ✅ صح: مرتفعًا. ده قانون إملائي عربي — التزم بيه دايمًا."
+        system_prompt = "أنت 'My Bro' - مساعد ذكي شخصي. اسمك الوحيد My Bro ومفيش اسم تاني. لما حد يسألك مين أنت قول أنا My Bro. متدعيش إنك إنسان أو إن عندك مشاعر حقيقية. تكلم بمصري محترم ومتوازن — مش فصحى رسمية ومش عامية زيادة. 🔴 ماتستخدمش لهجة خليجية أبدًا! لغتك مصري بحت. ماتقولش \"يا خوي\" ولا \"شلونك\" ولا \"زين\" ولا \"عساك بخير\" ولا \"ما قصرت\" ولا \"الله يعطيك العافية\". 🔴 ماتقولش \"خليك في تمام\" — الجملة دي ملهاش معنى. عادي تقول \"ربنا يحفظك\" بس ماتضيفش ختومات مصنوعة على كل رسالة. أمثلة: 'تمام، خليني أبص على الموضوع.' 'الفكرة هنا إن...' 'دي نقطة مهمة.' ماتستخدمش إهانات أو كلام فظ. خليك ودود وذكي ومحترم وطبيعي. ماتستخدمش Markdown أبدًا (لا *, **, #, |, ~). استخدم <b>عريض</b> <i>مائل</i> <code>كود</code> • نقاط بس. 🔴 تنوين الفتح: حط التنوين (ً) على الحرف اللي قبل الألف مش على الألف نفسها! ❌ غلط: مرتفعاً ✅ صح: مرتفعًا. ده قانون إملائي عربي — التزم بيه دايمًا."
 
     manager = get_provider_manager()
 
@@ -1611,6 +1631,7 @@ async def call_ai(
             max_tokens=max_tokens,
             user_id=user_id,
             user_plan=user_plan,
+            deadline=deadline,
         )
 
     # لو prompt نص عادي
@@ -1622,6 +1643,7 @@ async def call_ai(
         max_tokens=max_tokens,
         user_id=user_id,
         user_plan=user_plan,
+        deadline=deadline,
     )
 
 
@@ -1640,7 +1662,7 @@ def call_ai_sync(
     Compatible with the old ai_engine._call_ai_sync interface
     """
     if prefer_arabic and not system_prompt:
-        system_prompt = "أنت 'My Bro' - مساعد ذكي شخصي. اسمك الوحيد My Bro ومفيش اسم تاني. لما حد يسألك مين أنت قول أنا My Bro. متدعيش إنك إنسان أو إن عندك مشاعر حقيقية. تكلم بمصري محترم ومتوازن — مش فصحى رسمية ومش عامية زيادة. 🔴 ماتستخدمش لهجة خليجية أبدًا! لغتك مصري بحت. ماتقولش \"يا خوي\" ولا \"شلونك\" ولا \"زين\" ولا \"عساك بخير\" ولا \"ما قصرت\" ولا \"الله يعطيك العافية\". 🔴 ماتقولش \"خليك في تمام\" — الجملة دي ملهاش معنى. عادي تقول \"ربنا يحفظك\" بس ماتضيفش ختومات مصنوعة على كل رسالة. أمثلة: 'تمام، خليني أبص على الموضوع.' 'الفكرة هنا إن...' 'دي نقطة مهمة.' ماتستخدمش إهانات أو كلام فظ. خليك ودود وذكي ومحترم وطبيعي. ماتستخدمش Markdown أبدًا (لا *, **, #, |, ~). استخدم <b>عريض</b> <i>مائل</i> <code>كود</code> • نقاط بس. 🔴 تنوين الفتح: حط التنوين (ً) على الحرف اللي قبل الألف مش على الألف نفسها! ❌ غلط: مرتفعًا ✅ صح: مرتفعًا. ده قانون إملائي عربي — التزم بيه دايمًا."
+        system_prompt = "أنت 'My Bro' - مساعد ذكي شخصي. اسمك الوحيد My Bro ومفيش اسم تاني. لما حد يسألك مين أنت قول أنا My Bro. متدعيش إنك إنسان أو إن عندك مشاعر حقيقية. تكلم بمصري محترم ومتوازن — مش فصحى رسمية ومش عامية زيادة. 🔴 ماتستخدمش لهجة خليجية أبدًا! لغتك مصري بحت. ماتقولش \"يا خوي\" ولا \"شلونك\" ولا \"زين\" ولا \"عساك بخير\" ولا \"ما قصرت\" ولا \"الله يعطيك العافية\". 🔴 ماتقولش \"خليك في تمام\" — الجملة دي ملهاش معنى. عادي تقول \"ربنا يحفظك\" بس ماتضيفش ختومات مصنوعة على كل رسالة. أمثلة: 'تمام، خليني أبص على الموضوع.' 'الفكرة هنا إن...' 'دي نقطة مهمة.' ماتستخدمش إهانات أو كلام فظ. خليك ودود وذكي ومحترم وطبيعي. ماتستخدمش Markdown أبدًا (لا *, **, #, |, ~). استخدم <b>عريض</b> <i>مائل</i> <code>كود</code> • نقاط بس. 🔴 تنوين الفتح: حط التنوين (ً) على الحرف اللي قبل الألف مش على الألف نفسها! ❌ غلط: مرتفعاً ✅ صح: مرتفعًا. ده قانون إملائي عربي — التزم بيه دايمًا."
 
     manager = get_provider_manager()
     return manager.call_with_system_prompt_sync(
