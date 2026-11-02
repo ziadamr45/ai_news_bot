@@ -488,11 +488,12 @@ except Exception:
 # ده بيدي أحسن نتيجة (37 تنسيق لحد 1080p)
 # player_client بنستخدمه كـ fallback بس لو الطريقة الأساسية فشلت
 _YOUTUBE_PLAYER_CLIENTS = [
-    ['android', 'web'],    # Android client — fallback أول
-    ['ios', 'web'],        # iOS client
-    ['mweb', 'web'],       # Mobile Web
-    ['tv', 'web'],         # TV client
-    ['web'],               # Default web — آخر حل
+    ['android', 'web'],        # ✅ live-tested on serv00 (2026-11-02)
+    ['tv_embedded', 'web'],    # ✅ live-tested — bypasses bot wall
+    ['web'],                   # default
+    ['ios', 'web'],            # ❌ fails on serv00 IPs — last resort
+    ['mweb', 'web'],           # ❌ fails on serv00 IPs
+    ['tv', 'web'],             # ❌ "page needs to be reloaded"
 ]
 
 

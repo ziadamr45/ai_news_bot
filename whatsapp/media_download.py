@@ -217,16 +217,21 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
         }
         platform_display = platform_names.get(platform, platform)
         
-        # Send progress message
+        # Send progress message — 🔴 قاعدة زياد: اسم المنصة/الخدمة للمطور فقط
         _is_audio_dl = (quality == "audio" or quality.startswith("audio_"))
+        from user_facing import is_developer as _is_dev_wa
+        _dev_user = _is_dev_wa("whatsapp", wa_id)
         if is_threads:
             # 🔴 Threads فيديو → هيتبعت كملف مباشر (زي التليجرام!)
-            await _send_whatsapp_message(wa_id, f"🧵 جاري تحميل فيديو Threads...")
+            await _send_whatsapp_message(wa_id,
+                "🧵 جاري تحميل فيديو Threads..." if _dev_user else "🧵 جاري تحميل الفيديو...")
         elif _is_audio_dl:
             # 🔴 FIX: لو تحميل صوت → نقول صوت مش فيديو
-            await _send_whatsapp_message(wa_id, f"🎵 جاري تحميل الصوت من {platform_display}...")
+            await _send_whatsapp_message(wa_id,
+                f"🎵 جاري تحميل الصوت من {platform_display}..." if _dev_user else "🎵 جاري تحميل الصوت...")
         else:
-            await _send_whatsapp_message(wa_id, f"📥 جاري تحميل الفيديو من {platform_display}...")
+            await _send_whatsapp_message(wa_id,
+                f"📥 جاري تحميل الفيديو من {platform_display}..." if _dev_user else "📥 جاري تحميل الفيديو...")
         
         tmpdir = tempfile.mkdtemp(prefix="mybro_wa_dl_")
         output_template = os.path.join(tmpdir, "%(title).80s.%(ext)s")
@@ -1150,11 +1155,12 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
             # 🔴 FIX v2: استخدام أزواج client زي التليجرام بالظبط — كل زوج فيه client + web fallback
             if info is None and is_youtube:
                 _YOUTUBE_PLAYER_CLIENTS = [
-                    ['android', 'web'],    # Android client — fallback أول
-                    ['ios', 'web'],        # iOS client
-                    ['mweb', 'web'],       # Mobile Web
-                    ['tv', 'web'],         # TV client
-                    ['web'],               # Default web — آخر حل
+                    ['android', 'web'],        # ✅ live-tested on serv00 (2026-11-02)
+                    ['tv_embedded', 'web'],    # ✅ live-tested — bypasses bot wall
+                    ['web'],                   # default
+                    ['ios', 'web'],            # ❌ fails on serv00 IPs — last resort
+                    ['mweb', 'web'],           # ❌ fails on serv00 IPs
+                    ['tv', 'web'],             # ❌ "page needs to be reloaded"
                 ]
                 for pc_idx, pc in enumerate(_YOUTUBE_PLAYER_CLIENTS):
                     try:
@@ -2544,11 +2550,17 @@ async def _download_and_send_video(wa_id: str, url: str, wa_user_id: int,
         logger.error(f"❌ Video download error for WA {wa_id}: {e}", exc_info=True)
         error_str = str(e).lower()
         
-        # User-friendly error messages
+        # User-friendly error messages — 🔴 قاعدة زياد: المستخدم العادي من غير مصطلحات، المطور يشوف السبب الحقيقي
+        from user_facing import is_developer as _is_dev_wa_err
         if "sign in" in error_str or "login" in error_str or "bot" in error_str:
-            await _send_whatsapp_message(wa_id, 
-                "❌ مش قادر أحمل الفيديو ده — YouTube طلب تسجيل دخول.\n\n"
-                "💡 جرب فيديو تاني أو استخدم التليجرام!")
+            if _is_dev_wa_err("whatsapp", wa_id):
+                await _send_whatsapp_message(wa_id,
+                    "❌ مش قادر أحمل الفيديو ده — YouTube bot detection (محتاج cookies من /cookies).\n\n"
+                    "💡 جرب فيديو تاني أو استخدم التليجرام!")
+            else:
+                await _send_whatsapp_message(wa_id,
+                    "❌ مش قادر أحمل الفيديو ده حالياً.\n\n"
+                    "💡 جرب لينك تاني أو جرب تاني بعدين!")
         elif "private" in error_str or "age" in error_str:
             await _send_whatsapp_message(wa_id, 
                 "❌ الفيديو ده خاص أو مقيد بالعمر.\n\n💡 جرب فيديو تاني!")

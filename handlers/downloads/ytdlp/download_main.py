@@ -43,6 +43,7 @@ from handlers.downloads.ytdlp.cobalt import (
     _try_cobalt_download,
 )
 from handlers.downloads.ytdlp.options import _get_ydl_opts
+from user_facing import is_developer, dl_progress, dl_error_hint
 
 logger = logging.getLogger(__name__)
 
@@ -88,10 +89,11 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
         if is_threads:
             logger.info(f"🧵 Threads detected — using custom download method (yt-dlp doesn't support threads.com)")
             try:
-                await status_msg.edit_text(
-                    "🧵 جاري التحميل من Threads..." if lang == "ar"
-                    else "🧵 Downloading from Threads..."
-                )
+                await status_msg.edit_text(dl_progress(
+                    "telegram", user_id, lang,
+                    "🧵 جاري التحميل من Threads...", "🧵 Downloading from Threads...",
+                    "⏳ جاري تحميل الفيديو...", "⏳ Downloading video..."
+                ))
             except:
                 pass
             
@@ -218,10 +220,11 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
         if platform == "dailymotion":
             logger.info(f"🟦 Dailymotion: trying Apify download for {url[:80]}")
             try:
-                await status_msg.edit_text(
-                    "🟦 جاري التحميل من Dailymotion..." if lang == "ar"
-                    else "🟦 Downloading from Dailymotion..."
-                )
+                await status_msg.edit_text(dl_progress(
+                    "telegram", user_id, lang,
+                    "🟦 جاري التحميل من Dailymotion...", "🟦 Downloading from Dailymotion...",
+                    "⏳ جاري تحميل الفيديو...", "⏳ Downloading video..."
+                ))
             except Exception:
                 pass
 
@@ -852,10 +855,11 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                 if info is None:
                     logger.info("🟠 yt-dlp player_clients failed, trying Cobalt API as 3rd fallback...")
                     try:
-                        await status_msg.edit_text(
-                            "🟠 جاري التحميل عبر Cobalt..." if lang == "ar"
-                            else "🟠 Downloading via Cobalt..."
-                        )
+                        await status_msg.edit_text(dl_progress(
+                            "telegram", user_id, lang,
+                            "🟠 جاري التحميل عبر Cobalt...", "🟠 Downloading via Cobalt...",
+                            "⏳ جاري التحميل...", "⏳ Downloading..."
+                        ))
                     except:
                         pass
                     
@@ -973,10 +977,11 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                 if info is None:
                     logger.info("🔵 Cobalt failed, trying Apify as 4th fallback...")
                     try:
-                        await status_msg.edit_text(
-                            "🔵 جاري التحميل عبر Apify..." if lang == "ar"
-                            else "🔵 Downloading via Apify..."
-                        )
+                        await status_msg.edit_text(dl_progress(
+                            "telegram", user_id, lang,
+                            "🔵 جاري التحميل عبر Apify...", "🔵 Downloading via Apify...",
+                            "⏳ جاري التحميل...", "⏳ Downloading..."
+                        ))
                     except:
                         pass
                     
@@ -2087,11 +2092,18 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
                     if lang == "ar" else
                     "\n\n🍪 <b>Tip:</b> If this keeps happening, admin can upload a cookies.txt file with /cookies"
                 )
-            error_hint = (
-                f"\n💡 YouTube طلب تسجيل دخول — ده مش من الرابط، ده من YouTube نفسه.{cookies_hint}"
-                if lang == "ar" else
-                f"\n💡 YouTube requested sign-in — this isn't about the link, it's YouTube's bot detection.{cookies_hint}"
-            )
+            if is_developer("telegram", user_id):
+                error_hint = (
+                    f"\n💡 YouTube bot detection — مش من الرابط.{cookies_hint}"
+                    if lang == "ar" else
+                    f"\n💡 YouTube requested sign-in — bot detection.{cookies_hint}"
+                )
+            else:
+                error_hint = (
+                    "\n💡 الفيديو ده مش متاح للتحميل حالياً — جرب لينك تاني أو جرب تاني بعدين."
+                    if lang == "ar" else
+                    "\n💡 This video can't be downloaded right now — try another link or try again later."
+                )
         elif "private" in err_str and "sign in" not in err_str:
             error_hint = "\n💡 المحتوى خاص ومش متاح للتحميل." if lang == "ar" else "\n💡 Content is private and cannot be downloaded."
         elif "not found" in err_str or "404" in err_str or "does not exist" in err_str:
@@ -2107,7 +2119,11 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
         elif "login" in err_str:
             error_hint = "\n💡 المحتوى محتاج حساب. جرب رابط تاني." if lang == "ar" else "\n💡 Content requires account. Try a different link."
         else:
-            error_hint = f"\n💡 {str(e)[:150]}" 
+            error_hint = dl_error_hint(
+                "telegram", user_id, lang, str(e),
+                "حصلت مشكلة وقت التحميل — جرب تاني أو جرب لينك تاني.",
+                "Something went wrong while downloading — try again or try another link."
+            )
             logger.error(f"📥 Unhandled download error for {url}: {e}")
         
         try:
