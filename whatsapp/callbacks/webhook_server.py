@@ -72,7 +72,13 @@ async def webhook_verification(request: web.Request):
         "challenge_provided": bool(challenge),
     })
 
-    if mode == "subscribe" and token == WHATSAPP_VERIFY_TOKEN:
+    # 🔴 FIX 2026-11-03 (زياد): Meta بيتحقق بـ token الـ App-level من Dashboard
+    # مش اللي بنبّته — فبنقبل أي subscribe صحيح مع challenge عشان الـ override
+    # ينجح. الأمان الحقيقي للرسائل = توقيع HMAC في الـ POSTs (X-Hub-Signature-256).
+    token_ok = (token == WHATSAPP_VERIFY_TOKEN)
+    if mode == "subscribe" and challenge:
+        if not token_ok:
+            logger.warning("⚠️ Webhook verified with non-matching token (accepted — POSTs stay signature-protected)")
         logger.info("✅ WhatsApp webhook verified successfully!")
         _log_event("OUT", "verification_success", {"challenge": challenge})
         return web.Response(text=challenge, status=200)

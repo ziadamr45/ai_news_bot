@@ -110,6 +110,20 @@ def _set_cached_search(query: str, language: str, results):
 TAVILY_API_KEY = os.environ.get("TAVILY_API_KEY", "")
 
 
+
+
+def _cut_words(text: str, limit: int) -> str:
+    """🔴 قص عند حدود كلمة بدل قص الكلمة في نصها (كان بيقطع الكلام في نصه)"""
+    text = text or ""
+    t = text[:limit]
+    if len(text) <= limit:
+        return t
+    sp = t.rfind(' ')
+    if sp > limit // 3:
+        t = t[:sp]
+    return t.rstrip(' ,.;:،؛') + '…'
+
+
 def _search_tavily_sync(query: str, max_results: int = 5, search_depth: str = "basic", language: str = "ar") -> List[Dict]:
     """بحث عبر Tavily API (أفضل جودة - بحث حقيقي)"""
     if not TAVILY_API_KEY:
@@ -135,14 +149,6 @@ def _search_tavily_sync(query: str, max_results: int = 5, search_depth: str = "b
         response = client.search(query, **search_params)
         
         results = []
-        # Tavily بيرجع answer مباشر
-        if response.get("answer"):
-            results.append({
-                "title": "Tavily AI Answer",
-                "link": "",
-                "snippet": response["answer"],
-                "source": "Tavily AI",
-            })
         
         # النتائج التفصيلية
         for r in response.get("results", []):
@@ -182,14 +188,6 @@ def _search_tavily_sync(query: str, max_results: int = 5, search_depth: str = "b
         data = response.json()
 
         results = []
-        # Tavily بيرجع answer مباشر
-        if data.get("answer"):
-            results.append({
-                "title": "Tavily AI Answer",
-                "link": "",
-                "snippet": data["answer"],
-                "source": "Tavily AI",
-            })
 
         # النتائج التفصيلية
         for r in data.get("results", []):
@@ -829,7 +827,7 @@ Question: {query}
     if tavily_deep_results:
         search_text += "\n🔬 نتائج Tavily المتقدمة:\n" if language == "ar" else "\n🔬 Tavily Advanced Results:\n"
         for i, r in enumerate(tavily_deep_results, 1):
-            snippet = r['snippet'][:500]  # 🔴 FIX: تحديد طول المقتطف
+            snippet = _cut_words(r['snippet'], 500)  # 🔴 FIX: قص عند حدود كلمة
             search_text += f"\n--- نتيجة متقدمة {i} ---\n"
             search_text += f"العنوان: {r['title']}\n"
             search_text += f"المحتوى: {snippet}\n"
@@ -841,7 +839,7 @@ Question: {query}
     if web_results:
         search_text += "\n🌐 نتائج بحث الويب:\n" if language == "ar" else "\n🌐 Web Search Results:\n"
         for i, r in enumerate(web_results, 1):
-            snippet = r['snippet'][:400]  # 🔴 FIX: تحديد طول المقتطف
+            snippet = _cut_words(r['snippet'], 400)  # 🔴 FIX: قص عند حدود كلمة
             search_text += f"\n--- نتيجة ويب {i} ---\n"
             search_text += f"العنوان: {r['title']}\n"
             search_text += f"المقتطف: {snippet}\n"
@@ -850,7 +848,7 @@ Question: {query}
     if news_results:
         search_text += "\n📰 نتائج أخبار:\n" if language == "ar" else "\n📰 News Results:\n"
         for i, r in enumerate(news_results, 1):
-            snippet = r['snippet'][:400]  # 🔴 FIX: تحديد طول المقتطف
+            snippet = _cut_words(r['snippet'], 400)  # 🔴 FIX: قص عند حدود كلمة
             search_text += f"\n--- خبر {i} ---\n"
             search_text += f"العنوان: {r['title']}\n"
             search_text += f"المقتطف: {snippet}\n"
@@ -1008,8 +1006,8 @@ def clean_web_results(results: List[Dict], language: str = "ar") -> List[Dict]:
         source = str(r.get("source", "") or "").strip()
 
         # 1) Tavily AI Answer الفاضي — نتخطاه
-        if title == "Tavily AI Answer" and not snippet:
-            continue
+        if title == "Tavily AI Answer":
+            continue  # 🔴 مش هنعرض إجابة Tavily الإنجليزي خالص
         # 2) عنوان فاضي/رموز بس → أول 60 حرف من المقتطف، ولو المقتطف برضه فاضي — تخطى
         if not _has_alpha(title):
             if not _has_alpha(snippet):

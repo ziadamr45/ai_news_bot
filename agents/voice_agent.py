@@ -66,7 +66,7 @@ class VoiceAgent:
         # بناء قائمة المزودين المتاحين
         providers = []
         if self.nim_omni_key:
-            providers.append("NVIDIA NIM Omni (primary — REST)")
+            providers.append("NVIDIA NIM Omni (fallback — REST)")
         if self.groq_api_key:
             providers.append("Groq Whisper")
         if _FFMPEG_AVAILABLE:
@@ -107,21 +107,21 @@ class VoiceAgent:
         if not audio_bytes and not file_path:
             return {"text": "", "success": False, "error": "No audio data provided", "provider": "none"}
 
-        # Layer 0: NVIDIA NIM Omni (REST — بيقبل OGG مباشرة، عربي ممتاز — مختبر)
-        if self.nim_omni_key:
-            result = self._transcribe_nim_omni(audio_bytes, file_path, language)
-            if result["success"]:
-                return result
-        else:
-            logger.debug("NVIDIA NIM Omni key not configured, skipping")
-
-        # Layer 1: Groq Whisper (بيقبل OGG مباشرة ومش محتاج ffmpeg)
+        # Layer 0: Groq Whisper-large-v3 (🔴 رجع بأمر زياد 2026-11-03 — أعلى دقة للعربي؛ Omni كان وحش)
         if self.groq_api_key:
             result = self._transcribe_groq(audio_bytes, file_path, language)
             if result["success"]:
                 return result
         else:
             logger.debug("Groq API key not configured, skipping")
+
+        # Layer 1: NVIDIA NIM Omni (REST — بيقبل OGG مباشرة — منقذ لو Groq وقع)
+        if self.nim_omni_key:
+            result = self._transcribe_nim_omni(audio_bytes, file_path, language)
+            if result["success"]:
+                return result
+        else:
+            logger.debug("NVIDIA NIM Omni key not configured, skipping")
 
         # Layer 2: Google Speech (مجاني بس محتاج ffmpeg لتحويل OGG→WAV)
         if _FFMPEG_AVAILABLE:

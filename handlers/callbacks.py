@@ -597,7 +597,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         
                         for i, r in enumerate(web_results[:5], 1):
                             title_text = html_module.escape(str(r.get("title", "")))
-                            snippet = html_module.escape(str(r.get("snippet", ""))[:260])
+                            _raw_snip = str(r.get("snippet", ""))
+                            if len(_raw_snip) > 260:
+                                _sp = _raw_snip.rfind(' ', 100, 260)
+                                if _sp > 0:
+                                    _raw_snip = _raw_snip[:_sp].rstrip(' ,.;:،؛') + '…'
+                            snippet = html_module.escape(_raw_snip)
                             link = str(r.get("link", "") or "").strip()
                             result_message += f"{i}. 📄 <b>{title_text}</b>\n"
                             if snippet:

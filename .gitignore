@@ -20,3 +20,10 @@ worklog.md
 node_modules/
 .next/
 tool-results/
+
+# 🔴 secrets/runtime artifacts — never commit (2026-11-03)
+.env.bak*
+.env.*
+!.env.example
+.errcheck_ts
+_e2e_*.json
