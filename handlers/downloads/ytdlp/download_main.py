@@ -208,6 +208,109 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
         
         output_template = os.path.join(tmpdir, "%(title).100s.%(ext)s")
         
+        # ═══════════════════════════════════════════════════════════════
+        # 🟦 FIX 2026-11-02: Dailymotion عبر Apify أولًا
+        # Dailymotion حاظر أي TLS fingerprint مش متصفح (yt-dlp impersonation
+        # محتاج curl_cffi — مش بيتثبت على FreeBSD/serv00) → yt-dlp بيفشل دايمًا.
+        # Apify بيحمل بـ TLS متصفح حقيقي → الملف بيرجع سليم من أول مرة.
+        # لو Apify فشل بنكمّل على سلسلة yt-dlp العادية زي ما هي.
+        # ═══════════════════════════════════════════════════════════════
+        if platform == "dailymotion":
+            logger.info(f"🟦 Dailymotion: trying Apify download for {url[:80]}")
+            try:
+                await status_msg.edit_text(
+                    "🟦 جاري التحميل من Dailymotion..." if lang == "ar"
+                    else "🟦 Downloading from Dailymotion..."
+                )
+            except Exception:
+                pass
+
+            dm_result = None
+            try:
+                from dailymotion_apify import download_dailymotion_apify
+                dm_result = await asyncio.wait_for(
+                    download_dailymotion_apify(url, quality, tmpdir), timeout=300
+                )
+            except Exception as dm_err:
+                logger.warning(f"🟦 Dailymotion Apify error: {dm_err}, falling back to yt-dlp chain...")
+
+            if dm_result and dm_result.get("success") and dm_result.get("filepath"):
+                logger.info(f"🟦 Dailymotion Apify succeeded! File: {dm_result['filepath']}")
+                file_path = dm_result["filepath"]
+                real_title = dm_result.get("title", "Dailymotion Video")
+                file_size = dm_result.get("size", os.path.getsize(file_path))
+                is_audio = dm_result.get("is_audio", _is_audio_quality(quality))
+                size_mb = file_size / (1024 * 1024)
+                size_str = f"{size_mb:.1f}MB"
+
+                # 🛡️ Safety check
+                try:
+                    media_type = "audio" if is_audio else "video"
+                    is_safe_dm, block_msg_dm, _reason_dm = await comprehensive_media_safety_check(
+                        title=real_title, file_path=file_path, file_type=media_type,
+                        platform="telegram", user_id=str(user_id), lang=lang,
+                    )
+                    if not is_safe_dm:
+                        await message.reply_text(block_msg_dm, parse_mode="HTML")
+                        try: os.remove(file_path)
+                        except: pass
+                        try: shutil.rmtree(tmpdir, ignore_errors=True)
+                        except: pass
+                        return
+                except Exception:
+                    pass  # Fail-open
+
+                increment_usage(user_id, "youtube_summaries")
+                try: track_event("media_downloads")
+                except: pass
+
+                await status_msg.delete()
+
+                if is_audio:
+                    bitrate = _get_audio_bitrate(quality)
+                    audio_sent = await _send_telegram_audio(
+                        message, file_path, real_title, size_str, lang,
+                        method_name="Dailymotion", bitrate=bitrate
+                    )
+                    if not audio_sent:
+                        try:
+                            with open(file_path, 'rb') as f:
+                                caption = f"📥 {'تم التحميل!' if lang == 'ar' else 'Downloaded!'}\n🟦 {real_title[:200]}\n📁 {size_str} | Dailymotion"
+                                await message.reply_document(document=f, caption=caption)
+                        except Exception:
+                            await message.reply_text(
+                                f"❌ فشل إرسال الصوت ({size_str}). جرب تاني!" if lang == "ar"
+                                else f"❌ Failed to send audio ({size_str}). Try again!"
+                            )
+                else:
+                    try:
+                        with open(file_path, 'rb') as f:
+                            caption = f"📥 {'تم تحميل الفيديو!' if lang == 'ar' else 'Video downloaded!'}\n🟦 {real_title[:200]}\n📁 {size_str} | Dailymotion"
+                            await message.reply_video(
+                                video=f,
+                                caption=caption,
+                                supports_streaming=True,
+                            )
+                    except Exception as send_err:
+                        if "too large" in str(send_err).lower() or "file is too big" in str(send_err).lower():
+                            await message.reply_text(
+                                f"❌ الملف كبير على التليجرام ({size_str})" if lang == "ar"
+                                else f"❌ File too large for Telegram ({size_str})"
+                            )
+                        else:
+                            await message.reply_text(
+                                f"❌ فشل إرسال الفيديو ({size_str}). جرب تاني!" if lang == "ar"
+                                else f"❌ Failed to send video ({size_str}). Try again!"
+                            )
+
+                try: os.remove(file_path)
+                except: pass
+                try: shutil.rmtree(tmpdir, ignore_errors=True)
+                except: pass
+                return  # ✅ Dailymotion نجح!
+            else:
+                logger.info("🟦 Dailymotion: Apify failed — falling back to yt-dlp chain...")
+
         # تحديث رسالة الحالة
         if _is_audio_quality(quality):
             status_text = "🎵 جاري تحميل الصوت..." if lang == "ar" else "🎵 Downloading audio..."
@@ -215,7 +318,7 @@ async def _download_with_ytdlp(update_or_query, url: str, quality: str, lang: st
             quality_names = {"best": "عالية", "medium": "متوسطة", "low": "منخفضة"} if lang == "ar" else {"best": "high", "medium": "medium", "low": "low"}
             q_name = quality_names.get(quality, quality)
             status_text = f"🎬 جاري تحميل الفيديو بجودة {q_name}..." if lang == "ar" else f"🎬 Downloading video in {q_name} quality..."
-        
+
         try:
             await status_msg.edit_text(status_text)
         except Exception:

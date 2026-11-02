@@ -561,6 +561,35 @@ async def smart_chat(user_message: str, language: str = "ar", user_id: int = Non
     is_identity = _is_identity_question(user_message)
     is_creator = _is_creator_question(user_message)
 
+    # 🔴🔴🔴 FIX 2026-11-02: أسئلة "مين اللي عملك" — رد قاطع ثابت من غير AI!
+    # المشكلة: بعض النماذج (nemotron/إنفيديا) كانت بتتجاهل الـ creator_context
+    # وبترشّ "فريق إنفيديا / NVIDIA team" من تدريبها. الحل: رد جاهز 100%
+    # مضمون — مفيش أي استدعاء AI هنا خالص.
+    if is_creator:
+        _has_arabic = bool(re.search(r'[\u0600-\u06FF]', user_message))
+        try:
+            _is_dev_q = _is_developer(user_id, username)
+        except Exception:
+            _is_dev_q = False
+        if _is_dev_q:
+            canned = ("إنت يا زياد! 😄 إنت اللي عملتني بإيدك — أنا اتعملت من زياد عمرو "
+                      "(مطور ويب مصري، مؤسس Qudra Tech). أنا عارفك كويس عشان إنت اللي خلقتني 🇪🇬")
+        elif not _has_arabic:
+            canned = ("I was created by Ziad Amr (@ziadamr) — an Egyptian web developer and the founder of "
+                      "Qudra Tech. He built me from scratch with love in Egypt 🇪🇬")
+        else:
+            canned = ("أنا اتعملت بواسطة زياد عمرو (@ziadamr) — مطور ويب مصري ومؤسس Qudra Tech 💙 "
+                      "بني كل حاجة فيّا من الصفر بحب في مصر 🇪🇬")
+        logger.info(f"⚡ Deterministic creator answer (بدون AI — ضد تسريب NVIDIA) for: {user_message[:40]}")
+        if user_id:
+            try:
+                from memory import save_conversation
+                save_conversation(user_id, "user", user_message[:1000])
+                save_conversation(user_id, "bot", canned[:1000])
+            except Exception:
+                pass
+        return canned
+
     # 1.5. كشف التحيات — لازم نرد على التحية مش نبحث عنها!
     is_greeting_msg = _is_greeting(user_message)
     if is_greeting_msg:
