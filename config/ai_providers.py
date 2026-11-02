@@ -150,8 +150,11 @@ PREMIUM_CHAT_MODELS = [
     {"provider": "nvidia", "model": "z-ai/glm-5.3-flash", "api_key": NVIDIA_GLM_53_FLASH_KEY},
     # ⚡ NVIDIA DeepSeek V4.1 Flash (763B) — قوي وسريع — توازي مع GLM
     {"provider": "nvidia", "model": "deepseek-ai/deepseek-v4.1-flash", "api_key": NVIDIA_DEEPSEEK_V41_FLASH_KEY},
-    # 🔥 MiniMax M3.1 Flash (428B) — قوي لكن thinking دايمًا شغال → تالت
-    {"provider": "nvidia", "model": "minimaxai/minimax-m3.1-flash", "api_key": NVIDIA_MINIMAX_M31_FLASH_KEY, "timeout": 45},
+    # 🚑 Bolt E4B — منقذ الازدحام: لما النماذج الكبيرة تبقى في طابور (زياد: المستخدم مياخدش دقيقتين صمت — رد ضعيف أحسن من ولا حاجة)
+    # بيوصله في ثانية واحدة غالبًا — وبيتخطاه خالص لو الفلوط صحّي
+    {"provider": "nvidia", "model": "nvidia/nemotron-3.5-bolt-e4b", "api_key": NVIDIA_NEMOTRON_BOLT_KEY},
+    # 🔥 MiniMax M3.1 Flash (428B) — thinking دايمًا شغال
+    {"provider": "nvidia", "model": "minimaxai/minimax-m3.1-flash", "api_key": NVIDIA_MINIMAX_M31_FLASH_KEY, "timeout": 30},
     # 🛡️ Mistral Small API — دايمًا حي (ينقذ وقت ازدحام NVIDIA الذروة)
     {"provider": "mistral", "model": "mistral-small-latest"},
     # 🔥 NVIDIA Mistral Large 4 (1T-A52B) — أقوى عام لكن بطيء → مهلة 60s
