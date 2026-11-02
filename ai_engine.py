@@ -1451,6 +1451,7 @@ async def analyze_image(
     language: str = "ar",
     user_message: str = "",
     vision_pro: bool = False,
+    user_id: int = None,  # 🔴 FIX 2026-11-03: كان الناقل الداخلي بينادي user_id مش معرّف → NameError
 ) -> str:
     """
     تحليل صورة باستخدام نموذج الرؤية

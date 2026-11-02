@@ -461,6 +461,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             language=lang,
             user_message=user_text,
             vision_pro=False,  # 🔴 عام مش تفصيلي - التفصيلي من زرار "البحث التفصيلي"
+            user_id=user_id,  # 🔴 FIX: الـ fallback الداخلي محتاجه
         )
 
         # Save to memory

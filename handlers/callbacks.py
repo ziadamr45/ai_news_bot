@@ -743,6 +743,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 language=lang,
                 user_message=img_ctx.get("user_text", ""),
                 vision_pro=True,  # Full detail mode
+                user_id=user_id,  # 🔴 FIX: الـ fallback الداخلي محتاجه
             )
             response = clean_ai_response(response)
 
