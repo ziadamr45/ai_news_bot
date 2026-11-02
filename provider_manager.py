@@ -1,18 +1,22 @@
 """
 مدير المزودين - Provider Manager
-الخطه الشامله مع per-model API keys:
-🧠 Chat Free: Mistral Small → Mistral Nemo → Llama 3.3 70B → DeepSeek V4 Flash (heavy) → SambaNova
-🧠 Chat Premium: Mistral Large → Mistral Medium → Kimi K2.6 → MiniMax M2.7 → GLM 5.1 → DeepSeek V4 Pro (heavy)
-⚡ Simple Free: Mistral Small → Llama 3.3 70B → Step 3.7 Flash → SambaNova
-⚡ Simple Premium: Mistral Large → Step 3.7 Flash → Mistral Medium
-🔥 Deep Search Premium: DeepSeek V4 Pro → Kimi K2.6 → MiniMax M2.7 → Mistral Large
-👨‍💻 Coding Free: Step 3.7 Flash → Codestral → Mistral Small → SambaNova
-👨‍💻 Coding Premium: GLM 5.1 → DeepSeek V4 Pro → Kimi K2.6 → Codestral → Mistral Large
-📄 Summary Free: DeepSeek V4 Flash → Mistral Small → Nemo → SambaNova
-📄 Summary Premium: DeepSeek V4 Pro → MiniMax M2.7 → Mistral Large → Medium
-👁️ Vision: Llama 3.2 90B Vision → Nemotron Nano VL → Mistral Pixtral
-🎨 Image Gen (Premium Only): Stable Diffusion 3.5 Large → Flux.1 Kontext → Flux.1 Dev
-🖌️ Image Edit (Premium Only): Stable Diffusion 3.5 Large → Flux.1 Dev
+الخطه الجديدة 2026-11-02 (نماذج NVIDIA الجديدة — مختبرة لايف):
+🧠 Chat Free:  Nemotron Bolt → GLM 5.3 Flash → MiniMax M3.1 Flash → DeepSeek V4.1 Flash → Mistral Small → SambaNova
+🧠 Chat Pro:   Mistral Large 4 (1T) → Step 5 Preview (600B) → DeepSeek V4.1 Flash → MiniMax Flash → GLM Flash → Mistral Large → SambaNova
+⚡ Simple Free: GLM 5.3 Flash → Bolt → MiniMax Flash
+⚡ Simple Pro:  Bolt → GLM 5.3 Flash → MiniMax Flash → DeepSeek V4.1 Flash
+🔥 Deep Search Free: DeepSeek V4.1 Flash → MiniMax Flash → Mistral Small
+🔥 Deep Search Pro:  Step 5 Preview → Mistral Large 4 → DeepSeek V4.1 Flash → MiniMax Flash
+👨‍💻 Coding Free: DeepSeek V4.1 Flash → MiniMax Flash → GLM Flash
+👨‍💻 Coding Pro:  Step 5 Preview → DeepSeek V4.1 Flash → Mistral Large 4 → GLM Flash
+📄 Summary Free: GLM Flash → MiniMax Flash → Bolt
+📄 Summary Pro:  Mistral Large 4 → DeepSeek V4.1 Flash → MiniMax Flash
+👁️ Vision: Nemotron 3.5 Super VL 120B → Llama 3.2 90B Vision (قديم) → Pixtral
+🎨 Image Gen: Flux 3 Image Klein (mode=t2i مختبر ✅) → Qwen-Image-2512 (لو اتفعّل)
+🖌️ Image Edit: Qwen-Image-Edit-2511 (لسه مش hosted — أول ما يتفعل هيشتغل) → Flux 3
+📄 File Parse: Nemotron 3.5 Parse (multipart "document" مختبر ✅)
+🔍 Embed: Nemotron 3.5 Embed 8B (dim 4096 مختبر ✅)
+🔍 Rerank: Nemotron 3.5 Rerank 8B (مختبر ✅)
 
 كل نموذج NVIDIA ليه مفتاح API خاص بيه (per-model API keys)
 """
@@ -41,7 +45,8 @@ _api_semaphore = asyncio.Semaphore(10)
 from config import (
     SAMBANOVA_API_KEY, SAMBANOVA_BASE_URL,
     MISTRAL_API_KEY, MISTRAL_BASE_URL,
-    NVIDIA_BASE_URL, NVIDIA_GENAI_BASE_URL,
+    NVIDIA_BASE_URL, NVIDIA_GENAI_BASE_URL, NVIDIA_RETRIEVAL_BASE_URL,
+    EMBED_TEXT_MODELS, RERANK_MODELS, FILE_PARSE_MODELS,
     CHAT_MODELS, SIMPLE_MODELS, DEEP_SEARCH_MODELS,
     CODING_MODELS, SUMMARY_MODELS, VISION_MODELS,
     FREE_CHAT_MODELS, PREMIUM_CHAT_MODELS,
@@ -101,7 +106,19 @@ class ProviderManager:
             "base_url": NVIDIA_GENAI_BASE_URL,
             "api_key": "",  # 🔴 مفيش مفتاح عام — كل نموذج ليه مفتاح خاص
         }
-        logger.info("✅ NVIDIA GenAI provider configured (image gen/edit — SD 3.5 Large + Flux.1 Kontext + Flux.1 Dev)")
+        logger.info("✅ NVIDIA GenAI provider configured (image gen/edit — Flux 3 Klein)")
+
+        # NVIDIA Retrieval (تحليل الملفات + إعادة ترتيب نتائج البحث)
+        # 🔴 Endpoint مختلف: https://ai.api.nvidia.com/v1/retrieval/{model}
+        self.providers["nvidia_parse"] = {
+            "base_url": NVIDIA_RETRIEVAL_BASE_URL,
+            "api_key": "",
+        }
+        self.providers["nvidia_rerank"] = {
+            "base_url": NVIDIA_RETRIEVAL_BASE_URL,
+            "api_key": "",
+        }
+        logger.info("✅ NVIDIA Retrieval provider configured (nemotron parse + rerank 8b)")
 
         # Mistral (أساسي للمجاني + fallback للبريميوم — 1B توكن/شهر)
         if MISTRAL_API_KEY:
@@ -207,6 +224,9 @@ class ProviderManager:
             "vision": PREMIUM_VISION_MODELS if is_premium_route else FREE_VISION_MODELS,
             "image_gen": PREMIUM_IMAGE_GEN_MODELS,  # 🎨 بريميوم بس
             "image_edit": PREMIUM_IMAGE_EDIT_MODELS,  # 🖌️ بريميوم بس
+            "file_parse": FILE_PARSE_MODELS,  # 📄 تحليل الملفات (كل الخطط)
+            "embed": EMBED_TEXT_MODELS,  # 🔍 جودة البحث
+            "rerank": RERANK_MODELS,  # 🔍 ترتيب النتائج
         }
 
         return routes_map.get(task_type, PREMIUM_CHAT_MODELS if is_premium_route else FREE_CHAT_MODELS)
@@ -974,14 +994,21 @@ class ProviderManager:
         import random
         seed = random.randint(0, 999999)
 
+        # 🔴 مختبر لايف 2026-11-02: Flux 3 Klein بياخد mode=t2i (مش base)
+        # والـ SD 3.5 القديم كان بياخد mode=base
+        if "flux-3" in model or "qwen-image" in model.lower():
+            image_mode = "t2i"
+        else:
+            image_mode = "base"
+
         payload = {
             "prompt": prompt,
-            "mode": "base",  # أساسي لـ text-to-image (SD 3.5 + Flux بيقبلوه)
+            "mode": image_mode,
             "seed": seed,
         }
 
-        # SD 3.5 Large بيحتاج steps صريح (30 خطوة كفاية للتوازن بين الجودة والسرعة)
-        if "stable-diffusion-3.5" in model:
+        # خطوات التوليد: Flux 3 سريع — 30 خطوة كفاية للتوازن بين الجودة والسرعة
+        if "flux-3" in model or "stable-diffusion-3.5" in model:
             payload["steps"] = 30
 
         actual_timeout = timeout or IMAGE_GEN_TIMEOUT
@@ -1227,6 +1254,118 @@ class ProviderManager:
 
         logger.error("🚨 All image editing models failed")
         return None
+
+    # ═══════════════════════════════════════
+    # 📄 تحليل الملفات - Document Parsing (جديد 2026-11-02)
+    # ═══════════════════════════════════════
+
+    def parse_document_sync(self, image_base64: str, timeout: int = 60) -> Optional[str]:
+        """
+        استخراج النص والجداول من صورة صفحة مستند (متزامن)
+        📄 Nemotron 3.5 Parse — مختبر لايف 2026-11-02 ✅
+        Endpoint: https://ai.api.nvidia.com/v1/retrieval/nvidia/nemotron-3.5-parse/parse
+        multipart/form-data field "document" → returns {"content": "<markdown>"}
+        Returns: النص المستخرج (markdown) or None
+        """
+        import base64 as _b64
+        routes = self.get_model_routes("file_parse")
+        if not routes:
+            logger.warning("📄 No file-parse routes (NEMOTRON_PARSE_KEY missing?)")
+            return None
+
+        route = routes[0]
+        try:
+            img_bytes = _b64.b64decode(image_base64)
+        except Exception as e:
+            logger.warning(f"📄 Invalid base64 image: {e}")
+            return None
+
+        url = f"{self.providers['nvidia_parse']['base_url']}/nvidia/nemotron-3.5-parse/parse"
+
+        try:
+            resp = _http_session.post(
+                url,
+                headers={"Authorization": f"Bearer {route.api_key}", "Accept": "application/json"},
+                files={"document": ("page.png", img_bytes, "image/png")},
+                timeout=timeout,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                content = data.get("content", "")
+                if content:
+                    logger.info(f"✅ Document parsed ({len(content)} chars)")
+                    return content
+                logger.warning(f"📄 Empty parse content: {str(data)[:150]}")
+                return None
+            logger.warning(f"📄 Parse failed {resp.status_code}: {resp.text[:120]}")
+            return None
+        except Exception as e:
+            logger.warning(f"📄 Parse error: {str(e)[:120]}")
+            return None
+
+    # ═══════════════════════════════════════
+    # 🔍 جودة البحث - Embeddings & Reranking (جديد 2026-11-02)
+    # ═══════════════════════════════════════
+
+    def embed_texts_sync(self, texts: List[str], input_type: str = "query", timeout: int = 30) -> Optional[List[List[float]]]:
+        """
+        تحويل نصوص إلى vectors (للمقارنة الدلالية)
+        🔍 Nemotron 3.5 Embed 8B — مختبر لايف ✅ (dim=4096)
+        Returns: list of embeddings or None
+        """
+        routes = self.get_model_routes("embed")
+        if not routes:
+            return None
+        route = routes[0]
+        try:
+            resp = _http_session.post(
+                f"{self.providers['nvidia']['base_url']}/embeddings",
+                headers={"Authorization": f"Bearer {route.api_key}", "Content-Type": "application/json"},
+                json={"input": texts, "model": route.model_id, "input_type": input_type, "encoding_format": "float"},
+                timeout=timeout,
+            )
+            if resp.status_code == 200:
+                data = resp.json().get("data", [])
+                embs = [d.get("embedding") for d in data if d.get("embedding")]
+                if embs:
+                    logger.info(f"✅ Embedded {len(embs)} texts (dim={len(embs[0])})")
+                    return embs
+            logger.warning(f"🔍 Embed failed {resp.status_code}: {resp.text[:100]}")
+            return None
+        except Exception as e:
+            logger.warning(f"🔍 Embed error: {str(e)[:100]}")
+            return None
+
+    def rerank_passages_sync(self, query: str, passages: List[str], timeout: int = 30) -> Optional[List[int]]:
+        """
+        إعادة ترتيب نصوص حسب صلتها بالسؤال (الأكثر صلة أولاً)
+        🔍 Nemotron 3.5 Rerank 8B — مختبر لايف ✅
+        payload: {"model": ..., "query": {"text": ...}, "passages": [{"text": ...}]}
+        Returns: ترتيب المؤشرات [indices sorted by relevance] or None
+        """
+        routes = self.get_model_routes("rerank")
+        if not routes or not passages:
+            return None
+        route = routes[0]
+        try:
+            resp = _http_session.post(
+                f"{self.providers['nvidia_rerank']['base_url']}/nvidia/nemotron-3.5-rerank-8b/reranking",
+                headers={"Authorization": f"Bearer {route.api_key}", "Content-Type": "application/json"},
+                json={"model": route.model_id, "query": {"text": query},
+                      "passages": [{"text": p[:2000]} for p in passages]},
+                timeout=timeout,
+            )
+            if resp.status_code == 200:
+                rankings = resp.json().get("rankings", [])
+                order = [r["index"] for r in rankings if isinstance(r.get("index"), int)]
+                if order:
+                    logger.info(f"✅ Reranked {len(order)} passages")
+                    return order
+            logger.warning(f"🔍 Rerank failed {resp.status_code}: {resp.text[:100]}")
+            return None
+        except Exception as e:
+            logger.warning(f"🔍 Rerank error: {str(e)[:100]}")
+            return None
 
     # ═══════════════════════════════════════
     # معلومات الحالة - Status Info
