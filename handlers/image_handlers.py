@@ -226,6 +226,7 @@ _IMAGE_GEN_AR = (
     "اعمل صورة", "اعمل لي صورة", "اعمللي صورة", "اعملي صورة",
     "عمل لي صورة", "ولد صورة", "ولد لي صورة", "ولّد صورة",
     "انشئ صورة", "أنشئ صورة", "انشئ لي صورة", "تصميم صورة", "صمم صورة", "صمملي صورة",
+    "اصنع صورة", "عايز صورة", "عاوز صورة", "عايزلي صورة", "عاوزلي صورة",
     "generate image", "imgGen",
 )
 _IMAGE_GEN_EN = (
@@ -236,19 +237,46 @@ _IMAGE_GEN_EN = (
     "paint a", "paint me", "sketch a", "sketch me",
 )
 
+# 🔴 إصلاح 2026-11-03 (شكوى زياد): "اعمل لي صوره" بالهد ما كانت بتتكشف —
+# التريجر كان بيمسك التاء المربوطة بس. دلوقتي بنطبّع النص والتريجرات على السواء:
+# ة→ه، أ/إ/آ→ا، ى→ي — فكل الصيغ المطابقة شغالة
+_AR_NORMALIZE_MAP = str.maketrans({
+    "ة": "ه", "أ": "ا", "إ": "ا", "آ": "ا", "ى": "ي", "ؤ": "و", "ئ": "ي",
+})
+
+
+def _normalize_ar_text(s: str) -> str:
+    """تطبيع عربي موحّد — نفس التطبيع للنص والتريجرات (ة/ه وأشكال الألف والياء)"""
+    return (s or "").lower().translate(_AR_NORMALIZE_MAP)
+
+
+# التريجرات مطبّعة مرة واحدة عند التحميل
+_IMAGE_GEN_AR_NORM = tuple(_normalize_ar_text(k) for k in _IMAGE_GEN_AR)
+_IMAGE_GEN_EN_NORM = tuple(k.lower() for k in _IMAGE_GEN_EN)
+# عبارات البحث/الإرسال المرفوضة — مطبّعة كمان
+_IMAGE_INTENT_EXCLUDE_NORM = tuple(
+    _normalize_ar_text(w) for w in (
+        "ابحث عن صورة", "دور على صورة", "ابعت صورة", "ابعتلي صورة",
+        "بحث عن صورة", "ارسل صورة", "ابعثلي صورة",
+    )
+)
+_IMAGE_INTENT_EXCLUDE_EN = ("search for a photo", "search for an image", "find a picture", "send me a photo")
+
 
 def _is_image_gen_intent(text: str) -> bool:
-    """كشف طلب إنشاء صورة صريح في الشات العادي — بدون اختطاف طلبات البحث/التحميل"""
-    t = (text or "").strip().lower()
+    """كشف طلب إنشاء صورة صريح في الشات العادي — بدون اختطاف طلبات البحث/التحميل
+    🔴 2026-11-03: تطبيع عربي كامل (ة/ه، أشكال الألف) — «اعمل لي صوره» بتمسك زي «اعمل لي صورة»
+    """
+    t = _normalize_ar_text((text or "").strip())
     if not t or len(t) > 220:
         return False
     # مفيش روابط — دي طلبات تحميل مش رسم
     if "http" in t or "www." in t:
         return False
     # مفيش طلب بحث/إرسال صورة موجودة
-    if any(w in t for w in ("ابحث عن صورة", "دور على صورة", "ابعت صورة", "ابعتلي صورة", "search for a photo", "search for an image", "find a picture")):
+    if any(w in t for w in _IMAGE_INTENT_EXCLUDE_NORM) or any(w in t for w in _IMAGE_INTENT_EXCLUDE_EN):
         return False
-    return any(k in t for k in _IMAGE_GEN_AR) or any(k in t for k in _IMAGE_GEN_EN)
+    return any(k in t for k in _IMAGE_GEN_AR_NORM) or any(k in t for k in _IMAGE_GEN_EN_NORM)
 
 
 async def maybe_handle_inline_image(update: Update, context: ContextTypes.DEFAULT_TYPE,

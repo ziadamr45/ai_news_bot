@@ -148,17 +148,19 @@ NVIDIA_LIGHTNING_KEY = os.environ.get("NVIDIA_LIGHTNING_KEY", "") or NVIDIA_NEMO
 NVIDIA_OMNI_30B_KEY = os.environ.get("NVIDIA_OMNI_30B_KEY", "") or NVIDIA_NEMOTRON_BOLT_KEY
 
 # 🧠 Chat - المحادثة الذكية
-# FREE:  Bolt → Omni → Lightning → Mistral Small
-# PRO:   🔴 DeepSeek أساسي (أمر زياد) → Omni → Lightning → Mistral Small → Bolt منقذ
+# 🔴 إصلاح أكل الكلمات (2026-11-03): Bolt E4B اتشال من الأساسيات — بيترصّ صف في الذروة
+#   (40s+ مختبر) وبيفصل كلمات عربي، وده اللي كان بيخلي رد "My Bro —ك الذكي!"
+# FREE:  Omni → Lightning → Mistral Small → Bolt (منقذ أخير)
+# PRO:   🔴 DeepSeek أساسي (أمر زياد) → Omni → Lightning → Mistral Small
 FREE_CHAT_MODELS = [
-    # ⚡ Bolt E4B — أساسي المجاني (سريع في الهدوء)
-    {"provider": "nvidia", "model": "nvidia/nemotron-3.5-bolt-e4b", "api_key": NVIDIA_NEMOTRON_BOLT_KEY},
-    # ⚡ Omni 30B — عربي ممتاز 0.9s (منقذ ازدحام Bolt — مختبر)
+    # ⚡ Omni 30B — عربي ممتاز 0.9s (أساسي المجاني الجديد — مختبر)
     {"provider": "nvidia", "model": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning", "api_key": NVIDIA_OMNI_30B_KEY, "timeout": 30},
     # 📊 Lightning 30B — متوسط 3.7s
     {"provider": "nvidia", "model": "nvidia/nemotron-3.5-lightning-30b-a3b", "api_key": NVIDIA_LIGHTNING_KEY, "timeout": 40},
-    # 🛡️ Mistral Small — آخر حل (مجاني)
+    # 🛡️ Mistral Small — دايمًا حي
     {"provider": "mistral", "model": "mistral-small-latest"},
+    # 🚑 Bolt E4B — منقذ أخير بس (ضعيف بالعربي — ممنوع يبقى أساسي)
+    {"provider": "nvidia", "model": "nvidia/nemotron-3.5-bolt-e4b", "api_key": NVIDIA_NEMOTRON_BOLT_KEY},
 ]
 
 PREMIUM_CHAT_MODELS = [
@@ -170,28 +172,26 @@ PREMIUM_CHAT_MODELS = [
     {"provider": "nvidia", "model": "nvidia/nemotron-3.5-lightning-30b-a3b", "api_key": NVIDIA_LIGHTNING_KEY, "timeout": 40},
     # 🛡️ Mistral Small API — دايمًا حي (ينقذ وقت ازدحام NVIDIA الذروة)
     {"provider": "mistral", "model": "mistral-small-latest"},
-    # 🚑 Bolt — منقذ أخير (ضعيف بس بيرد في ثانية في الهدوء)
-    {"provider": "nvidia", "model": "nvidia/nemotron-3.5-bolt-e4b", "api_key": NVIDIA_NEMOTRON_BOLT_KEY},
+    # 🔴 Bolt اتشال من البرو نهائيًا (2026-11-03) — كان بياكل كلمات وبيبطّئ الردود الطويلة
 ]
 
 # Default (backward compatibility)
 CHAT_MODELS = PREMIUM_CHAT_MODELS
 
 # ⚡ Simple - الرسائل البسيطة (تحيات، أسئلة قصيرة، أسئلة هوية) — السرعة أهم حاجة
-# FREE: Bolt → Omni → Mistral Small
-# PRO:  Bolt (أسرع) → DeepSeek (أساسي) → Omni → Mistral Small
+# 🔴 Bolt اتشال من هنا كمان — التحية الناقصة "My Bro —ك الذكي!" كانت منه
+# FREE: Omni → Mistral Small → Bolt (أخير)
+# PRO:  DeepSeek (أساسي) → Omni → Mistral Small
 FREE_SIMPLE_MODELS = [
-    # ⚡ Bolt — أسرع رد للتحيات (0.4s في الهدوء، ومهلة الفاست 15s بتحمي من الذروة)
-    {"provider": "nvidia", "model": "nvidia/nemotron-3.5-bolt-e4b", "api_key": NVIDIA_NEMOTRON_BOLT_KEY},
     # ⚡ Omni 30B — 0.9s عربي ممتاز
     {"provider": "nvidia", "model": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning", "api_key": NVIDIA_OMNI_30B_KEY, "timeout": 25},
-    # 🛡️ Mistral Small — آخر حل
+    # 🛡️ Mistral Small — دايمًا حي
     {"provider": "mistral", "model": "mistral-small-latest"},
+    # 🚑 Bolt — منقذ أخير بس
+    {"provider": "nvidia", "model": "nvidia/nemotron-3.5-bolt-e4b", "api_key": NVIDIA_NEMOTRON_BOLT_KEY},
 ]
 
 PREMIUM_SIMPLE_MODELS = [
-    # ⚡ Bolt — أسرع تحية (لو رصّ صف مهلة 15s بتنقله لللي بعده فورًا)
-    {"provider": "nvidia", "model": "nvidia/nemotron-3.5-bolt-e4b", "api_key": NVIDIA_NEMOTRON_BOLT_KEY},
     # 🔴 DeepSeek — أساسي البرو (أمر زياد)
     {"provider": "nvidia", "model": "deepseek-ai/deepseek-v4.1-flash", "api_key": NVIDIA_DEEPSEEK_V41_FLASH_KEY},
     # ⚡ Omni 30B — منقذ سريع
@@ -260,17 +260,17 @@ PREMIUM_CODING_MODELS = [
 CODING_MODELS = PREMIUM_CODING_MODELS
 
 # 📄 Summary - التلخيص
-# FREE:  Bolt → Omni → Lightning → Mistral Small
+# FREE:  Omni → Lightning → Mistral Small → Bolt (أخير)
 # PRO:   DeepSeek → Lightning → Omni → Mistral Small
 FREE_SUMMARY_MODELS = [
-    # 📄 Bolt — تلخيص سريع للمجاني
-    {"provider": "nvidia", "model": "nvidia/nemotron-3.5-bolt-e4b", "api_key": NVIDIA_NEMOTRON_BOLT_KEY},
-    # ⚡ Omni 30B
+    # ⚡ Omni 30B — عربي ممتاز
     {"provider": "nvidia", "model": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning", "api_key": NVIDIA_OMNI_30B_KEY, "timeout": 35},
     # 📊 Lightning 30B
     {"provider": "nvidia", "model": "nvidia/nemotron-3.5-lightning-30b-a3b", "api_key": NVIDIA_LIGHTNING_KEY, "timeout": 45},
-    # 🛡️ Mistral Small — آخر حل
+    # 🛡️ Mistral Small — دايمًا حي
     {"provider": "mistral", "model": "mistral-small-latest"},
+    # 🚑 Bolt — منقذ أخير بس (كان بيقطّع التلخيص الطويل)
+    {"provider": "nvidia", "model": "nvidia/nemotron-3.5-bolt-e4b", "api_key": NVIDIA_NEMOTRON_BOLT_KEY},
 ]
 
 PREMIUM_SUMMARY_MODELS = [
@@ -288,25 +288,29 @@ PREMIUM_SUMMARY_MODELS = [
 SUMMARY_MODELS = PREMIUM_SUMMARY_MODELS
 
 # 👁️ Vision - تحليل الصور (عائلة الرؤية بس — زياد أمر)
-# 🔴 مختبر لايف: SuperVL بيرجع فاضي مع النص العربي — Gemma 4 31B قريت النص العربي 100% صح
-# → Gemma أول واحد في الاتنين (العربي أولوية) — SuperVL fallback للإنجليزي (سريع 2s)
-# FREE:  Gemma 31B → Super VL → Pixtral | PRO: نفس الترتيب
+# 🔴 إصلاح 2026-11-03 (شكوى زياد: الرؤية وحشة بالعربي + نجوم في الرد):
+#   - الباك كان فيه BUG: مهلة الرؤية كانت 20s ثابتة (REQUEST_TIMEOUT) ومكانتش بتقرا
+#     مهلة النموذج (90s) — فـ Gemma كانت بتتقطع قبل ما تخلّص والسلسلة تقع على SuperVL
+#     اللي بيرجع فاضي بالعربي. دلوقتي مهلة كل نموذج بتتبّنّ حقيقي.
+#   - Gemma 4 31B = أقوى عربي (قرت النص العربي 100% في المختبر 53s) → أول واحد
+#   - Pixtral تاني (عربي محترم + API مستقر) — SuperVL آخر واحد (بيفشل بالعربي)
+#   - System prompt صار بيوصل فعلاً للموديل (كان مش بيتبعت خالص → نجوم Markdown)
 FREE_VISION_MODELS = [
     # 🏆 Gemma 4 31B IT — الوحيدة اللي بتقرا النص العربي في الصور صح (مختبر 53s)
     {"provider": "nvidia", "model": "google/gemma-4-31b-it", "api_key": NVIDIA_GEMMA_4_31B_KEY, "timeout": 90},
-    # ⚡ Super VL 120B — سريع (2s) للصور الإنجليزي — بيفشل مع العربي (مختبر)
+    # 🛡️ Mistral Pixtral — عربي محترم + API مستقر
+    {"provider": "mistral", "model": "pixtral-large-latest", "timeout": 60},
+    # ⚡ Super VL 120B — سريع للإنجليزي بس (بيرجع فاضي مع العربي — مختبر)
     {"provider": "nvidia", "model": "nvidia/nemotron-3.5-super-vl-120b-a12b", "api_key": NVIDIA_NEMOTRON_SUPER_VL_KEY, "timeout": 45},
-    # 🛡️ Mistral Pixtral — fallback أخير
-    {"provider": "mistral", "model": "pixtral-large-latest"},
 ]
 
 PREMIUM_VISION_MODELS = [
     # 🏆 Gemma 4 31B IT — أولوية للعربي (أمر زياد: الرؤية لازم تقرا العربي)
     {"provider": "nvidia", "model": "google/gemma-4-31b-it", "api_key": NVIDIA_GEMMA_4_31B_KEY, "timeout": 90},
-    # ⚡ Super VL 120B — سريع للإنجليزي
+    # 🛡️ Mistral Pixtral — عربي محترم + API مستقر
+    {"provider": "mistral", "model": "pixtral-large-latest", "timeout": 60},
+    # ⚡ Super VL 120B — سريع للإنجليزي بس
     {"provider": "nvidia", "model": "nvidia/nemotron-3.5-super-vl-120b-a12b", "api_key": NVIDIA_NEMOTRON_SUPER_VL_KEY, "timeout": 45},
-    # 🛡️ Mistral Pixtral — fallback أخير
-    {"provider": "mistral", "model": "pixtral-large-latest"},
 ]
 
 # Default

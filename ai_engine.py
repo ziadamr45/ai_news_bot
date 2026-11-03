@@ -586,6 +586,51 @@ def _set_cached_response(user_message: str, language: str, task_type: str, respo
     logger.debug(f"💾 Cached response for: {user_message[:50]}")
 
 
+# ═══════════════════════════════════════
+# 🎨 صياد هلوسة الصور (2026-11-03 — شكوى زياد: "طلّعلي Image وبعدها أقواس فيها أرقام")
+# موديلات الإنقاذ الصغيرة أحيانًا بتكتب Image(1024x1024) نصاً بدل ما تولّد صورة حقيقية.
+# التريجر العربي ما كانش بيمسك صيغ زي "اعمل لي صوره" (بالهد) فالطلب كان يروح للشات
+# والموديل الصغير يهلوس. دلوقتي: التريجر بيطبّع ة/ه + الصياد بيمسح الهلوسة من أي رد.
+# ═══════════════════════════════════════
+_IMAGE_HALLUCINATION_RE = re.compile(
+    r"\bImage\s*\(\s*\d{3,4}\s*(?:[x×X,]\s*\d{3,4})?\s*\)"      # Image(1024x1024) / Image(1024)
+    r"|\bImage\s*\[\s*\d{3,4}\s*(?:[x×X,]\s*\d{3,4})?\s*\]"    # Image[1024x1024]
+    r"|\[\s*(?:Generated|Generated image|Image)\s*:?\s*\d{3,4}\s*(?:[x×]\s*\d{3,4})?\s*\]"
+    r"|\bImage\s*:\s*\d{3,4}\s*(?:[x×]\s*\d{3,4})?\b",          # Image: 1024x1024
+    re.IGNORECASE,
+)
+
+# أفعال طلب صورة (مطابقة روح كاشف handlers/image_handlers.py بعد التطبيع)
+_IMAGE_WISH_WORDS = ("ارسم", "رسم", "صوره", "صورة", "picture", "image", "draw", "paint", "sketch", "render")
+
+
+def _strip_image_hallucination(text: str) -> str:
+    """مسح أي هلوسة Image(...) من رد AI — الرمز ده عمره ما مشروع في رد للمستخدم"""
+    if not text or "mage" not in text:
+        return text
+    cleaned = _IMAGE_HALLUCINATION_RE.sub(" ", text)
+    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)          # مسافات زائدة مكان الهلوسة
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)           # أسطر فاضية متكررة
+    return cleaned.strip()
+
+
+def _user_wants_image(user_message: str) -> bool:
+    """هل رسالة المستخدم فيها نية إنشاء صورة؟ (تطبيع عربي بسيط: ة→ه)"""
+    if not user_message:
+        return False
+    t = user_message.lower().replace("ة", "ه").replace("أ", "ا").replace("إ", "ا")
+    return any(w in t for w in _IMAGE_WISH_WORDS)
+
+
+def _image_hallucination_guidance(language: str) -> str:
+    """رسالة ودودة بديلة عن الهلوسة لما التوليد الحقيقي مش متاح"""
+    if language == "ar":
+        return ("🎨 عشان تولّدلك صورة حقيقية مش مجرد وصف — ابعت أمر /image متبوع بوصف الصورة "
+                "(توليد الصور متاح لمشتركي Premium). ولو أنت مشترك وجرب تاني بعد شوية لو حصلت مشكلة مؤقتة 🙏")
+    return ("🎨 To generate a real image, send /image followed by your description "
+            "(image generation is available for Premium subscribers). If you're already subscribed, try again shortly 🙏")
+
+
 async def smart_chat(user_message: str, language: str = "ar", user_id: int = None, username: str = None) -> str:
     """
     المحادثة الذكية - يفهم القصد تلقائيًا ويرد بذكاء
@@ -1107,6 +1152,17 @@ Examples:
         else:
             return "⚠️ I can't respond right now — try sending your message again shortly! 🔄"
 
+    # 🎨 صياد هلوسة الصور — لو الموديل كتب Image(1024x1024) بدل ما يولّد:
+    # بنمسحها، ولو رسالة المستخدم فيها طلب صورة بنضيف إرشاد مكانها
+    try:
+        if _IMAGE_HALLUCINATION_RE.search(response):
+            logger.warning(f"🎨 Image hallucination caught in smart_chat reply: {user_message[:50]}")
+            response = _strip_image_hallucination(response)
+            if _user_wants_image(user_message):
+                response = (response + "\n\n" if response.strip() else "") + _image_hallucination_guidance(language)
+    except Exception as _hallu_err:
+        logger.debug(f"Hallucination check skipped: {_hallu_err}")
+
     # حفظ المحادثة في الذاكرة (فقط هنا - handle_message مش هتحفظ تاني)
     if user_id and response:
         try:
@@ -1487,6 +1543,7 @@ async def analyze_image(
             image_base64=image_base64,
             temperature=0.5,
             max_tokens=8192,
+            system_prompt=system_text,  # 🔴 إصلاح النجوم: التعليمات بتوصل للموديل فعلاً
         )
 
         if response:
@@ -1511,6 +1568,7 @@ async def analyze_image(
                     image_base64=image_base64,
                     temperature=0.5,
                     max_tokens=8192,
+                    system_prompt=system_text,  # 🔴 إصلاح النجوم: هنا كمان
                 )
                 
                 if response:

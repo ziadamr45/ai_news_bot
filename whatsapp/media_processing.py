@@ -215,11 +215,32 @@ async def _analyze_image(media_id: str, caption: str = "", wa_user_id: int = Non
         if caption and caption != "[Image]":
             prompt += f"\n\nملاحظة المستخدم: {caption}"
 
+        # 🔴 إصلاح النجوم (2026-11-03): التعليمات كانت مش بتوصل لموديل الرؤية
+        # فكان بيطلع Markdown (نجوم ورموز) — دلوقتي بنبعت system prompt صريح
+        wa_vision_system = (
+            "أنت My Bro - مساعد ذكي بتحلل الصور. تكلم بمصري محترم ومتوازن. "
+            "🔴 ممنوع استخدام أي Markdown خالص: ممنوع *، **، #، |، ```، [ ]. "
+            "اكتب ردك نص عادي واضح — استخدم النقاط • والعناوين بخط بسيط. "
+            "وصف الصورة بدقة: العناصر، الألوان، النصوص، والأشخاص."
+        )
+
         result = await manager.analyze_image_async(
             text_prompt=prompt,
             image_base64=image_base64,
             user_id=wa_user_id,
+            system_prompt=wa_vision_system,
         )
+
+        # 🔴 إصلاح النجوم والرموز (2026-11-03): واتساب بيرسل نص عادي —
+        # كان الرد بيوصل بـ Markdown خام (**نجوم**) ووسوم HTML.
+        # clean_ai_response بتحول Markdown → HTML، و html_to_whatsapp بتحول
+        # HTML → تنسيق واتساب الأصلي (*عريض* _مائل_)
+        if result:
+            try:
+                from formatters import clean_ai_response, html_to_whatsapp
+                result = html_to_whatsapp(clean_ai_response(result))
+            except Exception as _fmt_err:
+                logger.debug(f"WA image-analysis formatting skipped: {_fmt_err}")
 
         return result or ""
 

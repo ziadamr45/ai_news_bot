@@ -314,6 +314,48 @@ def clean_ai_response(text: str) -> str:
     # ثانيًا: أي < واقفة لوحدها (من غير > ليها) → escape — تليجرام بيرفض الرسالة كلها بسببها
     text = re.sub(r'<(?![a-zA-Z/])', '&lt;', text)
 
+    # ═══ مرحلة 6: 🎨 صياد هلوسة الصور (2026-11-03) ═══
+    # موديلات صغيرة بتهلس وتكتب Image(1024x1024) نصاً — رمز عمره ما مشروع في رد
+    # بنمسحه هنا عشان كل المسارات (تليجرام + واتساب) تتغطى بمرحلة واحدة
+    if "mage" in text.lower():
+        try:
+            from ai_engine import _IMAGE_HALLUCINATION_RE
+            text = _IMAGE_HALLUCINATION_RE.sub(" ", text)
+            text = re.sub(r"[ \t]{2,}", " ", text)
+            text = re.sub(r"\n{3,}", "\n\n", text)
+        except Exception:
+            # لو الاستيراد فشل — regex محلي مبسط (نفس النمط الأساسي)
+            text = re.sub(r"\bImage\s*\(\s*\d{3,4}\s*(?:[x×X,]\s*\d{3,4})?\s*\)", " ", text, flags=re.IGNORECASE)
+            text = re.sub(r"[ \t]{2,}", " ", text)
+
+    return text.strip()
+
+
+def html_to_whatsapp(text: str) -> str:
+    """
+    🔴 2026-11-03 — تحويل HTML تيليجرام لتنسيق واتساب الأصلي
+    واتساب مش بيفهم <b> — بيفهم *bold* _italic_ ~strike~ ```code```
+    ده كان سبب ظهور "رموز برمجية" في ردود تحليل الصور على واتساب
+    """
+    if not text:
+        return text
+    # روابط <a href="url">text</a> → text (url)
+    text = re.sub(r'<a\s+href="([^"]*)"\s*>(.*?)</a>', r'\2 (\1)', text, flags=re.DOTALL | re.IGNORECASE)
+    # وسوم التنسيق → واتساب
+    text = re.sub(r'<b>(.*?)</b>', r'*\1*', text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r'<strong>(.*?)</strong>', r'*\1*', text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r'<i>(.*?)</i>', r'_\1_', text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r'<em>(.*?)</em>', r'_\1_', text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r'<s>(.*?)</s>', r'~\1~', text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r'<strike>(.*?)</strike>', r'~\1~', text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r'<code>(.*?)</code>', r'```\1```', text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r'<pre>(.*?)</pre>', r'```\1```', text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r'<br\s*/?>', '\n', text, flags=re.IGNORECASE)
+    text = re.sub(r'<blockquote>(.*?)</blockquote>', r'> \1', text, flags=re.DOTALL | re.IGNORECASE)
+    # أي وسم متبقي → نسمحه (واتساب مش بيفهم HTML خالص)
+    text = re.sub(r'</?[a-zA-Z][^>]*>', '', text)
+    # unescape لأي HTML entities
+    text = text.replace('&lt;', '<').replace('&gt;', '>').replace('&amp;', '&').replace('&quot;', '"')
     return text.strip()
 
 

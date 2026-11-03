@@ -341,7 +341,10 @@ class ProviderManager:
         try:
             response = _http_session.post(
                 url, headers=headers, json=payload,
-                timeout=(15, 35),  # connect 15s، فجوة أول توكن/بين التوكنز 35s (GLM thinking بياخد 26s)
+                # 🔴 إصلاح البطء (2026-11-03): فجوة أول توكن بقت ذكية —
+                #  15s للمكالمات العادية (كانت 35s ثابتة — DeepSeek في الطابور كان يأكل 35s من كل رد)
+                #  35s للمهام التقيلة (مهلة ≥45s: GLM thinking بياخد 26s + Gemma الرؤية)
+                timeout=(15, 35 if (timeout or 0) >= 45 else 15),
                 stream=True,
             )
             response.raise_for_status()
@@ -396,9 +399,10 @@ class ProviderManager:
                 logger.warning(f"⏱️ Stream gap-timeout after {elapsed:.0f}s for {model} — but have {got} chars, using them")
             else:
                 logger.warning(f"⏱️ Stream TTFT timeout ({elapsed:.0f}s, no tokens) for {provider_name}/{model} — next model")
-                # 🔴 إصلاح البطء: كان 15s — النموذج الواقف في الطابور كان بيتجرب تاني في كل رسالة
-                # وياكل 35s من وقت كل رد. دلوقتي يعتزل 90s — الباقي في السلسلة بيرد فورًا
-                self._set_model_cooldown(model, "Stream TTFT timeout", 90)
+                # 🔴 إصلاح البطء (2026-11-03): كان 90s — DeepSeek (أساسي البرو) كان يتحرم
+                # من الرد 90 ثانية كاملة بعد كل طابور، والرسايل تقع على موديلات صغيرة
+                # بتاكل كلمات. 30s كفاية: النموذج يرتاح بس يرجع بسرعة
+                self._set_model_cooldown(model, "Stream TTFT timeout", 30)
                 return None
         except requests.exceptions.Timeout:
             logger.warning(f"⏱️ Stream connect timeout for {provider_name}/{model}")
@@ -1060,8 +1064,14 @@ class ProviderManager:
         temperature: float = 0.5,
         max_tokens: int = 4096,
         api_key: str = "",  # 🔴 per-model API key
+        system_prompt: str = None,  # 🔴 إصلاح النجوم: التعليمات كانت مش بتوصل للموديل
+        timeout: int = None,  # 🔴 إصلاح العربي: مهلة كل نموذج (كانت 20s ثابتة — كانت تقطع Gemma)
     ) -> Optional[str]:
         """استدعاء نموذج رؤية (متزامن)"""
+        messages: List[Dict[str, Any]] = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+
         user_message: Dict[str, Any] = {
             "role": "user",
             "content": [],
@@ -1083,7 +1093,7 @@ class ProviderManager:
                 "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"},
             })
 
-        messages = [user_message]
+        messages.append(user_message)
 
         return self._call_provider_sync(
             provider_name=provider_name,
@@ -1091,7 +1101,7 @@ class ProviderManager:
             messages=messages,
             temperature=temperature,
             max_tokens=max_tokens,
-            timeout=REQUEST_TIMEOUT,
+            timeout=timeout or REQUEST_TIMEOUT,
             api_key=api_key,  # 🔴 per-model API key
         )
 
@@ -1103,6 +1113,7 @@ class ProviderManager:
         temperature: float = 0.5,
         max_tokens: int = 4096,
         user_id: int = None,
+        system_prompt: str = None,  # 🔴 إصلاح النجوم: التعليمات بتنزل للموديل فعلاً
     ) -> Optional[str]:
         """تحليل صورة (غير متزامن) مع fallback"""
         routes = self.get_model_routes("vision", user_id=user_id)
@@ -1129,6 +1140,10 @@ class ProviderManager:
                     temperature=temperature,
                     max_tokens=max_tokens,
                     api_key=r.api_key,  # 🔴 per-model API key
+                    system_prompt=system_prompt,
+                    # 🔴 إصلاح الرؤية: مهلة النموذج نفسها (Gemma محتاجة 90s للعربي —
+                    # كانت بتتقطع على 20s فبقعنا على SuperVL اللي بيرجع فاضي بالعربي)
+                    timeout=r.timeout or REQUEST_TIMEOUT,
                 )
             )
             if result:
