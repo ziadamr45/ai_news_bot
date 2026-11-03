@@ -27,3 +27,6 @@ tool-results/
 !.env.example
 .errcheck_ts
 _e2e_*.json
+
+# runtime state — wamids embed phone numbers, never publish
+whatsapp_dedup.json
