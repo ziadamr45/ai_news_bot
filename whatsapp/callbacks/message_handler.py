@@ -15,6 +15,7 @@ import time
 from whatsapp.state import (
     DEVELOPER_WHATSAPP_URL,
     WHATSAPP_ACCESS_TOKEN,
+    WHATSAPP_PHONE_NUMBER_ID,
     ALLOWED_WA_NUMBERS,
     _set_user_state,
     _get_user_state,
@@ -90,6 +91,47 @@ async def _handle_incoming_message(message: dict, value: dict):
         # Deduplication
         if _is_duplicate_wa_message(message_id):
             logger.debug(f"⏭️ Duplicate WA message {message_id} — skipping")
+            return
+
+        # 🎯 فحص المستقبِل — الرسالة لازم تكون موّجهة لرقم البوت نفسه
+        # الـ webhook كان بيوصل منه رسائل موجهة لأرقام تانية من تطبيق Meta قديم
+        # (2061272684803558) — وده كان سبب إن البوت يرود على رسائل قديمة مش ليه
+        try:
+            recipient_pnid = str((value.get("metadata") or {}).get("phone_number_id", "") or "")
+        except Exception:
+            recipient_pnid = ""
+        if recipient_pnid and recipient_pnid != str(WHATSAPP_PHONE_NUMBER_ID):
+            logger.warning(f"🚫 WA message for ANOTHER number ({recipient_pnid}) — ignoring (not ours)")
+            _log_activity("message_skipped", {
+                "message_id": message_id,
+                "recipient_pnid": recipient_pnid,
+                "reason": "foreign_recipient",
+            }, "skipped")
+            return
+
+        # ⏱️ فحص الحداثة — الرسائل الأقدم من 10 دقايق لا تُعالج ولا يُرَدّ عليها
+        # (Meta بتعيد إرسال رسائل قديمة مرة كتير — دي كانت سبب ردود «اهلا» المتكررة)
+        try:
+            _msg_ts = int(message.get("timestamp", "0") or 0)
+        except (TypeError, ValueError):
+            _msg_ts = 0
+        if not _msg_ts:
+            # 🔴 رسالة من غير timestamp = مش ممكن نتحقق من حداثتها → نتجاهلها للأمان
+            # (حماية إضافية ضد إعادة إرسال الرسائل القديمة من Meta)
+            logger.warning(f"⏭️ WA message without timestamp — ignoring: {message_id}")
+            _log_activity("message_skipped", {
+                "message_id": message_id,
+                "reason": "no_timestamp",
+            }, "skipped")
+            return
+        _age_min = (time.time() - _msg_ts) / 60.0
+        if _age_min > 10:
+            logger.info(f"⏭️ Stale WA message ({_age_min:.0f} min old) — ignoring: {message_id}")
+            _log_activity("message_skipped", {
+                "message_id": message_id,
+                "age_min": round(_age_min),
+                "reason": "stale",
+            }, "skipped")
             return
 
         # Security: Check allowed numbers
@@ -222,6 +264,7 @@ async def _handle_incoming_message(message: dict, value: dict):
             "content": content[:200],
             "message_id": message_id,
             "interactive_id": interactive_id,
+            "recipient_pnid": recipient_pnid,
         })
 
         logger.info(f"📩 WA Message from {contact_name} ({wa_id}): {content[:100]}")

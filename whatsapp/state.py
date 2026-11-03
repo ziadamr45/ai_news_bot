@@ -156,6 +156,16 @@ def _ensure_wa_admin_premium(wa_id: str):
 _processed_message_ids = OrderedDict()
 _MAX_DEDUP_CACHE = 1000
 
+# 💾 Persistent dedup — الكاش بيتحفظ على القرص عشان الـ restart ميفضّيه
+# (Meta بتعيد إرسال الرسائل القديمة بعد أي restart فكانت بتترسم من جديد —
+#  ده كان سبب إن البوت يبعت ردود «اهلا» القديمة كل شوية من غير سبب)
+_DEDUP_PERSIST_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "whatsapp_dedup.json",
+)
+_dedup_unsaved = 0
+_DEDUP_SAVE_EVERY = 1  # 🔴 كل معرف جديد يتحفظ فورًا — عشان أي restart ميفقدش الكاش
+
 _wa_user_pdf_context = {}  # PDF context per user for follow-up Q&A
 _wa_user_yt_url = {}  # {wa_id: "youtube_url"} — 🍪 cache YouTube URL for download button
 
@@ -224,14 +234,51 @@ def _log_activity(event_type: str, data: dict, status: str = "received"):
         _webhook_activity_log.pop(0)
 
 
+def _load_dedup():
+    """تحميل معرّفات الرسائل المعالَجة من القرص (بعد أي restart)"""
+    global _dedup_unsaved
+    try:
+        with open(_DEDUP_PERSIST_PATH, "r", encoding="utf-8") as f:
+            ids = json.load(f)
+        for mid in ids[-_MAX_DEDUP_CACHE:]:
+            _processed_message_ids[mid] = True
+        _dedup_unsaved = 0
+        logger.info(f"💾 Dedup cache restored: {len(_processed_message_ids)} message IDs")
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        logger.warning(f"⚠️ Dedup cache load failed: {e}")
+
+
+def _save_dedup():
+    """حفظ معرّفات الرسائل المعالَجة على القرص (كتابة ذرية عبر os.replace)"""
+    global _dedup_unsaved
+    try:
+        tmp = _DEDUP_PERSIST_PATH + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(list(_processed_message_ids.keys()), f)
+        os.replace(tmp, _DEDUP_PERSIST_PATH)
+        _dedup_unsaved = 0
+    except Exception as e:
+        logger.warning(f"⚠️ Dedup cache save failed: {e}")
+
+
 def _is_duplicate_wa_message(message_id: str) -> bool:
     """Check if we already processed this WhatsApp message ID"""
+    global _dedup_unsaved
     if message_id in _processed_message_ids:
         return True
     _processed_message_ids[message_id] = True
     while len(_processed_message_ids) > _MAX_DEDUP_CACHE:
         _processed_message_ids.popitem(last=False)
+    # 💾 حفظ دوري على القرص — كل 25 رسالة جديدة
+    _dedup_unsaved += 1
+    if _dedup_unsaved >= _DEDUP_SAVE_EVERY:
+        _save_dedup()
     return False
+
+
+_load_dedup()
 
 
 # ═══════════════════════════════════════
