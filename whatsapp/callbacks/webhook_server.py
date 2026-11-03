@@ -568,12 +568,26 @@ def create_webhook_app() -> web.Application:
 
 async def start_webhook_server():
     """Start the webhook HTTP server"""
+    # 🔴 إصلاح 2026-11-03: بعد restart، العملية القديمة بتموت وبعد شوية بس بيفضى
+    #    البورت — الربط الفوري كان يفشل "address already in use" ويقتل ثريد الواتساب
+    #    خلاص (الواتساب يبقى واقف لحد رستارت تاني). دلوقتي: إعادة محاولة دقيقة.
     app = create_webhook_app()
     runner = web.AppRunner(app)
     await runner.setup()
 
     site = web.TCPSite(runner, "0.0.0.0", WEBHOOK_PORT)
-    await site.start()
+    import asyncio as _retry_aio
+    max_attempts = 20  # 20 × 3s = دقيقة كاملة
+    for attempt in range(1, max_attempts + 1):
+        try:
+            await site.start()
+            break
+        except OSError as bind_err:
+            if attempt == max_attempts:
+                logger.error(f"🚨 Webhook bind failed after {max_attempts} attempts: {bind_err}")
+                raise
+            logger.warning(f"⏳ Port {WEBHOOK_PORT} busy (attempt {attempt}/{max_attempts}) — retrying in 3s...")
+            await _retry_aio.sleep(3)
 
     logger.info(f"🌐 WhatsApp webhook server listening on port {WEBHOOK_PORT}")
     logger.info(f"🤖 AI Engine: smart_chat() ready for WhatsApp messages!")
