@@ -292,24 +292,36 @@ SUMMARY_MODELS = PREMIUM_SUMMARY_MODELS
 #   - الباك كان فيه BUG: مهلة الرؤية كانت 20s ثابتة (REQUEST_TIMEOUT) ومكانتش بتقرا
 #     مهلة النموذج (90s) — فـ Gemma كانت بتتقطع قبل ما تخلّص والسلسلة تقع على SuperVL
 #     اللي بيرجع فاضي بالعربي. دلوقتي مهلة كل نموذج بتتبّنّ حقيقي.
-#   - Gemma 4 31B = أقوى عربي (قرت النص العربي 100% في المختبر 53s) → أول واحد
-#   - Pixtral تاني (عربي محترم + API مستقر) — SuperVL آخر واحد (بيفشل بالعربي)
 #   - System prompt صار بيوصل فعلاً للموديل (كان مش بيتبعت خالص → نجوم Markdown)
+# 🔴🔴 مختبر لايف 2026-11-03 صباح (صورة عربية حقيقية: "القاهرة يوم صافي / القط الصغير
+#      بيجري في الشارع / My Bro 2026" + دوائر ملونة) — 3 جولات:
+#   - Llama 3.2 90B Vision: 🏆 قرأ العربي 5/5 كامل + الألوان + الأشكال (105s)
+#     → بقى الأول (مفتاح Bolt العام بيناديه — المفتاح القديم 403)
+#   - Gemma 4 31B: timeout مرتين النهارده (ازدحام) — مختبر أمس كان 100% → تاني
+#   - Pixtral Large: 💀 "Invalid model: pixtral-large-latest" — الاسم ميت على Mistral
+#     (كان بينقص السلسلة لـ SuperVL الفاضي → ده كان سبب التحليل الوحش في الإنتاج)
+#     → اتستبدل بـ mistral-medium-latest (من كتالوج Mistral الحالي 55 موديل)
+#   - Llama 3.2 11B: 404 مش مستضاف فعلياً — اتشال
+#   - Llama بيخرج نجوم Markdown → clean_ai_response بتحولها (إصلاح العريض متعدد الأسطر)
 FREE_VISION_MODELS = [
-    # 🏆 Gemma 4 31B IT — الوحيدة اللي بتقرا النص العربي في الصور صح (مختبر 53s)
-    {"provider": "nvidia", "model": "google/gemma-4-31b-it", "api_key": NVIDIA_GEMMA_4_31B_KEY, "timeout": 90},
-    # 🛡️ Mistral Pixtral — عربي محترم + API مستقر
-    {"provider": "mistral", "model": "pixtral-large-latest", "timeout": 60},
-    # ⚡ Super VL 120B — سريع للإنجليزي بس (بيرجع فاضي مع العربي — مختبر)
+    # 🏆 Llama 3.2 90B Vision — أقوى عربي في المختبر (5/5 OCR + وصف كامل بالعربي)
+    {"provider": "nvidia", "model": "meta/llama-3.2-90b-vision-instruct", "api_key": NVIDIA_NEMOTRON_BOLT_KEY, "timeout": 120},
+    # 🥈 Gemma 4 31B IT — قوي بالعربي (مختبر أمس 100%) بس بيتزاحم وقت الذروة
+    {"provider": "nvidia", "model": "google/gemma-4-31b-it", "api_key": NVIDIA_GEMMA_4_31B_KEY, "timeout": 75},
+    # 🛡️ Mistral Medium — بديل Pixtral الميت + API مستقر
+    {"provider": "mistral", "model": "mistral-medium-latest", "timeout": 60},
+    # ⚡ Super VL 120B — سريع للإنجليزي بس (بيرجع فاضي مع العربي — مختبر) — أخير
     {"provider": "nvidia", "model": "nvidia/nemotron-3.5-super-vl-120b-a12b", "api_key": NVIDIA_NEMOTRON_SUPER_VL_KEY, "timeout": 45},
 ]
 
 PREMIUM_VISION_MODELS = [
-    # 🏆 Gemma 4 31B IT — أولوية للعربي (أمر زياد: الرؤية لازم تقرا العربي)
-    {"provider": "nvidia", "model": "google/gemma-4-31b-it", "api_key": NVIDIA_GEMMA_4_31B_KEY, "timeout": 90},
-    # 🛡️ Mistral Pixtral — عربي محترم + API مستقر
-    {"provider": "mistral", "model": "pixtral-large-latest", "timeout": 60},
-    # ⚡ Super VL 120B — سريع للإنجليزي بس
+    # 🏆 Llama 3.2 90B Vision — أقوى عربي (أمر زياد: الرؤية لازم تقرا العربي صح)
+    {"provider": "nvidia", "model": "meta/llama-3.2-90b-vision-instruct", "api_key": NVIDIA_NEMOTRON_BOLT_KEY, "timeout": 120},
+    # 🥈 Gemma 4 31B IT — احتياطي قوي
+    {"provider": "nvidia", "model": "google/gemma-4-31b-it", "api_key": NVIDIA_GEMMA_4_31B_KEY, "timeout": 75},
+    # 🛡️ Mistral Medium — بديل Pixtral الميت
+    {"provider": "mistral", "model": "mistral-medium-latest", "timeout": 60},
+    # ⚡ Super VL 120B — أخير
     {"provider": "nvidia", "model": "nvidia/nemotron-3.5-super-vl-120b-a12b", "api_key": NVIDIA_NEMOTRON_SUPER_VL_KEY, "timeout": 45},
 ]
 

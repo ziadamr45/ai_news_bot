@@ -761,12 +761,14 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             full_response = header + response
             await feedback.success()
 
+            # 🔴 شبكة أمان الإرسال: لو تليجرام رفض HTML → نص مجرد بدل رسالة خطأ
+            from formatters import send_html_safe
             if len(full_response) > 4000:
                 chunks = smart_split_message(full_response)
                 for chunk in chunks:
-                    await query.message.reply_text(chunk, parse_mode="HTML")
+                    await send_html_safe(query.message, chunk)
             else:
-                await query.message.reply_text(full_response, parse_mode="HTML", disable_web_page_preview=True)
+                await send_html_safe(query.message, full_response, disable_web_page_preview=True)
 
         except Exception as e:
             logger.error(f"Error in image_detail callback: {e}")

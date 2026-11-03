@@ -483,15 +483,17 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         inline_keyboard = get_image_inline_buttons(lang)
 
         await feedback.success()
+        # 🔴 شبكة أمان الإرسال: لو تليجرام رفض HTML → نص مجرد بدل «❌ حصل خطأ»
+        from formatters import send_html_safe
         if len(full_response) > 4000:
             chunks = smart_split_message(full_response)
             for i, chunk in enumerate(chunks):
                 if i == len(chunks) - 1:
-                    await update.message.reply_text(chunk, parse_mode="HTML", disable_web_page_preview=True, reply_markup=inline_keyboard)
+                    await send_html_safe(update.message, chunk, disable_web_page_preview=True, reply_markup=inline_keyboard)
                 else:
-                    await update.message.reply_text(chunk, parse_mode="HTML", disable_web_page_preview=True)
+                    await send_html_safe(update.message, chunk, disable_web_page_preview=True)
         else:
-            await update.message.reply_text(full_response, parse_mode="HTML", disable_web_page_preview=True, reply_markup=inline_keyboard)
+            await send_html_safe(update.message, full_response, disable_web_page_preview=True, reply_markup=inline_keyboard)
 
     except Exception as e:
         logger.error(f"Error in handle_photo: {e}")

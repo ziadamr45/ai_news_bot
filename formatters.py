@@ -162,14 +162,19 @@ def clean_ai_response(text: str) -> str:
     text = re.sub(r'```\w*\n?(.*?)```', r'<code>\1</code>', text, flags=re.DOTALL)
 
     # 2. تحويل **text** أو __text__ لـ <b>text</b> (bold)
-    text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
+    # 🔴 إصلاح النجوم 2 (2026-11-03): النماذج بترجع عريض متعدد الأسطر (**سطر\nسطر**)
+    #    والـ pattern القديم كان بيقف عند نهاية السطر فكان بيسيب النجوم تظهر للمستخدم.
+    #    DOTALL + حد أقصى 400 حرف عشان الـ ** المفقودة ما تمسحش النص كله عريض.
+    text = re.sub(r'\*\*(.{1,400}?)\*\*', r'<b>\1</b>', text, flags=re.DOTALL)
     text = re.sub(r'__(.+?)__', r'<b>\1</b>', text)
 
     # 3. تحويل *text* لـ <i>text</i> (italic) - بس لو مش جوا tag
     text = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'<i>\1</i>', text)
 
     # 4. تحويل _text_ لـ <i>text</i> (italic) - لو مش جوا كلمة
-    text = re.sub(r'(?<!\w)_(?!_)(.+?)(<!_)_(?!\w)', r'<i>\1</i>', text)
+    # 🔴 إصلاح (2026-11-03): كان فيه typo — (<!_)_ بدل (?<!_)_ — فالمائل بشرطات
+    #    سفلية كان عمري ما بيتحول والشرطات بتظهر كرموز للمستخدم
+    text = re.sub(r'(?<!\w)_(?!_)(.+?)(?<!_)_(?!\w)', r'<i>\1</i>', text)
 
     # 5. تحويل ~~text~~ لـ <s>text</s> (strikethrough)
     text = re.sub(r'~~(.+?)~~', r'<s>\1</s>', text)
@@ -329,6 +334,23 @@ def clean_ai_response(text: str) -> str:
             text = re.sub(r"[ \t]{2,}", " ", text)
 
     return text.strip()
+
+
+async def send_html_safe(message, text: str, **kwargs):
+    """🔴 شبكة أمان الإرسال (2026-11-03 — شكوى زياد: رموز برمجية في تحليل الصور)
+
+    لو تليجرام رفض الـ HTML (وسم غير متوازن فات من التنظيف) — بدل ما المستخدم
+    ياخد «❌ حصل خطأ» ويضيع عليه التحليل كله، بنبعت النص مجرد كلام.
+    بترجع رسالة تليجرام المرسولة.
+    """
+    try:
+        return await message.reply_text(text, parse_mode="HTML", **kwargs)
+    except Exception as e:
+        err = str(e).lower()
+        if "parse" in err or "entity" in err or "can't find" in err or "unsupported" in err:
+            plain = re.sub(r'<[^>]+>', '', text)
+            return await message.reply_text(plain, **kwargs)
+        raise
 
 
 def html_to_whatsapp(text: str) -> str:

@@ -341,10 +341,11 @@ class ProviderManager:
         try:
             response = _http_session.post(
                 url, headers=headers, json=payload,
-                # 🔴 إصلاح البطء (2026-11-03): فجوة أول توكن بقت ذكية —
-                #  15s للمكالمات العادية (كانت 35s ثابتة — DeepSeek في الطابور كان يأكل 35s من كل رد)
-                #  35s للمهام التقيلة (مهلة ≥45s: GLM thinking بياخد 26s + Gemma الرؤية)
-                timeout=(15, 35 if (timeout or 0) >= 45 else 15),
+                # 🔴 إصلاح البطء (2026-11-03): فجوة أول توكن ذكية حسب المهلة:
+                #  15s مكالمات عادية (كانت 35s ثابتة — DeepSeek في الطابور كان يأكل 35s من كل رد)
+                #  35s مهام تقيلة 45-79s (GLM thinking بياخد 26s)
+                #  60s رؤية/نماذج ضخمة ≥80s (Gemma 31B بتجهّز الصورة و أول توكن بعد 35-50s — مختبر لايف)
+                timeout=(15, 60 if (timeout or 0) >= 80 else (35 if (timeout or 0) >= 45 else 15)),
                 stream=True,
             )
             response.raise_for_status()
@@ -458,6 +459,7 @@ class ProviderManager:
         timeout: int = 30,
         api_key: str = "",  # 🔴 per-model API key
         _no_thinking: bool = False,  # 🔁 fallback داخلي: جرب من غير تفكير
+        use_stream: bool = True,  # 🔴 الرؤية = غير متجدد (نماذج الرؤية مش بتبعت SSE — المهل كانت بتقتلها شغالة)
     ) -> Optional[str]:
         """استدعاء مزود OpenAI-compatible (متزامن) — يدعم per-model API keys"""
         provider = self.providers.get(provider_name)
@@ -489,7 +491,9 @@ class ProviderManager:
         # الطلب غير الـ streaming بيستنى الجسم كله (40-60s timeout مع مفيش داتا).
         # بالـ streaming: أول توكن بيحكم (لو مفيش داتا خلال 25s → نجرب النموذج اللي بعده فورًا)
         # ولو النموذج بيكتب، بنقرأ التوكنز وهي interpreted فورًا — مفيش timeout على الجسم كله.
-        use_stream = provider_name in ("nvidia", "mistral")
+        # 🔴 الرؤية (use_stream=False): نماذج الرؤية ما بتبعتش SSE توكنز — أول توكن مبيوصلش
+        #    غير مع الجسم كله، فالمهلة كانت بتقتل Gemma وهي شغالة (مختبر لايف 2026-11-03)
+        use_stream = use_stream and provider_name in ("nvidia", "mistral")
 
         # 🧠 وضع التفكير (reasoning) — مختبر لايف 2026-11-03:
         # - GLM 5.3 Flash: الريزونينج شغال دايمًا حتى مع thinking:false (مختبر) — موديل المهام الثقيلة
@@ -1083,15 +1087,30 @@ class ProviderManager:
         })
 
         if image_url:
-            user_message["content"].append({
-                "type": "image_url",
-                "image_url": {"url": image_url},
-            })
+            # 🔴 إصلاح Pixtral 400 (مختبر لايف): Mistral بياخد image_url نص مباشر،
+            #    NVIDIA بياخده object متداخل — كل مزود بصيغته
+            if provider_name == "mistral":
+                user_message["content"].append({
+                    "type": "image_url",
+                    "image_url": image_url,
+                })
+            else:
+                user_message["content"].append({
+                    "type": "image_url",
+                    "image_url": {"url": image_url},
+                })
         elif image_base64:
-            user_message["content"].append({
-                "type": "image_url",
-                "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"},
-            })
+            data_uri = f"data:image/jpeg;base64,{image_base64}"
+            if provider_name == "mistral":
+                user_message["content"].append({
+                    "type": "image_url",
+                    "image_url": data_uri,
+                })
+            else:
+                user_message["content"].append({
+                    "type": "image_url",
+                    "image_url": {"url": data_uri},
+                })
 
         messages.append(user_message)
 
@@ -1103,6 +1122,7 @@ class ProviderManager:
             max_tokens=max_tokens,
             timeout=timeout or REQUEST_TIMEOUT,
             api_key=api_key,  # 🔴 per-model API key
+            use_stream=False,  # 🔴 الرؤية غير متجددة — Gemini/VL بتجهّز الصورة الأول
         )
 
     async def analyze_image_async(
