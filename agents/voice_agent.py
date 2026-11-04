@@ -40,6 +40,14 @@ class VoiceAgent:
         # 🔴 NVIDIA NIM Omni — STT عبر REST (المفاتيح عالمية — أي مفتاح ينادي أي نموذج)
         self.nim_omni_key = (os.environ.get("NVIDIA_OMNI_30B_KEY", "")
                              or os.environ.get("NVIDIA_NEMOTRON_BOLT_KEY", "") or "")
+        # 🔴 Gemini 3.5 Transcribe — الأساسي الجديد (أمر زياد 2026-11-04)
+        self.gemini_transcribe_key = ""
+        try:
+            from config.ai_providers import GOOGLE_TRANSCRIBE_KEY
+            self.gemini_transcribe_key = GOOGLE_TRANSCRIBE_KEY or ""
+        except (ImportError, Exception):
+            self.gemini_transcribe_key = os.environ.get("GOOGLE_TRANSCRIBE_KEY", "")
+
         self.openrouter_base_url = "https://openrouter.ai/api/v1"
 
         try:
@@ -62,8 +70,10 @@ class VoiceAgent:
 
         # بناء قائمة المزودين المتاحين
         providers = []
+        if self.gemini_transcribe_key:
+            providers.append("Gemini 3.5 Transcribe (primary)")
         if self.mistral_api_key:
-            providers.append("Mistral Voxtral (primary)")
+            providers.append("Mistral Voxtral (secondary)")
         if self.nim_omni_key:
             providers.append("NVIDIA NIM Omni (REST)")
 
@@ -112,7 +122,8 @@ class VoiceAgent:
     def transcribe(self, audio_bytes: bytes, file_path: str = None, language: str = "ar") -> dict:
         """
         تحويل الصوت إلى نص — طبقات fallback
-        1. Mistral Voxtral-mini (🔴 الأساسي — عربي ممتاز، مختبر لايف 2026-11-03)
+        0. Gemini 3.5 Transcribe (🔴 الأساسي — أمر زياد 2026-11-04، مفتاح مخصص)
+        1. Mistral Voxtral-mini (الثانوي — عربي ممتاز، مختبر لايف 2026-11-03)
         2. NVIDIA NIM Omni (REST)
         3. Google Speech Recognition (مجاني، محتاج ffmpeg)
         4. OpenRouter Whisper / OpenAI Whisper
@@ -120,7 +131,15 @@ class VoiceAgent:
         if not audio_bytes and not file_path:
             return {"text": "", "success": False, "error": "No audio data provided", "provider": "none"}
 
-        # Layer 0: Mistral Voxtral-mini (🔴 رجع أساسي — عربي مظبوط، 0.5s — Groq حظرت الحساب)
+        # Layer 0: Gemini 3.5 Transcribe (🔴 الأساسي الجديد — أمر زياد 2026-11-04)
+        if self.gemini_transcribe_key:
+            result = self._transcribe_gemini(audio_bytes, file_path, language)
+            if result["success"]:
+                return result
+        else:
+            logger.debug("Gemini transcribe key not configured, skipping")
+
+        # Layer 1: Mistral Voxtral-mini (الثانوي — عربي مظبوط، 0.5s — Groq حظرت الحساب)
         if self.mistral_api_key:
             result = self._transcribe_mistral_voxtral(audio_bytes, file_path, language)
             if result["success"]:
@@ -162,6 +181,59 @@ class VoiceAgent:
 
         logger.warning("❌ All voice transcription methods failed")
         return {"text": "", "success": False, "error": "All voice transcription methods failed", "provider": "none"}
+
+    def _transcribe_gemini(self, audio_bytes: bytes, file_path: str = None, language: str = "ar") -> dict:
+        """🔴 الأساسي: gemini-3.5-transcribe عبر generateContent (مختبر لايف 2026-11-04)
+        - يقبل OGG مباشرة (مفيش ffmpeg محتاج) — أسرع طبقة ومفيش تحويل ملفات
+        - النص بيرجع في candidates[0].content.parts[*].audioTranscription.text
+        - مفتاح مخصص GOOGLE_TRANSCRIBE_KEY منفصل عن مفتاح الشات (قاعدة زياد)"""
+        import base64 as _b64
+        import requests
+        try:
+            mime = "audio/ogg"
+            if file_path:
+                fp = str(file_path).lower()
+                if fp.endswith(".wav"):
+                    mime = "audio/wav"
+                elif fp.endswith(".mp3"):
+                    mime = "audio/mpeg"
+                elif fp.endswith(".m4a"):
+                    mime = "audio/mp4"
+                elif fp.endswith(".webm"):
+                    mime = "audio/webm"
+            b64 = _b64.b64encode(audio_bytes).decode()
+            resp = requests.post(
+                "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-transcribe:generateContent",
+                headers={"x-goog-api-key": self.gemini_transcribe_key, "Content-Type": "application/json"},
+                json={
+                    "contents": [{"parts": [
+                        {"text": "Transcribe the audio exactly. Return only the transcript."},
+                        {"inline_data": {"mime_type": mime, "data": b64}},
+                    ]}],
+                },
+                timeout=(6, 25),
+            )
+            if resp.status_code == 200:
+                j = resp.json()
+                parts = ((j.get("candidates") or [{}])[0].get("content") or {}).get("parts") or []
+                text = ""
+                for pr in parts:
+                    if "audioTranscription" in pr:
+                        text += pr["audioTranscription"].get("text", "")
+                    elif "text" in pr:
+                        text += pr.get("text", "")
+                text = (text or "").strip()
+                if text:
+                    logger.info(f"✅ Gemini 3.5 Transcribe: {text[:80]}")
+                    return {"text": text, "success": True, "provider": "gemini-transcribe"}
+                logger.warning("Gemini transcribe returned empty text")
+                return {"text": "", "success": False, "error": "empty text", "provider": "gemini-transcribe"}
+            logger.warning(f"Gemini transcribe HTTP {resp.status_code} — falling to next layer")
+            return {"text": "", "success": False, "error": f"HTTP {resp.status_code}", "provider": "gemini-transcribe"}
+        except Exception as e:
+            logger.warning(f"Gemini transcribe error: {str(e)[:120]}")
+            return {"text": "", "success": False, "error": str(e)[:120], "provider": "gemini-transcribe"}
+
 
     def _transcribe_mistral_voxtral(self, audio_bytes: bytes, file_path: str = None, language: str = "ar") -> dict:
         """🔴 الأساسي: Mistral Voxtral-mini عبر /v1/audio/transcriptions

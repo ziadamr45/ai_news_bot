@@ -30,6 +30,7 @@ from whatsapp.state import (
     _log_event,
     _log_activity,
     _is_duplicate_wa_message,
+    _is_duplicate_wa_content,
     _is_wa_admin,
     _ensure_wa_admin_premium,
     _wa_phone_to_user_id,
