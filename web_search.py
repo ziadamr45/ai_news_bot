@@ -325,13 +325,164 @@ def _get_ddgs():
             return None
 
 
+# ═══════════════════════════════════════
+# 🆕 Google Gemini — Search Grounding + Embedding Rerank (أمر زياد 2026-11-04)
+# مختبر لايف من serv00: grounding محتاج تفعيل الفوترة في جوجل (429 حاليًا)،
+# الترتيب بـ gemini-embedding-2 شغال ✅ — الأول كده هو بترتيب ذكي، والـ grounding
+# هيشتغل تلقائيًا أول ما الفوترة تتفعل (من غير تعديل كود)
+# ═══════════════════════════════════════
+
+# 🔴 كل وظيفة ليها مفتاحها (قاعدة زياد: حصة الشات متحرقش بالبحث) —
+# لو المفتاح المخصص (GOOGLE_GROUNDING_KEY / GOOGLE_EMBED_KEY) مش موجود بنرجع لـ GEMINI_API_KEY
+GEMINI_GROUNDING_KEY = os.environ.get("GOOGLE_GROUNDING_KEY", "") or os.environ.get("GEMINI_API_KEY", "")
+GEMINI_SEARCH_MODEL = "gemini-3.5-flash-lite"   # أسرع وأرخص — والـ summary بيتعمل بعده بنموذج الشات
+GEMINI_EMBED_MODEL = "gemini-embedding-2"
+GEMINI_EMBED_KEY = os.environ.get("GOOGLE_EMBED_KEY", "") or os.environ.get("GEMINI_API_KEY", "")
+
+# cooldown صغير للـ grounding لو جوجل رفض (429) — ميتجربش في كل بحث
+_gemini_grounding_cooldown = 0.0
+
+
+def _search_gemini_grounding_sync(query: str, max_results: int = 5, language: str = "ar") -> List[Dict]:
+    """
+    🔍 Gemini Search Grounding — جوجل بيدور بنفسه ويرجّع إجابة مبنية على نتائج حقيقية + مصادر
+    Returns: قائمة نتائج (أول عنصر = ملخص الجوجل المصادر فيه بعدها) أو [] لو فشل
+    ⚡ Fail-fast: مهلة 18s + cooldown 5 دقايق لو 429 (مش محتاجين نضرب جدار)
+    """
+    global _gemini_grounding_cooldown
+    if not GEMINI_GROUNDING_KEY:
+        return []
+    if time.time() < _gemini_grounding_cooldown:
+        return []
+
+    import requests as _req
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_SEARCH_MODEL}:generateContent"
+    try:
+        resp = _req.post(
+            url,
+            headers={"x-goog-api-key": GEMINI_GROUNDING_KEY, "Content-Type": "application/json"},
+            json={
+                "contents": [{"role": "user", "parts": [{"text": query}]}],
+                "tools": [{"google_search": {}}],
+            },
+            timeout=(6, 18),
+        )
+        if resp.status_code != 200:
+            if resp.status_code == 429 or resp.status_code == 403:
+                # 429 = الخطة المجانية مش مفعّل فيها الفوترة للـ grounding → اعتزال 5 دقايق
+                _gemini_grounding_cooldown = time.time() + 300
+                logger.info(f"🔍 Gemini grounding unavailable ({resp.status_code}) — cooldown 5min, falling back to Tavily/DDG")
+            else:
+                logger.warning(f"🔍 Gemini grounding HTTP {resp.status_code}")
+            return []
+
+        data = resp.json()
+        cand = (data.get("candidates") or [{}])[0]
+        parts = (cand.get("content") or {}).get("parts") or []
+        answer_text = "".join(p.get("text", "") for p in parts).strip()
+        meta = cand.get("groundingMetadata") or {}
+        chunks = meta.get("groundingChunks") or []
+
+        if not answer_text and not chunks:
+            return []
+
+        results = []
+        sources = []
+        for ch in chunks[:max_results]:
+            web = ch.get("web") or {}
+            uri = web.get("uri") or ""
+            title = web.get("title") or ""
+            if uri:
+                sources.append({"title": title or uri[:60], "link": uri, "snippet": f"مصدر من نتائج بحث Google عن: {query}"})
+
+        if answer_text:
+            first_link = sources[0]["link"] if sources else ""
+            results.append({"title": "🔎 ملخص البحث المباشر من Google (Grounding)", "link": first_link, "snippet": answer_text})
+        results.extend(sources)
+
+        if results:
+            logger.info(f"✅ Gemini grounding: answer {len(answer_text)} chars + {len(sources)} sources for '{query[:40]}'")
+        return results
+
+    except Exception as e:
+        logger.warning(f"🔍 Gemini grounding error: {str(e)[:100]}")
+        return []
+
+
+def _gemini_embed_batch(texts: List[str], task_type: str = "RETRIEVAL_DOCUMENT", timeout: int = 10):
+    """🆕 batchEmbedContents — بيرجع list من الـ vectors (dim ~3072) أو None"""
+    if not GEMINI_EMBED_KEY or not texts:
+        return None
+    import requests as _req
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_EMBED_MODEL}:batchEmbedContents"
+    body = {"requests": [
+        {"model": f"models/{GEMINI_EMBED_MODEL}", "content": {"parts": [{"text": (t or "")[:4000]}]}, "taskType": task_type}
+        for t in texts
+    ]}
+    try:
+        resp = _req.post(url, json=body, headers={"x-goog-api-key": GEMINI_EMBED_KEY}, timeout=(6, timeout))
+        if resp.status_code == 200:
+            embs = [d.get("values") for d in resp.json().get("embeddings", []) if d.get("values")]
+            return embs or None
+        logger.debug(f"🔍 Gemini embed HTTP {resp.status_code}")
+    except Exception as e:
+        logger.debug(f"🔍 Gemini embed error: {str(e)[:80]}")
+    return None
+
+
+def _cosine_sim(a, b) -> float:
+    """تشابه جيب التمام بين متجهين"""
+    dot = sum(x * y for x, y in zip(a, b))
+    na = sum(x * x for x in a) ** 0.5
+    nb = sum(y * y for y in b) ** 0.5
+    if not na or not nb:
+        return 0.0
+    return dot / (na * nb)
+
+
+def _rerank_results_by_relevance(query: str, results: List[Dict]) -> List[Dict]:
+    """
+    🔍🆕 ترتيب نتائج البحث بـ gemini-embedding-2 (أمر زياد: تحسين وترتيب نتائج البحث)
+    - بـ embed الاستعلام (RETRIEVAL_QUERY) + كل نتيجة (RETRIEVAL_DOCUMENT)
+    - بيرتب الأكثر صلة بالسؤال أولاً (cosine similarity)
+    ⚡ Fail-safe: أي خطأ → الترتيب الأصلي زي ما هو (مفيش ما يبطّئ البحث)
+    ⚡ مفيش grounding entries هنا (جوجل رتّبهم بنفسه) — بس نتايج Tavily/DDG
+    """
+    try:
+        if not results or len(results) < 3:
+            return results
+        # نتايج الـ grounding ملهاش لازمة للترتيب — جوجل رتّبها بنفسه
+        if any("Grounding" in (r.get("title") or "") for r in results[:1]):
+            return results
+        docs = [f"{(r.get('title') or '').strip()}. {(r.get('snippet') or '').strip()}"[:4000] for r in results]
+        q_emb = _gemini_embed_batch([query], "RETRIEVAL_QUERY", timeout=8)
+        d_embs = _gemini_embed_batch(docs, "RETRIEVAL_DOCUMENT", timeout=10)
+        if not q_emb or not d_embs or len(d_embs) != len(docs):
+            return results
+        scored = sorted(range(len(results)), key=lambda i: _cosine_sim(q_emb[0], d_embs[i]), reverse=True)
+        if scored == list(range(len(results))):
+            return results  # الترتيب أصلاً سليم
+        ordered = [results[i] for i in scored]
+        logger.info(f"🔍 Embedding rerank: reordered {len(ordered)} results by relevance (top: '{ordered[0].get('title', '')[:40]}')")
+        return ordered
+    except Exception as e:
+        logger.debug(f"🔍 Rerank skipped: {str(e)[:80]}")
+        return results
+
+
 def _search_web_sync(query: str, max_results: int = 5, language: str = "ar") -> List[Dict]:
-    """البحث في الويب (متزامن) - Tavily أولًا ثم DuckDuckGo"""
+    """البحث في الويب (متزامن) - 🆕 Gemini Grounding أولًا ثم Tavily ثم DuckDuckGo"""
+    # 🆕 أمر زياد 2026-11-04: Gemini Search Grounding أولًا — بحث حقيقي من جوجل بمصادر
+    grounded = _search_gemini_grounding_sync(query, max_results, language)
+    if grounded:
+        return grounded
+
     # محاولة Tavily أولًا (أفضل جودة - بحث حقيقي)
     if TAVILY_API_KEY:
         tavily_results = _search_tavily_sync(query, max_results, language=language)
         if tavily_results:
-            return tavily_results
+            # 🔍 ترتيب النتايج بالـ embeddings (أمر زياد) — fail-safe
+            return _rerank_results_by_relevance(query, tavily_results)
         logger.warning("⚠️ Tavily returned no results, trying DuckDuckGo...")
 
     # Fallback لـ DuckDuckGo
@@ -427,7 +578,8 @@ def _search_web_sync(query: str, max_results: int = 5, language: str = "ar") -> 
                             unique_results.append(r)
                     results = unique_results[:max_results + 3]
 
-            return results
+            # 🔍 ترتيب النتايج بـ gemini-embedding-2 قبل الرجوع (أمر زياد — fail-safe)
+            return _rerank_results_by_relevance(query, results)
 
         except Exception as e:
             logger.error(f"DuckDuckGo search error (attempt {attempt+1}): {e}")
