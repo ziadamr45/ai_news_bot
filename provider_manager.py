@@ -64,11 +64,18 @@ def _nvidia_base_url(provider_name: str, direct_url: str) -> str:
 
 
 def _mark_nvidia_direct_down():
-    """اكتشاف حجب/تعذر الوصول المباشر لـ NVIDIA → جرب البروكسي لمدة 10 دقايق"""
+    """اكتشاف حجب/تعطل الوصول المباشر لـ NVIDIA
+    🔴 إصلاح البطء (2026-11-04 أمر زياد: «أهم حاجة السرعة»):
+    - لو فيه بروكسي متحد: نداءات NVIDIA كلها بتحول عليه تلقائيًا لمدة 10 دقايق
+    - لو مفيش بروكسي: كل موديلات NVIDIA بتتسكت 120 ثانية — بدل ما السلسلة
+      تحرق 15 ثانية TTFT على كل نموذج محجوب في كل رسالة (شايفينه في السجل)
+    """
     global _nvidia_direct_down_until
+    _nvidia_direct_down_until = time.time() + (600 if NVIDIA_PROXY_URL else 120)
     if NVIDIA_PROXY_URL:
-        _nvidia_direct_down_until = time.time() + 600
         logger.warning("🔴 NVIDIA direct unreachable → routing NVIDIA calls through NVIDIA_PROXY_URL for 10min")
+    else:
+        logger.warning("🔴 NVIDIA direct unreachable (no proxy set) → skipping NVIDIA models for 120s")
 
 from config import (
     SAMBANOVA_API_KEY, SAMBANOVA_BASE_URL,
@@ -195,7 +202,12 @@ class ProviderManager:
         return provider.get("api_key", "")
 
     def _is_provider_available(self, provider_name: str) -> bool:
-        """فحص هل المزود متاح"""
+        """فحص هل المزود متاح
+        🔴 سرعة (2026-11-04): لو NVIDIA محجوبة مباشرة ومفيش بروكسي → تتسكت فورًا
+        من كل السلاسل بدل ما كل نموذج ياخد مهلته كاملة على الفاضي
+        """
+        if provider_name.startswith("nvidia") and not NVIDIA_PROXY_URL                 and time.time() < _nvidia_direct_down_until:
+            return False
         return provider_name in self.providers
 
     def _is_model_available(self, model_id: str, ignore_cooldown: bool = False) -> bool:
@@ -441,6 +453,10 @@ class ProviderManager:
                 logger.warning(f"⏱️ Stream gap-timeout after {elapsed:.0f}s for {model} — but have {got} chars, using them")
             else:
                 logger.warning(f"⏱️ Stream TTFT timeout ({elapsed:.0f}s, no tokens) for {provider_name}/{model} — next model")
+                if provider_name.startswith("nvidia"):
+                    _mark_nvidia_direct_down()  # 🔴 إشارة حجب/تعطل — سكيت NVIDIA فورًا أو حوّل على البروكسي
+                if provider_name.startswith("nvidia"):
+                    _mark_nvidia_direct_down()  # 🔴 إشارة حجب/تعطل — سكيت NVIDIA فورًا أو حوّل على البروكسي
                 # 🔴 إصلاح البطء (2026-11-03): كان 90s — DeepSeek (أساسي البرو) كان يتحرم
                 # من الرد 90 ثانية كاملة بعد كل طابور، والرسايل تقع على موديلات صغيرة
                 # بتاكل كلمات. 30s كفاية: النموذج يرتاح بس يرجع بسرعة

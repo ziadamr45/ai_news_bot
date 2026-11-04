@@ -44,6 +44,13 @@ MAX_MEMORY_ENTRIES = 10        # أقصى عدد ذكريات طويلة الم�
 MAX_INTERESTS_DISPLAY = 15     # أقصى عدد اهتمامات في السياق
 MIN_KEYWORD_LENGTH = 3         # أقل طول كلمة للبحث الدلالي
 
+# 🧠🆕 الاسترجاع الدلالي بـ gemini-embedding-2 (أمر زياد 2026-11-04:
+# «gemini-embedding-2 ده لتحسين وترتيب نتائج البحث») — بيتفعل بس لما
+# الكلمات المفتاحية مالقيش حاجة، فمش بيزود زمن الرد في الحالة العادية.
+# كاش للـ embeddings بتاعة الذكريات — الرسالة الواحدة تستهلك نداء واحد بس (~0.3s).
+_memory_embed_cache = OrderedDict()  # (user_id, key, value[:150]) -> vector
+_MEMORY_EMBED_CACHE_MAX = 400
+
 
 # ═══════════════════════════════════════
 # ⚡ كاش السياق - Context Caches
@@ -294,7 +301,70 @@ def _retrieve_relevant_memories(user_id: int, current_message: str,
     # ترتيب حسب درجة التطابق
     relevant.sort(key=lambda x: x["relevance_score"], reverse=True)
     
-    return relevant[:5]  # أعلى 5 ذكريات متعلقة
+    if relevant:
+        return relevant[:5]  # أعلى 5 ذكريات متعلقة
+
+    # 🔴 Fallback دلالي بـ gemini-embedding-2: الكلمات المفتاحية ملقتش حاجة
+    # بس فيه ذكريات محفوظة — ممكن المستخدم صاغ السؤال بصياغة مختلفة.
+    # ⚡ السرعة الأول: نداء واحد للاستعلام + كاش للذكريات، وحد أقصى 0.6s،
+    # وأي خطأ → رجوع فاضي فورًا (مفيش ما يبطّئ الرد).
+    try:
+        mems = all_memories if all_memories is not None else []
+        if not mems:
+            try:
+                mems = list((get_memories(user_id) or {}).values())
+            except Exception:
+                mems = []
+        mems = [m for m in mems if m.get("category") != "system"
+                and (m.get("value") or "").strip()][:40]
+        if len(mems) < 3:
+            return relevant
+
+        from web_search import _gemini_embed_batch, _cosine_sim  # lazy — تجنب الدوران
+
+        q_vec = _gemini_embed_batch(
+            [f"task: search result | query: {current_message[:300]}"],
+            "RETRIEVAL_QUERY", timeout=6)
+        if not q_vec:
+            return relevant
+
+        vecs = []
+        for m in mems:
+            ck = (user_id, m.get("key", ""), (m.get("value") or "")[:150])
+            v = _memory_embed_cache.get(ck)
+            if v is None:
+                v = None  # هنجمعها في batch واحد تحت
+            vecs.append((ck, v))
+
+        missing = [(i, m) for i, (ck, v) in enumerate(vecs) if v is None]
+        if missing:
+            docs = [f"title: {m.get('key', 'none')} | text: {(m.get('value') or '')[:500]}"
+                    for _, m in missing]
+            d_embs = _gemini_embed_batch(docs, "RETRIEVAL_DOCUMENT", timeout=8)
+            if d_embs and len(d_embs) == len(missing):
+                for (i, m), emb in zip(missing, d_embs):
+                    ck = vecs[i][0]
+                    vecs[i] = (ck, emb)
+                    _memory_embed_cache[ck] = emb
+                while len(_memory_embed_cache) > _MEMORY_EMBED_CACHE_MAX:
+                    _memory_embed_cache.popitem(last=False)
+
+        scored = []
+        for m, (ck, v) in zip(mems, vecs):
+            if v is None:
+                continue
+            sim = _cosine_sim(q_vec[0], v)
+            if sim >= 0.55:
+                scored.append({"key": m.get("key", ""), "value": (m.get("value") or "")[:200],
+                               "category": m.get("category", "general"),
+                               "relevance_score": round(sim, 3)})
+        scored.sort(key=lambda x: x["relevance_score"], reverse=True)
+        if scored:
+            logger.info(f"🧠 Semantic memory (gemini-embedding-2): {len(scored)} relevant memories found")
+        return scored[:5]
+    except Exception as e:
+        logger.debug(f"Semantic memory retrieval skipped: {str(e)[:80]}")
+        return relevant[:5]
 
 
 def _extract_frequent_topics(user_id: int, conversations: List[Dict] = None) -> List[str]:

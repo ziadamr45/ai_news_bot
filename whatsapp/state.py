@@ -263,6 +263,36 @@ def _save_dedup():
         logger.warning(f"⚠️ Dedup cache save failed: {e}")
 
 
+# 🔴 إصلاح الردود المزدوجة (2026-11-04): Meta بتعيد إرسال نفس رسالة المستخدم
+# بـ message_id مختلف بعد ~0.4 ثانية — فالـ dedup بـ wamid مش بيمسكها
+# والمستخدم كان بيستقبل ردين متطابقين. بنعمل dedup إضافي على
+# (المرسل + النوع + النص) خلال نافذة 60 ثانية.
+_content_dedup_cache = OrderedDict()
+_CONTENT_DEDUP_WINDOW = 60.0
+_CONTENT_DEDUP_MAX = 500
+
+
+def _is_duplicate_wa_content(wa_id: str, msg_type: str, content: str) -> bool:
+    """dedup على محتوى الرسالة — نفس المرسل + نفس النص خلال 60 ثانية = مكرر"""
+    import time as _t
+    now = _t.time()
+    key = f"{wa_id}|{msg_type}|{(content or '').strip()[:300]}"
+    # تنظيف القديم
+    while _content_dedup_cache:
+        k, ts = next(iter(_content_dedup_cache.items()))
+        if now - ts > _CONTENT_DEDUP_WINDOW:
+            _content_dedup_cache.popitem(last=False)
+        else:
+            break
+    if len(_content_dedup_cache) > _CONTENT_DEDUP_MAX:
+        for _ in range(len(_content_dedup_cache) - _CONTENT_DEDUP_MAX):
+            _content_dedup_cache.popitem(last=False)
+    if key in _content_dedup_cache:
+        return True
+    _content_dedup_cache[key] = now
+    return False
+
+
 def _is_duplicate_wa_message(message_id: str) -> bool:
     """Check if we already processed this WhatsApp message ID"""
     global _dedup_unsaved

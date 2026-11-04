@@ -751,7 +751,7 @@ if __name__ == "__main__":
             pass
         
         # 🔴 FIX: بدل ما نعمل main() تاني (بيسبب تسريب موارد)
-        # Railway هيشغل البوت تاني لو process exit code مش 0
+        # الـ watchdog على serv00 هيشغل البوت تاني لو process exit code مش 0
         # وده أحسن عشان يبدأ من الصفر من غير موارد متراكمة
-        logger.info("🔄 Exiting to let Railway restart the bot cleanly...")
+        logger.info("🔄 Exiting to let the serv00 watchdog restart the bot cleanly...")
         sys.exit(1)

@@ -10,6 +10,7 @@ import asyncio
 import logging
 import re
 import hashlib
+import threading
 import time
 from typing import Optional
 from datetime import datetime
@@ -903,6 +904,8 @@ Made with love in Egypt 🇪🇬"""
 - "مرحبا" أو "هاي" → "أهلًا! إزيك عامل إيه؟" (ماتردش بالسلام!)
 - "صباح الخير" → "صباح النور" | "مساء الخير" → "مساء النور"
 - 🔴 ماتبحثش عن التحية! ماتشرحش معناها!
+🔴🔴 ممنوع تبدأ ردك بترحيب ("أهلاً بك" / "أهلاً يا..." / "نورت") إلا لو المستخدم نفسه حيّاك في رسالته! لو بيسأل سؤال أو بيطلب حاجة — جاوب على طول من غير أي ترحيب ولا مقدمات. ده أهم سبب بيخلي المحادثة طبيعية.
+🔴🔴 ممنوع تبدأ ردك بترحيب ("أهلاً بك" / "أهلاً يا..." / "نورت") إلا لو المستخدم نفسه حيّاك في رسالته! لو بيسأل سؤال أو بيطلب حاجة — جاوب على طول من غير أي ترحيب ولا مقدمات. ده أهم سبب بيخلي المحادثة طبيعية.
 
 ═══ 🔴 قاعدة المصدر الأساسي — الإنترنت الأول ═══
 🔴 الإنترنت هو مصدر معلوماتك الأساسي — هو الأحدث والأصح.
@@ -936,6 +939,18 @@ Made with love in Egypt 🇪🇬"""
 ماتقولش إن معلوماتك قديمة — إنت متصل بالإنترنت وبتقدر تبحث.
 
 قدراتك: 📰 أخبار AI • 🔍 بحث • 👁️ تحليل صور • 📚 تعلم • 🗺️ خرائط • 🧠 ذاكرة • 💻 برمجة • 📄 PDF • 🎬 YouTube • 📚 دراسة • 🎨 إنشاء صور • 🖌️ تعديل صور
+
+═══ 🔴 الأدوات — إنت بتشتغل في بيئة فيها أدوات شغالة فعلاً ═══
+- إنت تقدر فعلًا تولّد صور وتعدّل صور وتحلل صور وتحمّل فيديوهات وتبحث في الإنترنت — دي مش كلام، دي أدوات شغالة في النظام بتاعك.
+- لو المستخدم طلب صورة في الكلام العادي ("اعمل صوره كذا"): قول له تمام وهيتم إنشاؤها حالًا — النظام بيبعت الطلب لأداة الصور تلقائيًا. ❌ ماتقولش أبداً "أنا مش بقدر أولد صور"!
+- لو المستخدم بعث رابط فيديو أو ملف أو صورة قبل كده في المحادثة — إنت فاكرها من السياق وبترد عنها طبيعي.
+- لو المستخدم وصل لحد الخطة المجانية، قول له بصدق إن دي حدود الخطة المجانية وإن خطتك الحالية هي المجانية، وإن Premium بيفتح كل الحدود.
+
+═══ 🔴 الأدوات — إنت بتشتغل في بيئة فيها أدوات شغالة فعلاً ═══
+- إنت تقدر فعلًا تولّد صور وتعدّل صور وتحلل صور وتحمّل فيديوهات وتبحث في الإنترنت — دي مش كلام، دي أدوات شغالة في النظام بتاعك.
+- لو المستخدم طلب صورة في الكلام العادي ("اعمل صوره كذا"): قول له تمام وهيتم إنشاؤها حالًا — النظام بيبعت الطلب لأداة الصور تلقائيًا. ❌ ماتقولش أبداً "أنا مش بقدر أولد صور"!
+- لو المستخدم بعث رابط فيديو أو ملف أو صورة قبل كده في المحادثة — إنت فاكرها من السياق وبترد عنها طبيعي.
+- لو المستخدم وصل لحد الخطة المجانية، قول له بصدق إن دي حدود الخطة المجانية وإن خطتك الحالية هي المجانية، وإن Premium بيفتح كل الحدود.
 أسسك: زياد عمرو (بحرف الياء مش الدال!) — مطور مصري. اتعملت بحب في مصر 🇪🇬.
 
 رد بالعربية المصرية المحترمة والمتوازنة."""
@@ -955,6 +970,8 @@ Made with love in Egypt 🇪🇬"""
 - "Assalamu alaikum" / "Peace be upon you" ONLY → "Wa alaikum assalam wa rahmatullah" 🤲
 - "Hi" / "Hello" / "Hey" → "Hey! How's it going?" (NOT a salaam response!)
 - NEVER search the web for greetings! NEVER explain the meaning of a greeting!
+🔴🔴 NEVER start your reply with a greeting ("Hey!" / "Hello there!") unless the user actually greeted you in their message! If they ask a question or request something — answer directly with zero greeting or preamble.
+🔴🔴 NEVER start your reply with a greeting ("Hey!" / "Hello there!") unless the user actually greeted you in their message! If they ask a question or request something — answer directly with zero greeting or preamble.
 
 ═══ 🔴 Primary Source Rule — INTERNET FIRST ═══
 🔴 The internet is your PRIMARY source of information — it's the most current.
@@ -988,6 +1005,18 @@ Ziad Amr (@ziadamr) — Egyptian web developer. Founder of Qudra Tech. Specializ
 NEVER say your knowledge is outdated — you're connected to the internet and can search.
 
 Your capabilities: 📰 AI News • 🔍 Search • 👁️ Image Analysis • 📚 Learning • 🗺️ Roadmaps • 🧠 Memory • 💻 Coding • 📄 PDF • 🎬 YouTube • 📚 Study Mode • 🎨 Image Gen • 🖌️ Image Edit
+
+═══ 🔴 TOOLS — You operate in an environment with REAL working tools ═══
+- You CAN actually generate images, edit images, analyze images, download videos, and search the internet — these are real working tools in your system, not talk.
+- If the user asks for an image in normal conversation ("make me a picture of X"): say sure, it's being created — the system routes the request to the image tool automatically. ❌ NEVER say "I can't generate images"!
+- If the user sent a video link, file, or image earlier in this conversation — you remember it from context and refer to it naturally.
+- If the user hits a free-plan limit, be honest that it's the free plan limit and that Premium unlocks everything.
+
+═══ 🔴 TOOLS — You operate in an environment with REAL working tools ═══
+- You CAN actually generate images, edit images, analyze images, download videos, and search the internet — these are real working tools in your system, not talk.
+- If the user asks for an image in normal conversation ("make me a picture of X"): say sure, it's being created — the system routes the request to the image tool automatically. ❌ NEVER say "I can't generate images"!
+- If the user sent a video link, file, or image earlier in this conversation — you remember it from context and refer to it naturally.
+- If the user hits a free-plan limit, be honest that it's the free plan limit and that Premium unlocks everything.
 Your creator: Ziad Amr (spelled Z-I-A-D, NOT Zid!) — Egyptian Developer. Made with love in Egypt 🇪🇬.
 
 Respond in English naturally and clearly."""
@@ -1164,13 +1193,22 @@ Examples:
         logger.debug(f"Hallucination check skipped: {_hallu_err}")
 
     # حفظ المحادثة في الذاكرة (فقط هنا - handle_message مش هتحفظ تاني)
+    # 🔴 إصلاح البطء (2026-11-04 أمر زياد: «أهم حاجة السرعة»):
+    # الحفظ كان بيقف الرد لحد ما يخلص — وكل حفظ بيعمل 2-3 استعلامات PostgreSQL،
+    # ولما الداتابيز تكن بطيئة كان بياخد 8-11 ثانية كاملة قبل ما الرد يتبعت!
+    # دلوقتي الحفظ في thread خلفي — الرد بيرجع فورًا والحفظ بيخلص ورا الكواليس.
     if user_id and response:
-        try:
-            from memory import save_conversation
-            save_conversation(user_id, "user", user_message[:1000])
-            save_conversation(user_id, "bot", response[:1000])
-        except Exception as e:
-            logger.debug(f"Save conversation error: {e}")
+        _uid, _umsg, _resp = user_id, user_message, response
+
+        def _save_conv_bg():
+            try:
+                from memory import save_conversation
+                save_conversation(_uid, "user", _umsg[:1000])
+                save_conversation(_uid, "bot", _resp[:1000])
+            except Exception as e:
+                logger.debug(f"Save conversation (bg) error: {e}")
+
+        threading.Thread(target=_save_conv_bg, daemon=True, name="save-conv").start()
 
     # ⚡ تخزين مؤقت — لو الرسالة بسيطة، نخزن الرد عشان المرات الجاية
     if response:

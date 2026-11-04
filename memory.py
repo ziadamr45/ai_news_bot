@@ -84,7 +84,7 @@ def _get_database_url():
         logger.info(f"🔗 DATABASE_URL found: {masked}")
     else:
         logger.error("❌ DATABASE_URL is NOT set! Data will NOT persist across deployments!")
-        logger.error("❌ Set DATABASE_URL environment variable on Railway with your Neon PostgreSQL URL")
+        logger.error("❌ Set DATABASE_URL environment variable on serv00 with your PostgreSQL URL")
     return url
 
 
@@ -130,7 +130,7 @@ def _init_postgresql():
 
     except Exception as e:
         logger.error(f"❌ PostgreSQL init FAILED: {type(e).__name__}: {e}")
-        logger.error("❌ Data will NOT persist! Check DATABASE_URL environment variable on Railway!")
+        logger.error("❌ Data will NOT persist! Check DATABASE_URL environment variable on serv00!")
         logger.error("❌ Common issues: channel_binding=require, missing sslmode, wrong credentials")
         _db_type = None
         # Clean up failed pool
@@ -235,6 +235,26 @@ def _create_postgresql_tables(conn):
         cur.execute("CREATE INDEX IF NOT EXISTS idx_memories_user ON user_memories(user_id, category);")
         # ✅ فهرس لرقم واتساب — مهم جدًا لـ find_user_by_wa_phone() و lookup السريع
         cur.execute("CREATE INDEX IF NOT EXISTS idx_user_profiles_wa_phone ON user_profiles(wa_phone);")
+        # 🔴 إصلاح أخطاء ON CONFLICT (2026-11-04): الجداول القديمة اتعملت من غير قيود UNIQUE
+        # فكان كل save_learning/save_memory بيفشل بـ "there is no unique or exclusion
+        # constraint matching the ON CONFLICT specification" (33 فشل في يوم واحد!)
+        # = الذاكرة كانت مش بتتحفظ. بننضف التكرارات وبنعمل الفهارس لو مش موجودة.
+        try:
+            cur.execute("""
+                DELETE FROM learning_progress a USING learning_progress b
+                WHERE a.id > b.id AND a.user_id = b.user_id AND a.topic = b.topic;
+            """)
+            cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_learning_user_topic ON learning_progress(user_id, topic);")
+        except Exception as e:
+            logger.warning(f"learning_progress unique index migration: {e}")
+        try:
+            cur.execute("""
+                DELETE FROM user_memories a USING user_memories b
+                WHERE a.id > b.id AND a.user_id = b.user_id AND a.key = b.key;
+            """)
+            cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_memories_user_key ON user_memories(user_id, key);")
+        except Exception as e:
+            logger.warning(f"user_memories unique index migration: {e}")
         cur.close()
         return True
     except Exception as e:
@@ -438,7 +458,7 @@ def init_database():
         # Fallback لـ SQLite
         logger.warning("⚠️⚠️⚠️ PostgreSQL FAILED! Falling back to SQLite!")
         logger.warning("⚠️⚠️⚠️ DATA WILL NOT PERSIST across Railway deploys!")
-        logger.warning("⚠️⚠️⚠️ Make sure DATABASE_URL is set correctly on Railway!")
+        logger.warning("⚠️⚠️⚠️ Make sure DATABASE_URL is set correctly on serv00!")
         _init_sqlite()
     else:
         logger.info("✅ PostgreSQL (Neon) connected — data WILL persist across deployments!")
@@ -456,7 +476,7 @@ def init_database():
     # تحذير نهائي لو SQLite
     if _db_type == "sqlite":
         logger.error("🔴🔴🔴 CRITICAL: Using SQLite — ALL DATA WILL BE LOST on next deploy!")
-        logger.error("🔴🔴🔴 Set DATABASE_URL on Railway to fix this!")
+        logger.error("🔴🔴🔴 Set DATABASE_URL on serv00 to fix this!")
 
 
 def _migrate_add_last_news_delivery():

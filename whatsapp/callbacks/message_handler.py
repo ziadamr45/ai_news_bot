@@ -93,6 +93,22 @@ async def _handle_incoming_message(message: dict, value: dict):
             logger.debug(f"⏭️ Duplicate WA message {message_id} — skipping")
             return
 
+        # 🔴 dedup على المحتوى كمان — Meta بتعيد الإرسال بـ message_id مختلف
+        _early_type = message.get("type", "")
+        _early_text = ""
+        if _early_type == "text":
+            _early_text = (message.get("text") or {}).get("body", "")
+        elif _early_type in ("image", "video", "document"):
+            cap = (message.get(_early_type) or {}).get("caption", "")
+            _early_text = cap or f"__{_early_type}__"
+        if _early_text and _is_duplicate_wa_content(wa_id, _early_type, _early_text):
+            logger.info(f"⏭️ Duplicate WA content from {wa_id} (Meta re-delivery) — skipping: {_early_text[:50]}")
+            _log_activity("message_skipped", {
+                "message_id": message_id,
+                "reason": "content_duplicate",
+            }, "skipped")
+            return
+
         # 🎯 فحص المستقبِل — الرسالة لازم تكون موّجهة لرقم البوت نفسه
         # الـ webhook كان بيوصل منه رسائل موجهة لأرقام تانية من تطبيق Meta قديم
         # (2061272684803558) — وده كان سبب إن البوت يرود على رسائل قديمة مش ليه
@@ -1030,6 +1046,21 @@ async def _handle_incoming_message(message: dict, value: dict):
                     
                     # User sent a video/social media URL — show quality selection!
                     logger.info(f"🔗 Auto-detected {platform} URL from {wa_id}: {url[:80]}")
+                    # 🔴 تكامل الأدوات (أمر زياد): احفظ الرابط في الجلسة والذاكرة
+                    # عشان لما المستخدم يسأل بعدها عن «الفيديو اللي بعته» البوت يفهم
+                    try:
+                        from memory import save_memory, save_conversation
+                        save_memory(wa_user_id, "last_download_url", url[:500], "media")
+                        save_memory(wa_user_id, "last_download_platform", platform, "media")
+                        save_conversation(wa_user_id, "user", f"[بعت رابط {platform} للتحميل: {url[:200]}]")
+                        save_conversation(wa_user_id, "bot", f"[تم استلام رابط {platform} وعرض خيارات التحميل]")
+                        try:
+                            from memory_context import invalidate_user_cache
+                            invalidate_user_cache(wa_user_id)
+                        except Exception:
+                            pass
+                    except Exception as _mem_err:
+                        logger.debug(f"URL memory save failed: {_mem_err}")
                     await _show_quality_selection(wa_id, url, wa_user_id, contact_name, message_id, is_admin)
                     return
 
@@ -1039,6 +1070,20 @@ async def _handle_incoming_message(message: dict, value: dict):
         if rate_limiter.is_rate_limited(wa_user_id, "ai_chat"):
             await _send_whatsapp_message(wa_id, "⚠️ أنت بتبعت رسائل كتير أوي، استنى شوية وجرّب تاني")
             return
+
+        # 🔴 تكامل الأدوات — Router الصور (أمر زياد 2026-11-04):
+        # لما المستخدم يطلب صورة في الكلام العادي («اعمل صوره كذا») مكان ما النموذج
+        # يقول «أنا مش بقدر» — بنمسك الطلب هنا وننفذه بأداة الصور فعلًا.
+        # الكشف محافظ جدًا (فعل + كلمة صورة) عشان مفيش false positives.
+        try:
+            _img_intent = _detect_image_request(content)
+            if _img_intent:
+                from whatsapp.media import _generate_and_send_image as _wa_gen_img
+                logger.info(f"🎨 Image request detected in chat — routing to image tool: {content[:60]}")
+                await _wa_gen_img(wa_id, _img_intent, wa_user_id, contact_name, message_id, is_admin)
+                return
+        except Exception as _img_err:
+            logger.warning(f"Image router failed (falling back to AI chat): {_img_err}")
 
         logger.info(f"🤖 Routing WA message to AI: {content[:80]}")
 
@@ -1051,3 +1096,32 @@ async def _handle_incoming_message(message: dict, value: dict):
         from sentry_config import capture_exception, set_context
         set_context("whatsapp_message", {"wa_id": wa_id if 'wa_id' in dir() else "unknown"})
         capture_exception(e)
+
+
+def _detect_image_request(content: str):
+    """🔴 تكامل الأدوات: كشف طلب توليد صورة من الكلام العادي
+    يرجع الـ prompt لو الطلب واضح، أو None لو مش طلب صورة.
+    محافظ: لازم فعل إنشاء صريح + كلمة صورة/رسمة — عشان مفيش false positives.
+    """
+    import re as _re
+    text = (content or "").strip()
+    if len(text) < 6 or len(text) > 500:
+        return None
+    t = text.lower()
+
+    create_verbs = [
+        "اعمل", "أعمل", "اعملي", "أعملي", "ولد", "ولّد", "ولدلي",
+        "ارسم", "أرسم", "ارسملي", "ارسمي", "سوي", "سوّي", "عمل",
+        "generate", "create", "make", "draw", "render",
+    ]
+    image_words = ["صورة", "صوره", "صورتي", "صورة لي", "رسمة", "رسمه", "لوحة", "image", "picture", "photo"]
+
+    has_verb = any(v in t for v in create_verbs)
+    has_image = any(w in t for w in image_words)
+    # استبعاد: تحليل/تعديل صورة موجودة، أو البحث عن صور
+    if any(x in t for x in ["حلل", "تحليل", "اقرا", "إقرا", "الصورة دي", "عدل", "تعديل", "ابحث", "دور"]):
+        return None
+    if has_verb and has_image:
+        # الـ prompt = الرسالة نفسها (موديل الصور بيفهم العربي وبيترجم داخليًا)
+        return _re.sub(r"^(اعمل|أعمل|اعملي|أعملي|ولد|ولّد|ولدلي|ارسم|أرسم|ارسملي|ارسمي|سوي|سوّي)\s*(لي|ليّ)?\s*", "", text) or text
+    return None
