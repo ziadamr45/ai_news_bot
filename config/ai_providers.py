@@ -200,6 +200,10 @@ PREMIUM_CHAT_MODELS = [
     # 🛡️ Mistral Small API — دايمًا حي (ينقذ وقت ازدحام NVIDIA الذروة)
     {"provider": "mistral", "model": "mistral-small-latest"},
     # 🔴 Bolt اتشال من البرو نهائيًا (2026-11-03) — كان بياكل كلمات وبيبطّئ الردود الطويلة
+    # 🚑 منقذ طوارئ أخير (2026-11-04 — حادثة «مش قادر أرد»):
+    # لما كوتا 3.6-flash تخلص + NVIDIA محجوب شبكياً + Mistral محدود → البوت مات.
+    # ده بيمنع الموت — مش بيغيّر ترتيب نماذج زياد، بيضاف في الآخر بس.
+    {"provider": "google", "model": "gemini-3.5-flash-lite", "timeout": 30},
 ]
 
 # Default (backward compatibility)
@@ -229,6 +233,10 @@ PREMIUM_SIMPLE_MODELS = [
     {"provider": "nvidia", "model": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning", "api_key": NVIDIA_OMNI_30B_KEY, "timeout": 25},
     # 🛡️ Mistral Small — آخر حل
     {"provider": "mistral", "model": "mistral-small-latest"},
+    # 🚑 منقذ طوارئ أخير (2026-11-04 — حادثة «مش قادر أرد»):
+    # لما كوتا 3.6-flash تخلص + NVIDIA محجوب شبكياً + Mistral محدود → البوت مات.
+    # ده بيمنع الموت — مش بيغيّر ترتيب نماذج زياد، بيضاف في الآخر بس.
+    {"provider": "google", "model": "gemini-3.5-flash-lite", "timeout": 25},
 ]
 
 # Default
@@ -261,6 +269,10 @@ PREMIUM_DEEP_SEARCH_MODELS = [
     {"provider": "nvidia", "model": "nvidia/nemotron-3.5-lightning-30b-a3b", "api_key": NVIDIA_LIGHTNING_KEY, "timeout": 45},
     # 🛡️ Mistral Small API — دايمًا حي
     {"provider": "mistral", "model": "mistral-small-latest"},
+    # 🚑 منقذ طوارئ أخير (2026-11-04 — حادثة «مش قادر أرد»):
+    # لما كوتا 3.6-flash تخلص + NVIDIA محجوب شبكياً + Mistral محدود → البوت مات.
+    # ده بيمنع الموت — مش بيغيّر ترتيب نماذج زياد، بيضاف في الآخر بس.
+    {"provider": "google", "model": "gemini-3.5-flash-lite", "timeout": 45},
 ]
 
 # Default
@@ -293,6 +305,10 @@ PREMIUM_CODING_MODELS = [
     {"provider": "nvidia", "model": "nvidia/nemotron-3.5-lightning-30b-a3b", "api_key": NVIDIA_LIGHTNING_KEY, "timeout": 45},
     # 🛡️ Mistral Small API — دايمًا حي
     {"provider": "mistral", "model": "mistral-small-latest"},
+    # 🚑 منقذ طوارئ أخير (2026-11-04 — حادثة «مش قادر أرد»):
+    # لما كوتا 3.6-flash تخلص + NVIDIA محجوب شبكياً + Mistral محدود → البوت مات.
+    # ده بيمنع الموت — مش بيغيّر ترتيب نماذج زياد، بيضاف في الآخر بس.
+    {"provider": "google", "model": "gemini-3.5-flash-lite", "timeout": 60},
 ]
 
 # Default
@@ -325,6 +341,10 @@ PREMIUM_SUMMARY_MODELS = [
     {"provider": "nvidia", "model": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning", "api_key": NVIDIA_OMNI_30B_KEY, "timeout": 35},
     # 🛡️ Mistral Small API — دايمًا حي
     {"provider": "mistral", "model": "mistral-small-latest"},
+    # 🚑 منقذ طوارئ أخير (2026-11-04 — حادثة «مش قادر أرد»):
+    # لما كوتا 3.6-flash تخلص + NVIDIA محجوب شبكياً + Mistral محدود → البوت مات.
+    # ده بيمنع الموت — مش بيغيّر ترتيب نماذج زياد، بيضاف في الآخر بس.
+    {"provider": "google", "model": "gemini-3.5-flash-lite", "timeout": 35},
 ]
 
 # Default
@@ -355,6 +375,10 @@ FREE_VISION_MODELS = [
     {"provider": "mistral", "model": "mistral-medium-latest", "timeout": 60},
     # ⚡ Super VL 120B — سريع للإنجليزي بس (بيرجع فاضي مع العربي — مختبر) — أخير
     {"provider": "nvidia", "model": "nvidia/nemotron-3.5-super-vl-120b-a12b", "api_key": NVIDIA_NEMOTRON_SUPER_VL_KEY, "timeout": 45},
+    # 🚑 منقذ طوارئ أخير (2026-11-04 — حادثة «مش قادر أرد»):
+    # لما كوتا 3.6-flash تخلص + NVIDIA محجوب شبكياً + Mistral محدود → البوت مات.
+    # ده بيمنع الموت — مش بيغيّر ترتيب نماذج زياد، بيضاف في الآخر بس.
+    {"provider": "google", "model": "gemini-3.5-flash-lite", "timeout": 60},
 ]
 
 PREMIUM_VISION_MODELS = [
@@ -366,6 +390,10 @@ PREMIUM_VISION_MODELS = [
     {"provider": "mistral", "model": "mistral-medium-latest", "timeout": 60},
     # ⚡ Super VL 120B — أخير
     {"provider": "nvidia", "model": "nvidia/nemotron-3.5-super-vl-120b-a12b", "api_key": NVIDIA_NEMOTRON_SUPER_VL_KEY, "timeout": 45},
+    # 🚑 منقذ طوارئ أخير (2026-11-04 — حادثة «مش قادر أرد»):
+    # لما كوتا 3.6-flash تخلص + NVIDIA محجوب شبكياً + Mistral محدود → البوت مات.
+    # ده بيمنع الموت — مش بيغيّر ترتيب نماذج زياد، بيضاف في الآخر بس.
+    {"provider": "google", "model": "gemini-3.5-flash-lite", "timeout": 60},
 ]
 
 # Default
