@@ -43,11 +43,39 @@ _http_session.headers.update({"User-Agent": "MyBro-Bot/1.0"})
 # كل المستخدمين بيضربوا الـ APIs في نفس الوقت فده بيمنع flooding
 _api_semaphore = asyncio.Semaphore(10)
 
+# 🔴 NVIDIA self-heal (زياد 2026-11-04: "شوف حل للنماذج بتاعة نيفيديا"):
+# NVIDIA اتحجب شبكياً من serv00 يوم 3 نوفمبر (TCP timeout على كل الـ IPs) ورجع لوحده يوم 4.
+# لو حصل حجب تاني: لو NVIDIA_PROXY_URL متحد في .env (worker proxy عام بيمرر الـ path)
+# البوت بيكشف الحجب تلقائياً وبيحوّل نداءات NVIDIA كلها على البروكسي لمدة 10 دقايق
+# من غير ما حد يلاحظ — ولو مش متحد، السلوك زي ما هو (فشل سريع → fallback).
+_nvidia_direct_down_until = 0.0
+
+
+def _nvidia_via_proxy() -> bool:
+    """هل نبعت نداءات NVIDIA عبر البروكسي دلوقتي؟ (لو الحجب مكتشف والمتغير متحد)"""
+    return bool(NVIDIA_PROXY_URL) and time.time() < _nvidia_direct_down_until
+
+
+def _nvidia_base_url(provider_name: str, direct_url: str) -> str:
+    """اختيار base_url لنداءات NVIDIA — بروكسي أو مباشر"""
+    if provider_name.startswith("nvidia") and _nvidia_via_proxy():
+        return NVIDIA_PROXY_URL.rstrip("/")
+    return direct_url
+
+
+def _mark_nvidia_direct_down():
+    """اكتشاف حجب/تعذر الوصول المباشر لـ NVIDIA → جرب البروكسي لمدة 10 دقايق"""
+    global _nvidia_direct_down_until
+    if NVIDIA_PROXY_URL:
+        _nvidia_direct_down_until = time.time() + 600
+        logger.warning("🔴 NVIDIA direct unreachable → routing NVIDIA calls through NVIDIA_PROXY_URL for 10min")
+
 from config import (
     SAMBANOVA_API_KEY, SAMBANOVA_BASE_URL,
     MISTRAL_API_KEY, MISTRAL_BASE_URL,
     GOOGLE_API_KEY, GOOGLE_BASE_URL,
     NVIDIA_BASE_URL, NVIDIA_GENAI_BASE_URL, NVIDIA_RETRIEVAL_BASE_URL,
+    NVIDIA_PROXY_URL,
     EMBED_TEXT_MODELS, RERANK_MODELS, FILE_PARSE_MODELS,
     CHAT_MODELS, SIMPLE_MODELS, DEEP_SEARCH_MODELS,
     CODING_MODELS, SUMMARY_MODELS, VISION_MODELS,
@@ -350,12 +378,15 @@ class ProviderManager:
 
         try:
             response = _http_session.post(
-                url, headers=headers, json=payload,
+                _nvidia_base_url(provider_name, url), headers=headers, json=payload,
                 # 🔴 إصلاح البطء (2026-11-03): فجوة أول توكن ذكية حسب المهلة:
                 #  15s مكالمات عادية (كانت 35s ثابتة — DeepSeek في الطابور كان يأكل 35s من كل رد)
                 #  35s مهام تقيلة 45-79s (GLM thinking بياخد 26s)
                 #  60s رؤية/نماذج ضخمة ≥80s (Gemma 31B بتجهّز الصورة و أول توكن بعد 35-50s — مختبر لايف)
-                timeout=(15, 60 if (timeout or 0) >= 80 else (35 if (timeout or 0) >= 45 else 15)),
+                # 🔴 إصلاح البطء (2026-11-04 أمر زياد: "أهم حاجة السرعة"):
+                #  الاتصال 15s → 6s — أي endpoint معلّق/محجوب بيفشل في 6s بدل 15s
+                #  (اتصال سليم بياخد <1s، فالـ 6s كواسية أمان كفاية)
+                timeout=(6, 60 if (timeout or 0) >= 80 else (35 if (timeout or 0) >= 45 else 15)),
                 stream=True,
             )
             response.raise_for_status()
@@ -415,9 +446,17 @@ class ProviderManager:
                 # بتاكل كلمات. 30s كفاية: النموذج يرتاح بس يرجع بسرعة
                 self._set_model_cooldown(model, "Stream TTFT timeout", 30)
                 return None
-        except requests.exceptions.Timeout:
+        except requests.exceptions.ConnectTimeout:
             logger.warning(f"⏱️ Stream connect timeout for {provider_name}/{model}")
+            if provider_name.startswith("nvidia"):
+                _mark_nvidia_direct_down()  # 🆕 اكتشاف حجب شبكي → بروكسي تلقائي
             self._set_model_cooldown(model, "Timeout", 20)
+            return None
+        except requests.exceptions.ConnectionError as e:
+            logger.warning(f"⚠️ Stream connection error for {provider_name}/{model}: {str(e)[:70]}")
+            if provider_name.startswith("nvidia"):
+                _mark_nvidia_direct_down()  # 🆕 TCP-level block signature
+            self._set_model_cooldown(model, "Connection error", 20)
             return None
         except requests.exceptions.RequestException as e:
             error_str = str(e)
@@ -483,7 +522,8 @@ class ProviderManager:
             self._set_model_cooldown(model, "No API key", 10)
             return None
 
-        url = f"{provider['base_url']}/chat/completions"
+        # 🆕 NVIDIA self-heal: بروكسي تلقائي لو الحجب الشبكي مكتشف
+        url = f"{_nvidia_base_url(provider_name, provider['base_url'])}/chat/completions"
 
         headers = {
             "Authorization": f"Bearer {actual_api_key}",
@@ -594,9 +634,18 @@ class ProviderManager:
             logger.warning(f"⚠️ Empty response from {provider_name}/{model}")
             return None
 
-        except requests.exceptions.Timeout:
-            logger.warning(f"⏱️ Timeout ({timeout}s) for {provider_name}/{model}")
+        except requests.exceptions.ConnectTimeout:
+            logger.warning(f"⏱️ Connect timeout for {provider_name}/{model}")
+            if provider_name.startswith("nvidia"):
+                _mark_nvidia_direct_down()  # 🆕 اكتشاف حجب شبكي → بروكسي تلقائي
             self._set_model_cooldown(model, "Timeout", 20)
+            return None
+
+        except requests.exceptions.ConnectionError as e:
+            logger.warning(f"⚠️ Connection error for {provider_name}/{model}: {str(e)[:70]}")
+            if provider_name.startswith("nvidia"):
+                _mark_nvidia_direct_down()  # 🆕 TCP-level block signature
+            self._set_model_cooldown(model, "Connection error", 20)
             return None
 
         except requests.exceptions.RequestException as e:
@@ -818,9 +867,11 @@ class ProviderManager:
                 else:
                     timeout = 20
 
-        # 🔴🔴 ميزانية زمنية كلية — زياد أمر: سقف الرد 3 دقايق (كان 2)
-        # (الـ handler بيقطع عند 180s — الـ chain لازم تخلص قبله بهامش)
-        base_budget = 170 if task_type == "deep_search" else 160
+        # 🔴🔴 ميزانية زمنية كلية — أمر زياد 2026-11-04: "أهم حاجة السرعة"
+        # 160s → 110s للمهام العادية: لو كل النماذج فاشلة المستخدم يستلم رسالة الخطأ
+        # بعد ~2:10 بدل ما يستنى 3 دقايق. المسار السليم بيرد في <5s فمش متأثر خالص.
+        # deep_search بيفضل 170s لأنه بيشتغل بمراحل (بحث + تلخيص) والـ handler بتاعه أطول.
+        base_budget = 170 if task_type == "deep_search" else 110
         budget = base_budget
         if deadline is not None:
             budget = min(budget, int(deadline - time.time()))

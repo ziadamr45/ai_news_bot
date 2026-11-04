@@ -106,6 +106,15 @@ MISTRAL_BASE_URL = "https://api.mistral.ai/v1"
 GOOGLE_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 GOOGLE_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
 
+# 🖌️ مفتاح الصور من جوجل (Nano Banana 2.1 / Pro — توليد + تعديل) — لما زياد يبعته
+# يتحط هنا في .env والدمج بيبقى من غير ما نلمس مفاتيح الشات (قاعدة: كل وظيفة ليها مفتاح)
+GOOGLE_IMAGE_KEY = os.environ.get("GOOGLE_IMAGE_KEY", "")
+
+# 🔴 NVIDIA self-heal — بروكسي اختياري (أمر زياد 2026-11-04: "شوف حل لنماذج نيفيديا"):
+# لو NVIDIA اتحجب شبكياً من serv00 تاني (زي حادثة 3 نوفمبر)، بيتحط رابط worker proxy
+# عام هنا والبوت بيتحول عليه تلقائياً لمدة 10 دقايق عند أول فشل اتصال. فاضي = مباشر دايماً.
+NVIDIA_PROXY_URL = os.environ.get("NVIDIA_PROXY_URL", "")
+
 # SambaNova (fallback أخير للمجاني)
 SAMBANOVA_API_KEY = os.environ.get("SAMBANOVA_API_KEY", "")
 SAMBANOVA_BASE_URL = "https://api.sambanova.ai/v1"
