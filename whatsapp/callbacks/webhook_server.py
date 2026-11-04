@@ -575,10 +575,13 @@ async def start_webhook_server():
     runner = web.AppRunner(app)
     await runner.setup()
 
-    site = web.TCPSite(runner, "0.0.0.0", WEBHOOK_PORT)
     import asyncio as _retry_aio
     max_attempts = 20  # 20 × 3s = دقيقة كاملة
+    # 🔴 إصلاح 2026-11-04: الـ TCPSite بيتسجل في الـ runner قبل ما الربط يفشل —
+    #    فإعادة start() على نفس الـ site كانت ترمي "Site is already registered"
+    #    (RuntimeError مش OSError) وتقتل الثريد خلاص. الحل: site جديد كل محاولة.
     for attempt in range(1, max_attempts + 1):
+        site = web.TCPSite(runner, "0.0.0.0", WEBHOOK_PORT)
         try:
             await site.start()
             break

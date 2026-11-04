@@ -46,6 +46,7 @@ _api_semaphore = asyncio.Semaphore(10)
 from config import (
     SAMBANOVA_API_KEY, SAMBANOVA_BASE_URL,
     MISTRAL_API_KEY, MISTRAL_BASE_URL,
+    GOOGLE_API_KEY, GOOGLE_BASE_URL,
     NVIDIA_BASE_URL, NVIDIA_GENAI_BASE_URL, NVIDIA_RETRIEVAL_BASE_URL,
     EMBED_TEXT_MODELS, RERANK_MODELS, FILE_PARSE_MODELS,
     CHAT_MODELS, SIMPLE_MODELS, DEEP_SEARCH_MODELS,
@@ -129,6 +130,15 @@ class ProviderManager:
                 "base_url": MISTRAL_BASE_URL,
             }
             logger.info("✅ Mistral provider configured (Free primary + Premium fallback)")
+
+        # 🌟 Google Gemini (أساسي جديد للفري والبرو — أمر زياد 2026-11-04)
+        # OpenAI-compatible endpoint + streaming مختبر لايف من serv00 ✅
+        if GOOGLE_API_KEY:
+            self.providers["google"] = {
+                "api_key": GOOGLE_API_KEY,
+                "base_url": GOOGLE_BASE_URL,
+            }
+            logger.info("✅ Google Gemini provider configured (OpenAI-compat — أساسي الفري والبرو)")
 
         # SambaNova (fallback للمجاني — مجاني بس محدود 20 طلب/يوم)
         if SAMBANOVA_API_KEY:
@@ -493,7 +503,7 @@ class ProviderManager:
         # ولو النموذج بيكتب، بنقرأ التوكنز وهي interpreted فورًا — مفيش timeout على الجسم كله.
         # 🔴 الرؤية (use_stream=False): نماذج الرؤية ما بتبعتش SSE توكنز — أول توكن مبيوصلش
         #    غير مع الجسم كله، فالمهلة كانت بتقتل Gemma وهي شغالة (مختبر لايف 2026-11-03)
-        use_stream = use_stream and provider_name in ("nvidia", "mistral")
+        use_stream = use_stream and provider_name in ("nvidia", "mistral", "google")
 
         # 🧠 وضع التفكير (reasoning) — مختبر لايف 2026-11-03:
         # - GLM 5.3 Flash: الريزونينج شغال دايمًا حتى مع thinking:false (مختبر) — موديل المهام الثقيلة
@@ -506,6 +516,10 @@ class ProviderManager:
             if thinking_enabled:
                 # 🔥 رفع ميزانية التوكنز عشان التفكير مياكلش الرد نفسه
                 payload["max_tokens"] = max(max_tokens, 4096)
+        # 🌟 Google Gemini: تفكير خفيف دايمًا للسرعة (مختبر: reasoning_effort مقبول ✅)
+        # قاعدة زياد: الريزونينج الكامل للمهام الثقيلة — GLM 5.3 في البرو بياخدها لو جوجل فشلت
+        if provider_name == "google":
+            payload["reasoning_effort"] = "low"
         # Mistral بيكاش الـ system prompt لو كبير بما فيه كفاية
         # ده بيقلل latency و cost بشكل كبير (1-4 ثواني أسرع بعد أول طلب)
         if provider_name == "mistral" and messages and len(messages) > 0:
@@ -654,6 +668,8 @@ class ProviderManager:
             }
             if provider_name == "nvidia":
                 payload["chat_template_kwargs"] = {"thinking": False}
+            if provider_name == "google":
+                payload["reasoning_effort"] = "low"
 
             logger.info(f"🔄 Trying auto-continuation (depth={_depth+1}) with {provider_name}/{model}...")
             response = _http_session.post(url, json=payload, headers=headers, timeout=timeout)

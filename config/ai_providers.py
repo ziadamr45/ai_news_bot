@@ -98,6 +98,14 @@ def get_nvidia_key(model_name: str) -> str:
 MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY", "")
 MISTRAL_BASE_URL = "https://api.mistral.ai/v1"
 
+# ── 🌟 Google Gemini (أساسي جديد — أمر زياد 2026-11-04: نماذج جوجل أول حاجة في الفري والبرو) ──
+# OpenAI-compatible endpoint — مختبر لايف من serv00 2026-11-04:
+#   gemini-3.5-flash-lite: 0.8s ✅ (أسرع نموذج في البوت كله) | gemini-3.6-flash: 1.9s ✅
+#   gemini-3.8-flash: 503 ازدحام متكرر في الاختبار → اتشال من الأساسي (قاعدة زياد: ممنوع ما يعطل)
+# ملاحظة: نفس المفتاح بيشغل STT (gemini-3.5-transcribe مجاني) وتعديل الصور (nano-banana — مدفوع)
+GOOGLE_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+GOOGLE_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
+
 # SambaNova (fallback أخير للمجاني)
 SAMBANOVA_API_KEY = os.environ.get("SAMBANOVA_API_KEY", "")
 SAMBANOVA_BASE_URL = "https://api.sambanova.ai/v1"
@@ -153,7 +161,9 @@ NVIDIA_OMNI_30B_KEY = os.environ.get("NVIDIA_OMNI_30B_KEY", "") or NVIDIA_NEMOTR
 # FREE:  Omni → Lightning → Mistral Small → Bolt (منقذ أخير)
 # PRO:   🔴 DeepSeek أساسي (أمر زياد) → Omni → Lightning → Mistral Small
 FREE_CHAT_MODELS = [
-    # ⚡ Omni 30B — عربي ممتاز 0.9s (أساسي المجاني الجديد — مختبر)
+    # 🌟 Google 3.5 Flash-Lite — أساسي المجاني (أمر زياد 2026-11-04: جوجل أول حاجة) — 0.8s مختبر
+    {"provider": "google", "model": "gemini-3.5-flash-lite", "timeout": 30},
+    # ⚡ Omni 30B — عربي ممتاز 0.9s (أساسي المجاني القديم — مختبر)
     {"provider": "nvidia", "model": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning", "api_key": NVIDIA_OMNI_30B_KEY, "timeout": 30},
     # 📊 Lightning 30B — متوسط 3.7s
     {"provider": "nvidia", "model": "nvidia/nemotron-3.5-lightning-30b-a3b", "api_key": NVIDIA_LIGHTNING_KEY, "timeout": 40},
@@ -164,7 +174,10 @@ FREE_CHAT_MODELS = [
 ]
 
 PREMIUM_CHAT_MODELS = [
-    # 🔴🔴 DeepSeek V4.1 Flash — أساسي البرو لكل الرسائل (أمر زياد: أقوى وأسرع — 1.8-3.1s مختبر)
+    # 🌟 Google 3.6 Flash — أساسي البرو الجديد (أمر زياد 2026-11-04: جوجل أول حاجة) — 1.9s مختبر
+    # (3.8-flash أقوى بس 503 ازدحام متكرر في الاختبار — مننقله لما يستقر)
+    {"provider": "google", "model": "gemini-3.6-flash", "timeout": 30},
+    # 🔴🔴 DeepSeek V4.1 Flash — أساسي البرو القديم (أمر زياد: أقوى وأسرع — 1.8-3.1s مختبر)
     {"provider": "nvidia", "model": "deepseek-ai/deepseek-v4.1-flash", "api_key": NVIDIA_DEEPSEEK_V41_FLASH_KEY},
     # ⚡ Omni 30B — منقذ سريع 0.9s لو DeepSeek في طابور
     {"provider": "nvidia", "model": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning", "api_key": NVIDIA_OMNI_30B_KEY, "timeout": 30},
@@ -183,6 +196,8 @@ CHAT_MODELS = PREMIUM_CHAT_MODELS
 # FREE: Omni → Mistral Small → Bolt (أخير)
 # PRO:  DeepSeek (أساسي) → Omni → Mistral Small
 FREE_SIMPLE_MODELS = [
+    # 🌟 Google 3.5 Flash-Lite — أساسي (أمر زياد 2026-11-04) — أسرع تحية 0.8s
+    {"provider": "google", "model": "gemini-3.5-flash-lite", "timeout": 25},
     # ⚡ Omni 30B — 0.9s عربي ممتاز
     {"provider": "nvidia", "model": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning", "api_key": NVIDIA_OMNI_30B_KEY, "timeout": 25},
     # 🛡️ Mistral Small — دايمًا حي
@@ -192,7 +207,9 @@ FREE_SIMPLE_MODELS = [
 ]
 
 PREMIUM_SIMPLE_MODELS = [
-    # 🔴 DeepSeek — أساسي البرو (أمر زياد)
+    # 🌟 Google 3.6 Flash — أساسي البرو (أمر زياد 2026-11-04: جوجل أول حاجة)
+    {"provider": "google", "model": "gemini-3.6-flash", "timeout": 25},
+    # 🔴 DeepSeek — أساسي البرو القديم (أمر زياد)
     {"provider": "nvidia", "model": "deepseek-ai/deepseek-v4.1-flash", "api_key": NVIDIA_DEEPSEEK_V41_FLASH_KEY},
     # ⚡ Omni 30B — منقذ سريع
     {"provider": "nvidia", "model": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning", "api_key": NVIDIA_OMNI_30B_KEY, "timeout": 25},
@@ -207,6 +224,8 @@ SIMPLE_MODELS = PREMIUM_SIMPLE_MODELS
 # FREE:  Lightning → Omni → Gemma (مهلة قصيرة) → Mistral Small
 # PRO:   DeepSeek → GLM (ريزونينج للتحليل العميق — أمر زياد) → Lightning → Mistral Small
 FREE_DEEP_SEARCH_MODELS = [
+    # 🌟 Google 3.5 Flash-Lite — أساسي (أمر زياد 2026-11-04)
+    {"provider": "google", "model": "gemini-3.5-flash-lite", "timeout": 45},
     # 📊 Lightning 30B — متوسط + تفكير 3.7s
     {"provider": "nvidia", "model": "nvidia/nemotron-3.5-lightning-30b-a3b", "api_key": NVIDIA_LIGHTNING_KEY, "timeout": 45},
     # ⚡ Omni 30B — سريع وممتاز عربي
@@ -218,7 +237,9 @@ FREE_DEEP_SEARCH_MODELS = [
 ]
 
 PREMIUM_DEEP_SEARCH_MODELS = [
-    # ⚡ DeepSeek V4.1 — قوي وسريع (أساسي)
+    # 🌟 Google 3.6 Flash — أساسي البرو (أمر زياد 2026-11-04: جوجل أول حاجة)
+    {"provider": "google", "model": "gemini-3.6-flash", "timeout": 45},
+    # ⚡ DeepSeek V4.1 — قوي وسريع (أساسي قديم)
     {"provider": "nvidia", "model": "deepseek-ai/deepseek-v4.1-flash", "api_key": NVIDIA_DEEPSEEK_V41_FLASH_KEY},
     # 🧠 GLM 5.3 Flash — الريزونينج شغال دايمًا (أمر زياد: المهام الثقيلة بـ GLM) — 8-11s
     {"provider": "nvidia", "model": "z-ai/glm-5.3-flash", "api_key": NVIDIA_GLM_53_FLASH_KEY, "timeout": 60},
@@ -235,6 +256,8 @@ DEEP_SEARCH_MODELS = PREMIUM_DEEP_SEARCH_MODELS
 # FREE:  Lightning → Omni → Gemma → Mistral Small
 # PRO:   🧠 GLM (ريزونينج + برمجة — أمر زياد) → DeepSeek → Lightning → Mistral Small
 FREE_CODING_MODELS = [
+    # 🌟 Google 3.5 Flash-Lite — أساسي (أمر زياد 2026-11-04)
+    {"provider": "google", "model": "gemini-3.5-flash-lite", "timeout": 60},
     # 📊 Lightning 30B — كود متوسط مع تفكير
     {"provider": "nvidia", "model": "nvidia/nemotron-3.5-lightning-30b-a3b", "api_key": NVIDIA_LIGHTNING_KEY, "timeout": 45},
     # ⚡ Omni 30B
@@ -246,6 +269,8 @@ FREE_CODING_MODELS = [
 ]
 
 PREMIUM_CODING_MODELS = [
+    # 🌟 Google 3.6 Flash — أساسي البرو (أمر زياد 2026-11-04: جوجل أول حاجة)
+    {"provider": "google", "model": "gemini-3.6-flash", "timeout": 60},
     # 🧠🔴 GLM 5.3 Flash — أمر زياد: GLM للمهام التقيلة والبرمجة (ريزونينج دايمًا شغال — مختبر)
     {"provider": "nvidia", "model": "z-ai/glm-5.3-flash", "api_key": NVIDIA_GLM_53_FLASH_KEY, "timeout": 75},
     # 💻 DeepSeek V4.1 — elite coding (763B, 190 tok/s)
@@ -263,6 +288,8 @@ CODING_MODELS = PREMIUM_CODING_MODELS
 # FREE:  Omni → Lightning → Mistral Small → Bolt (أخير)
 # PRO:   DeepSeek → Lightning → Omni → Mistral Small
 FREE_SUMMARY_MODELS = [
+    # 🌟 Google 3.5 Flash-Lite — أساسي (أمر زياد 2026-11-04)
+    {"provider": "google", "model": "gemini-3.5-flash-lite", "timeout": 35},
     # ⚡ Omni 30B — عربي ممتاز
     {"provider": "nvidia", "model": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning", "api_key": NVIDIA_OMNI_30B_KEY, "timeout": 35},
     # 📊 Lightning 30B
@@ -274,7 +301,9 @@ FREE_SUMMARY_MODELS = [
 ]
 
 PREMIUM_SUMMARY_MODELS = [
-    # 📄 DeepSeek V4.1 — سريع وقوي (أساسي)
+    # 🌟 Google 3.6 Flash — أساسي البرو (أمر زياد 2026-11-04: جوجل أول حاجة)
+    {"provider": "google", "model": "gemini-3.6-flash", "timeout": 35},
+    # 📄 DeepSeek V4.1 — سريع وقوي (أساسي قديم)
     {"provider": "nvidia", "model": "deepseek-ai/deepseek-v4.1-flash", "api_key": NVIDIA_DEEPSEEK_V41_FLASH_KEY},
     # 📊 Lightning 30B
     {"provider": "nvidia", "model": "nvidia/nemotron-3.5-lightning-30b-a3b", "api_key": NVIDIA_LIGHTNING_KEY, "timeout": 45},
